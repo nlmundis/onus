@@ -540,3 +540,22 @@ the same way; when it is not (the network, a lost runner, a tool that could not 
 failed jobs clears it, so re-run them once before calling the tag spent."""
 replace = "A tag whose gate fails skips the release job and is spent the same way."
 
+[[mutant]]
+name = "agents_says_any_tag_starts_the_release"
+why = "A tag on a commit without release.yml, such as main's first, starts no run and is still permanent; an agent told any v* tag starts the release waits for a run that never comes."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """so a `v*` tag starts the release workflow only on a
+commit that carries `.github/workflows/release.yml`;"""
+replace = "so a `v*` tag starts the release workflow;"
+
+[[mutant]]
+name = "release_comment_says_any_tag_starts_it"
+why = "The workflow's own header is where a reader looks first; it must not promise a run for a tag on a commit without the file."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = ".github/workflows/release.yml"
+find = """starts this
+# workflow only on a commit that carries this file,"""
+replace = """starts this
+# workflow on any commit,"""
+

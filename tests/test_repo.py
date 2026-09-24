@@ -931,6 +931,25 @@ class DocumentedClaimsTest(unittest.TestCase):
         self.assertIn(claim, prose("AGENTS.md"))
         self.assertNotIn("a tag whose gate fails skips the release job and is spent the same way", prose("AGENTS.md"))
 
+    def test_a_tag_starts_the_release_only_on_a_commit_that_carries_it(self):
+        # GitHub reads a pushed tag's workflows from the tagged commit, and the ruleset makes the tag permanent
+        # whether or not a run starts.
+        claims = {
+            "AGENTS.md": (
+                "GitHub reads a tag's workflows from the tagged commit, so a `v*` tag starts the release workflow "
+                "only on a commit that carries `.github/workflows/release.yml`; main's first commit (`e36cb6e`) "
+                "has none, so a tag on it starts nothing and is still permanent."
+            ),
+            ".github/workflows/release.yml": (
+                "A v* tag pushed on its own starts this workflow only on a commit that carries this file, since "
+                "GitHub reads a tag's workflows from the tagged commit; a tag on a commit without it, such as "
+                "main's first, starts nothing and is still permanent."
+            ),
+        }
+        for name, claim in claims.items():
+            with self.subTest(file=name):
+                self.assertIn(claim, prose(name))
+
 
 class MutationSpecTest(unittest.TestCase):
     def test_every_mutant_names_real_suites_and_an_anchor_found_exactly_once(self):

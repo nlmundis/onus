@@ -48,9 +48,12 @@ before any stage runs, and `make gate-env` prints the settings make exports to e
    match `__version__` (so `v0.1` is refused, not ignored); builds and checks the sdist and wheel with
    `tools/check_dist.py`; and attaches them to a GitHub Release. Nothing goes to PyPI.
 
-GitHub starts no workflow for tags pushed more than three at a time, or pushed by a workflow's own token, so
-push release tags by hand and one at a time. A valid tag that started no run is stranded, since the ruleset
-keeps it from being pushed again; the admin removal below, then pushing it alone, releases it.
+GitHub reads a tag's workflows from the tagged commit, so a `v*` tag starts the release workflow only on a
+commit that carries `.github/workflows/release.yml`; main's first commit (`e36cb6e`) has none, so a tag on it
+starts nothing and is still permanent. GitHub also starts no workflow for tags pushed more than three at a
+time, or pushed by a workflow's own token, so push release tags by hand and one at a time. A valid tag that
+started no run is stranded, since the ruleset keeps it from being pushed again; the admin removal below, then
+pushing it alone, releases it.
 
 **Every `v*` tag is permanent.** The "release tags never move" ruleset refuses deleting or moving one, and
 no one can bypass it, so a tag pushed by mistake stays, and its version is spent: fix the cause, set
