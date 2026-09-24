@@ -2,24 +2,26 @@
 # 95% floor, the suite again on the pinned interpreter, a compile check on the oldest supported Python, then
 # mutt_check proving the suite catches each curated mutant and does not count a behaviour-preserving rewrite
 # as caught. No tool enters a project environment: each runs through uvx or `uv run --no-project`, pinned
-# below. Offline once uv has cached the pinned tools. Inside the checkout it writes only gitignored caches
-# (.coverage, .mypy_cache, .ruff_cache), so `git status` stays clean and a worktree stays cleanable.
+# below. uv needs the network to resolve the pinned tools the first time; after that, `UV_OFFLINE=1 make
+# check` runs offline. Inside the checkout the gate writes only gitignored caches (.coverage, .mypy_cache,
+# .ruff_cache), so `git status` stays clean and a worktree stays cleanable.
 #
-# The interpreter comes from pyenv at the exact patch in .python-version, and uv is always handed its path,
-# never left to discover one: PATH here puts Homebrew's python ahead of the pyenv shims. CI has no pyenv and
-# overrides PY and COMPAT_PY with its own interpreter.
+# The interpreters come from pyenv at exact patches (.python-version, and COMPAT_PIN for the floor), and uv is
+# always handed their paths, never left to discover one: PATH may put another python, such as Homebrew's,
+# ahead of the pyenv shims. When pyenv lacks a pinned patch the gate stops and names the `pyenv install`
+# command, rather than falling back to whatever python3 the system has. CI has no pyenv and passes PY and
+# COMPAT_PY as paths to its own interpreter.
 
 PIN := $(shell cat .python-version)
-PY ?= $(shell pyenv prefix $(PIN) 2>/dev/null)/bin/python3
-# The floor check runs on pyenv's exact 3.11 patch too, never on an interpreter uv finds for itself.
+PY ?= $(or $(shell pyenv prefix $(PIN) 2>/dev/null),$(error pyenv has no Python $(PIN): run `pyenv install $(PIN)`, or pass PY=/path/to/python3))/bin/python3
 COMPAT_PIN := 3.11.14
-COMPAT_PY ?= $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null)/bin/python3
-# uv may not fetch its own CPython behind pyenv's back.
+COMPAT_PY ?= $(or $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null),$(error pyenv has no Python $(COMPAT_PIN) for the floor check: run `pyenv install $(COMPAT_PIN)`, or pass COMPAT_PY=/path/to/python3))/bin/python3
+# uv may not fetch its own CPython behind pyenv's back, even when an override asks for a version, not a path.
 export UV_PYTHON_DOWNLOADS ?= never
-# Hypothesis writes a charmap and constants cache into the working directory even with database=None
-# (measured 2026-09-23 on 6.168.1). Kept outside the checkout, so a worktree that ran the gate stays clean.
+# Keeps Hypothesis's cache (a charmap and constants, written even with database=None on 6.168.1) out of the
+# checkout, so the first Hypothesis test inherits a gate that writes nothing into the tree.
 export HYPOTHESIS_STORAGE_DIRECTORY ?= $(or $(TMPDIR),/tmp)/onus-hypothesis
-# No bytecode: a stale .pyc beside a mutated source has let a mutant survive before.
+# No bytecode: without this, every test and coverage run writes __pycache__ into the checkout.
 export PYTHONDONTWRITEBYTECODE := 1
 
 BLACK := black==26.5.1
@@ -27,11 +29,13 @@ RUFF := ruff==0.16.8
 MYPY := mypy==2.3.1
 COVERAGE := coverage[toml]==7.16.1
 HYPOTHESIS := hypothesis==6.168.1
-MUTT_CHECK := mutt_check @ git+https://github.com/nlmundis/mutt_check@v0.0.2
+# v0.0.2, pinned by commit: a tag can move and would change the tool that decides caught and survived.
+MUTT_CHECK := mutt_check @ git+https://github.com/nlmundis/mutt_check@8a89dfc4c93357e294cbc51d1b723b27078c5481
 
-RUN := uv run --no-project --python "$(PY)" --with "$(HYPOTHESIS)"
+# Recursive, so PY is resolved only by the targets that use it and `make help` works without pyenv.
+RUN = uv run --no-project --python "$(PY)" --with "$(HYPOTHESIS)"
 
-.PHONY: help check format lint types coverage test compat mutants
+.PHONY: help check format lint types coverage test compat mutants gate-env
 
 help:
 	@echo "make check     the whole gate, as below, in this order"
@@ -40,8 +44,9 @@ help:
 	@echo "make types     strict mypy"
 	@echo "make coverage  the suite under branch coverage, 95% floor"
 	@echo "make test      the suite on the pinned interpreter"
-	@echo "make compat    compile the package on the oldest supported Python"
+	@echo "make compat    compile every module on the oldest supported Python, writing no bytecode"
 	@echo "make mutants   mutt_check: every curated mutant caught, the no-op rewrite not"
+	@echo "make gate-env  print the environment settings every stage runs with"
 
 check: format lint types coverage test compat mutants
 
@@ -61,13 +66,20 @@ coverage:
 test:
 	$(RUN) python -B -m unittest discover -s tests -t .
 
+# compile() checks every module against the floor's grammar and writes nothing; compileall would write .pyc.
 compat:
-	uv run --no-project --python "$(COMPAT_PY)" python -m compileall -q onus
+	uv run --no-project --python "$(COMPAT_PY)" python -B -c "import pathlib; [compile(p.read_bytes(), str(p), 'exec', dont_inherit=True) for p in sorted(pathlib.Path('onus').rglob('*.py'))]"
 
-# The no-op spec must come back with exactly its one mutant surviving (exit 1): a harness that counted any
-# failure as caught would report it caught.
+# The no-op spec must come back with exactly its one mutant surviving (exit 1). That catches a harness that
+# counts any edit as caught, or that runs [run] suites instead of a mutant's own; it cannot catch one that
+# counts a crashing suite as caught, since the no-op's suites never crash.
 mutants:
 	$(RUN) --with "$(MUTT_CHECK)" mutt_check mutt_check.toml
 	@out="$$($(RUN) --with "$(MUTT_CHECK)" mutt_check mutt_check.noop.toml 2>&1)"; rc=$$?; echo "$$out"; \
 	  test $$rc -eq 1 || { echo "no-op spec: expected exit 1 (survived), got $$rc"; exit 1; }; \
 	  echo "$$out" | grep -q "1 survived" || { echo "no-op spec: expected exactly 1 survived"; exit 1; }
+
+gate-env:
+	@echo "UV_PYTHON_DOWNLOADS=$$UV_PYTHON_DOWNLOADS"
+	@echo "HYPOTHESIS_STORAGE_DIRECTORY=$$HYPOTHESIS_STORAGE_DIRECTORY"
+	@echo "PYTHONDONTWRITEBYTECODE=$$PYTHONDONTWRITEBYTECODE"

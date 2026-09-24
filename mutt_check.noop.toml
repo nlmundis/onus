@@ -1,16 +1,18 @@
-# One behaviour-preserving rewrite. `make mutants` requires it to SURVIVE: a harness that counted any failure,
-# or any edit, as caught would report it caught.
+# One behaviour-preserving rewrite. `make mutants` requires it to SURVIVE. That catches a harness that counts
+# any edit as caught, or one that runs [run] suites instead of a mutant's own; it cannot catch one that counts
+# a crashing suite as caught, since these suites never crash. The anchor sits in a test helper, not in the
+# package, so a release's version bump never touches it.
 
 [run]
 suites = ["tests.test_repo"]
 timeout = 300
 
 [[mutant]]
-name = "noop_version_split_across_two_literals"
-why = "Adjacent string literals concatenate at compile time; nothing observable changes."
-# The suites that read the version. MutationSpecTest is left out on purpose: it checks this spec's own
-# anchor, which the rewrite removes, so it would "catch" a change that alters nothing observable.
-suites = ["tests.test_repo.VersionTest", "tests.test_repo.StdlibOnlyTest"]
-file = "onus/__init__.py"
-find = '__version__ = "0.0.0"'
-replace = '__version__ = "0.0" ".0"'
+name = "noop_split_limited_to_the_fields_it_keeps"
+why = "Splitting at most twice keeps the same first two fields for every string; MutationSpecTest checks that on sample inputs."
+# The suites that call minor(). MutationSpecTest is left out on purpose: it checks this spec's own anchor,
+# which the rewrite removes, so it would "catch" a change that alters nothing observable.
+suites = ["tests.test_repo.VersionSupportTest"]
+file = "tests/test_repo.py"
+find = 'major, minor_part = version.split(".")[:2]'
+replace = 'major, minor_part = version.split(".", 2)[:2]'

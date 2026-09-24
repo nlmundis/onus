@@ -31,16 +31,21 @@ jobs:
         run: |
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
-            || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
+            || { echo "::error::$GITHUB_REF_NAME is not on main. Release tags are permanent (the release-tags ruleset), so this version cannot be reused: merge to main, then tag the next version there."; exit 1; }
       - name: Refuse a tag that does not match the package version
         run: |
           version="$(python -c 'import onus; print(onus.__version__)')"
           test "v$version" = "$GITHUB_REF_NAME" \
-            || { echo "::error::tag $GITHUB_REF_NAME but onus.__version__ is $version"; exit 1; }
+            || { echo "::error::tag $GITHUB_REF_NAME but onus.__version__ is $version. Release tags are permanent (the release-tags ruleset), so this version cannot be reused: set __version__ in a PR, merge it, and tag the next version."; exit 1; }
       - name: Build the sdist and wheel
         run: |
           pip install build==1.6.1
           python -m build
+      - name: Refuse an sdist that carries the repository tests, or a wheel without the type marker
+        run: |
+          if tar tzf dist/*.tar.gz | grep -q '/tests/'; then echo "::error::the sdist carries tests/"; exit 1; fi
+          python -m zipfile -l dist/*.whl | grep -q 'onus/py.typed' \
+            || { echo "::error::the wheel has no onus/py.typed"; exit 1; }
       - name: Install the built wheel without its extras and import it
         run: |
           python -m venv /tmp/smoke

@@ -28,7 +28,10 @@ Scaffold only (v0.0.0): packaging, the gate, and the repository's own invariants
 make check
 ```
 
-Needs pyenv with the patch in `.python-version` installed, and uv. See `AGENTS.md` for the rules.
+Needs uv, and pyenv with two exact patches installed: the one in `.python-version` (3.13.12) and 3.11.14
+for the floor check (`COMPAT_PIN` in the Makefile). Without either, the gate stops and prints the `pyenv
+install` command it needs. uv needs the network to fetch the pinned tools once; after that,
+`UV_OFFLINE=1 make check` runs offline. See `AGENTS.md` for the rules and for how releases work.
 
 ## License
 

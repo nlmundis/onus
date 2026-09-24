@@ -1,58 +1,111 @@
-# A mutant goes in here only together with the test that kills it. Each one below reverts one decision this
-# repository made about its own packaging and gate; the library's own mutants arrive with the library.
+# A mutant goes in here only together with the test that kills it, and that test must fail for the reason the
+# mutant names. Each one below reverts one decision this repository made about its packaging, its gate, its
+# workflows, or its ruleset records; the library's own mutants arrive with the library.
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
 suites = ["tests.test_repo"]
 timeout = 300
 
-# --- the gate ---
-
-[[mutant]]
-name = "hypothesis_cache_written_into_the_checkout"
-why = "Hypothesis writes .hypothesis/ into the working directory even with database=None; unexported, a worktree that ran the gate can no longer be cleaned."
-suites = ["tests.test_repo.GateRecipeTest"]
-file = "Makefile"
-find = "export HYPOTHESIS_STORAGE_DIRECTORY ?="
-replace = "HYPOTHESIS_STORAGE_DIRECTORY ?="
+# --- the environment every stage runs with ---
 
 [[mutant]]
 name = "uv_allowed_to_fetch_its_own_python"
-why = "uv's discovery downloads its own CPython rather than use pyenv's pinned patch."
-suites = ["tests.test_repo.GateRecipeTest"]
+why = "An override such as PY=3.13 asks uv for a version, not a path; with downloads allowed uv fetches a CPython instead of refusing."
+suites = ["tests.test_repo.GateEnvironmentTest"]
 file = "Makefile"
 find = "export UV_PYTHON_DOWNLOADS ?= never"
 replace = "export UV_PYTHON_DOWNLOADS ?= automatic"
 
 [[mutant]]
-name = "bytecode_written_beside_mutated_sources"
-why = "A stale .pyc beside a mutated source has let a mutant survive before."
-suites = ["tests.test_repo.GateRecipeTest"]
+name = "hypothesis_cache_left_in_the_checkout"
+why = "Unexported, the setting never reaches a stage, and the first Hypothesis test would write its cache into the tree."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = "export HYPOTHESIS_STORAGE_DIRECTORY ?="
+replace = "HYPOTHESIS_STORAGE_DIRECTORY ?="
+
+[[mutant]]
+name = "bytecode_written_into_the_checkout"
+why = "Without it every test and coverage run writes __pycache__ into the checkout."
+suites = ["tests.test_repo.GateEnvironmentTest"]
 file = "Makefile"
 find = "export PYTHONDONTWRITEBYTECODE := 1"
 replace = "export PYTHONDONTWRITEBYTECODE :="
 
+# --- the interpreters ---
+
+[[mutant]]
+name = "missing_pyenv_patch_falls_back_to_system_python"
+why = "With the refusal gone, a missing patch hands uv /bin/python3: the system interpreter on Linux, a remedy-less error on macOS."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = ',$(error pyenv has no Python $(COMPAT_PIN) for the floor check: run `pyenv install $(COMPAT_PIN)`, or pass COMPAT_PY=/path/to/python3))'
+replace = ')'
+
 [[mutant]]
 name = "floor_check_left_to_uv_discovery"
-why = "A bare 3.11 lets uv pick whatever 3.11 it finds, or download one, instead of pyenv's exact patch."
-suites = ["tests.test_repo.GateRecipeTest"]
+why = "A bare 3.11 lets uv pick whatever 3.11 it finds instead of pyenv's exact patch."
+suites = ["tests.test_repo.GateInterpreterTest"]
 file = "Makefile"
-find = "COMPAT_PY ?= $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null)/bin/python3"
-replace = "COMPAT_PY ?= 3.11"
+find = "COMPAT_PY ?= $(or $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null),"
+replace = "COMPAT_PY ?= 3.11# "
+
+[[mutant]]
+name = "types_stage_left_to_uv_discovery"
+why = "A stage without --python runs on whatever interpreter uv discovers, not the pinned one."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = 'uvx --python "$(PY)" --with "$(HYPOTHESIS)" $(MYPY)'
+replace = 'uvx --with "$(HYPOTHESIS)" $(MYPY)'
+
+# --- the stages ---
 
 [[mutant]]
 name = "a_gate_stage_dropped"
 why = "make check is the whole gate; a stage left out passes silently."
-suites = ["tests.test_repo.GateRecipeTest"]
+suites = ["tests.test_repo.GateStagesTest"]
 file = "Makefile"
 find = "check: format lint types coverage test compat mutants"
 replace = "check: format lint types coverage test mutants"
 
-# --- the core stays stdlib-only ---
+[[mutant]]
+name = "a_stage_recipe_turned_into_a_no_op"
+why = "A recipe that no longer runs its command still exits 0, so the stage vanishes with the gate green."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "\tuv run --no-project --python \"$(COMPAT_PY)\""
+replace = "\t: uv run --no-project --python \"$(COMPAT_PY)\""
+
+[[mutant]]
+name = "floor_check_writes_bytecode"
+why = "compileall writes .pyc into the checkout; compile() checks the same grammar and writes nothing."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = '''python -B -c "import pathlib; [compile(p.read_bytes(), str(p), 'exec', dont_inherit=True) for p in sorted(pathlib.Path('onus').rglob('*.py'))]"'''
+replace = "python -m compileall -q onus"
+
+[[mutant]]
+name = "mutation_harness_pinned_by_a_movable_tag"
+why = "A tag can be moved, silently changing the tool that decides caught and survived."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "@8a89dfc4c93357e294cbc51d1b723b27078c5481"
+replace = "@v0.0.2"
+
+[[mutant]]
+name = "coverage_floor_lowered"
+why = "The 95% floor is part of the gate the Makefile header and help advertise."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "pyproject.toml"
+find = "fail_under = 95"
+replace = "fail_under = 0"
+
+# --- the core stays stdlib-only, and the sdist carries only the package ---
 
 [[mutant]]
 name = "core_imports_hypothesis"
-why = "Only onus.invariants may import hypothesis; the core must import where it is not installed."
+why = "Only onus.invariants may import hypothesis; the core must import with the standard library alone."
 suites = ["tests.test_repo.StdlibOnlyTest"]
 file = "onus/__init__.py"
 find = '__version__ = "'
@@ -66,7 +119,15 @@ file = "pyproject.toml"
 find = "dependencies = []"
 replace = 'dependencies = ["hypothesis>=6.168.1"]'
 
-# --- supported Pythons and repository hygiene ---
+[[mutant]]
+name = "sdist_ships_the_repository_tests"
+why = "The repository tests read files an sdist does not carry, so a downstream test run crashes."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "MANIFEST.in"
+find = "prune tests"
+replace = "graft tests"
+
+# --- CI ---
 
 [[mutant]]
 name = "ci_matrix_loses_the_floor"
@@ -77,17 +138,53 @@ find = 'python: ["3.11", '
 replace = 'python: ['
 
 [[mutant]]
-name = "hypothesis_cache_not_ignored"
-why = "The backstop if the storage directory is ever unset."
-suites = ["tests.test_repo.GitignoreTest"]
-file = ".gitignore"
-find = ".hypothesis/\n"
+name = "ci_job_ignores_the_matrix_python"
+why = "Jobs labelled 3.11 to 3.14 would all run one interpreter, so the floor is never exercised."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "python-version: ${{ matrix.python }}"
+replace = 'python-version: "3.13"'
+
+[[mutant]]
+name = "required_check_skipped_when_a_job_fails"
+why = "Without always(), a failed matrix job skips the required check, a skip counts as passing, and a red PR merges."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "    if: always()\n"
 replace = ""
 
 [[mutant]]
 name = "required_check_renamed"
 why = "The ruleset requires 'all checks passed'; a renamed job leaves every PR unmergeable, or unprotected."
-suites = ["tests.test_repo.RulesetsTest"]
+suites = ["tests.test_repo.CheckWorkflowTest", "tests.test_repo.RulesetRecordTest"]
 file = ".github/workflows/check.yml"
 find = "    name: all checks passed"
 replace = "    name: all checks"
+
+# --- release ---
+
+[[mutant]]
+name = "release_skips_the_gate"
+why = "Without needs: checks a tag publishes a release from a commit whose gate never ran."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = "    needs: checks\n"
+replace = ""
+
+[[mutant]]
+name = "release_ignores_a_version_mismatch"
+why = "A tag that does not match __version__ would publish a wheel under the wrong number."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = 'test "v$version" = "$GITHUB_REF_NAME"'
+replace = "true"
+
+# --- ruleset records ---
+
+[[mutant]]
+name = "main_ruleset_record_gains_a_bypass"
+why = "A bypass actor lets someone push to main past the required check."
+suites = ["tests.test_repo.RulesetRecordTest"]
+file = ".github/rulesets/main.json"
+find = '"bypass_actors": [],'
+replace = '"bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always"}],'

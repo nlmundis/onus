@@ -19,9 +19,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - uses: astral-sh/setup-uv@v6
-      # CI has no pyenv: hand uv this job's interpreter for everything, the floor check included, and let it
-      # fetch the tools the Makefile pins.
-      - run: make check PY="$(command -v python)" COMPAT_PY="$(command -v python)" UV_PYTHON_DOWNLOADS=automatic
+      # CI has no pyenv: hand uv this job's interpreter by path for every stage, the floor check included.
+      # uv still fetches the pinned tools; it never needs to download a Python, since it is given one.
+      - run: make check PY="$(command -v python)" COMPAT_PY="$(command -v python)"
 
   # The one check branch protection requires. Requiring each matrix job by name
   # would silently stop protecting main the day the matrix changes.

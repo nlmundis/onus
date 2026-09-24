@@ -29,7 +29,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-# Only onus.invariants imports hypothesis; every other subpackage works without it.
+# Reserved for onus.invariants, the one subpackage that will import hypothesis; the rest never will.
 invariants = ["hypothesis>=6.168.1,<7"]
 
 [tool.setuptools.packages.find]
@@ -57,8 +57,7 @@ select = ["E", "F", "W", "I", "D", "ANN", "B", "UP"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# A test's name is its documentation and its signature is always (self) -> None;
-# same exception as work-graph and jira-rule-migrator.
+# A test's name is its documentation and its signature is always (self) -> None.
 "tests/*" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
 
 [tool.mypy]
