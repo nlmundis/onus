@@ -31,8 +31,10 @@ before any stage runs, and `make gate-env` prints the settings make exports to e
   Makefile, `pyproject.toml`, `MANIFEST.in`, and every workflow. `ApprovedFilesTest` fails on any byte of
   difference, and on a workflow with no copy. Change one only together with its copy, in the same commit, so
   the diff shows the reviewer every changed line of the gate or the release.
-- **The Makefile is the only makefile.** make reads a `GNUmakefile` or `makefile` before it, so none may
-  exist beside it; `GateEnvironmentTest` checks which files make read.
+- **The Makefile is the only makefile.** make reads only the first of `GNUmakefile`, `makefile`, and
+  `Makefile` that it finds, so either of the others beside it would be read instead, and could `include` it
+  with its failures switched off. `make siblings` refuses both, and CI runs `make -f Makefile check`, which
+  reads the Makefile whatever else is there.
 - **pyproject.toml holds every tool's settings.** `make siblings`, which the gate runs before its first stage,
   refuses a `ruff.toml`, `.ruff.toml`, `mypy.ini`, `.mypy.ini`, `.coveragerc`, `setup.cfg`, or `tox.ini` at the
   root, and every tool is handed pyproject.toml explicitly, so a config file in a subfolder is not read either.

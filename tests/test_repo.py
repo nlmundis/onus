@@ -665,7 +665,8 @@ class GateEnvironmentTest(unittest.TestCase):
     """The settings make exports to every recipe, as the gate-env recipe's shell sees them, and the files make read.
 
     A target-specific override in the Makefile would not show here; ApprovedFilesTest catches one. One in a
-    GNUmakefile or makefile, which make reads before the Makefile, shows up as an extra file make read.
+    GNUmakefile or makefile, which make reads instead of the Makefile, shows up as the file make read, beside the
+    Makefile when it includes it.
     """
 
     def setUp(self):
@@ -828,7 +829,7 @@ class ApprovedFilesTest(unittest.TestCase):
         self.assertLessEqual(workflows, set(GUARDED))
 
     def test_no_other_makefile_sits_beside_the_makefile(self):
-        # make reads GNUmakefile or makefile before Makefile, and either could override a pinned recipe.
+        # make reads a GNUmakefile or makefile instead of the Makefile, and either could override a pinned recipe.
         # On a case-insensitive disk `makefile` is the Makefile itself, so the names are listed, not probed.
         names = {path.name for path in ROOT.iterdir()}
         self.assertEqual(names & {"GNUmakefile", "makefile"}, set())
@@ -877,6 +878,46 @@ class AgentsFileTest(unittest.TestCase):
         phony = re.search(r"^\.PHONY: (.*)$", MAKEFILE, re.MULTILINE)
         assert phony is not None
         self.assertLessEqual(named, set(phony.group(1).split()))
+
+
+def prose(name: str) -> str:
+    """Return a file's words with comment markers and line wrapping removed, so a claim reads as one sentence."""
+    text = (ROOT / name).read_text(encoding="utf-8")
+    return " ".join(re.sub(r"(?m)^\s*# ?", "", text).split())
+
+
+class DocumentedClaimsTest(unittest.TestCase):
+    """Claims the docs make about how make, the gate, and the release behave, each pinned as a whole sentence.
+
+    Each once said something false or left out a case. Where the behaviour can be asked, the test asks it too.
+    """
+
+    def test_make_reads_the_first_makefile_it_finds_and_no_other(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "Makefile").write_text(MAKEFILE, encoding="utf-8")
+            (Path(tmp) / "GNUmakefile").write_text(
+                "gate-env:\n\t@echo MAKEFILE_LIST=$(MAKEFILE_LIST)\n", encoding="utf-8"
+            )
+            result = run_make("-s", "gate-env", cwd=Path(tmp))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["MAKEFILE_LIST=GNUmakefile"])
+        claims = {
+            "Makefile": (
+                "make reads only the first of GNUmakefile, makefile, and Makefile that it finds, so a GNUmakefile or "
+                "makefile beside this file would be read instead of it, and could include it with its failures "
+                "switched off: `make siblings` refuses both, CI runs `make -f Makefile`, and `make gate-env` shows "
+                "which files make read."
+            ),
+            "AGENTS.md": (
+                "make reads only the first of `GNUmakefile`, `makefile`, and `Makefile` that it finds, so either "
+                "of the others beside it would be read instead, and could `include` it with its failures switched "
+                "off. `make siblings` refuses both, and CI runs `make -f Makefile check`, which reads the Makefile "
+                "whatever else is there."
+            ),
+        }
+        for name, claim in claims.items():
+            with self.subTest(file=name):
+                self.assertIn(claim, prose(name))
 
 
 class MutationSpecTest(unittest.TestCase):

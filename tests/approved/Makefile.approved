@@ -6,8 +6,10 @@
 # backend a release and any install from the sdist use. uv needs the network to resolve the pinned tools and
 # that backend the first time; after that, `UV_OFFLINE=1 make check` runs offline. Inside the checkout the
 # gate writes only gitignored caches (.coverage, .mypy_cache, .ruff_cache), so `git status` stays clean and a
-# worktree stays cleanable. make must read this file alone: a GNUmakefile or makefile beside it would be read
-# first, and `make gate-env` shows which files make read.
+# worktree stays cleanable. make reads only the first of GNUmakefile, makefile, and Makefile that it finds, so a
+# GNUmakefile or makefile beside this file would be read instead of it, and could include it with its failures
+# switched off: `make siblings` refuses both, CI runs `make -f Makefile`, and `make gate-env` shows which files
+# make read.
 #
 # The interpreters come from pyenv at exact patches (.python-version, and COMPAT_PIN for the floor), and uv is
 # always handed their paths, never left to discover one: PATH may put another python, such as Homebrew's,

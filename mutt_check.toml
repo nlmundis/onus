@@ -511,3 +511,21 @@ find = """                return DEFECTIVE
 replace = """                return NOT_BUILT
 """
 
+# --- what the docs claim about make, the gate, and the release ---
+
+[[mutant]]
+name = "makefile_comment_says_read_before"
+why = "make reads the first makefile it finds and no other; 'read first' suggests the Makefile is still read after it, which hides that a GNUmakefile replaces it."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "Makefile"
+find = "beside this file would be read instead of it,"
+replace = "beside this file would be read before it,"
+
+[[mutant]]
+name = "agents_says_read_before"
+why = "An agent told a GNUmakefile is read before the Makefile would expect the Makefile's recipes to still run."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = "so either of the others beside it would be read instead,"
+replace = "so either of the others beside it would be read before it,"
+
