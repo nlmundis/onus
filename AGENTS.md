@@ -12,6 +12,9 @@ synthetic: no client names, no real addresses, no paths from anyone's machine, n
   are the gate's stages, runnable alone. `make dist` builds the sdist and wheel from the files git tracks
   (with their working-tree contents), in a scratch folder, and checks them with `tools/check_dist.py`, the
   same script the release runs. It refuses a module under `onus/` that git does not track yet: `git add` it.
+  The build backend is not pinned: pyproject.toml asks for `setuptools>=77`, and `make dist` and the release
+  each build with the newest version uv resolves when they run, so a setuptools release between the two can
+  change or break the artifacts.
 
 The interpreters are pyenv's exact patches, the one in `.python-version` and `COMPAT_PIN` for the floor
 check, each handed to uv by path; never let uv discover or download one. `make interpreters` resolves both

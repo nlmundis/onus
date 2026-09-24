@@ -580,3 +580,14 @@ find = """# Builds in a scratch copy of the tracked files, so that only they rea
 # setuptools would read back the file list of an onus.egg-info left by an earlier build."""
 replace = "# Builds in a scratch copy, since a build writes onus.egg-info into its source tree."
 
+[[mutant]]
+name = "agents_silent_on_the_unpinned_backend"
+why = "The gate and the release each resolve setuptools when they run; an agent not told so reads a green dist stage as proof the release will build the same artifacts."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """  The build backend is not pinned: pyproject.toml asks for `setuptools>=77`, and `make dist` and the release
+  each build with the newest version uv resolves when they run, so a setuptools release between the two can
+  change or break the artifacts.
+"""
+replace = ""
+

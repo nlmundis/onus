@@ -973,6 +973,18 @@ class DocumentedClaimsTest(unittest.TestCase):
                 self.assertNotIn("since a build writes onus.egg-info into its source tree", prose(name))
         self.assertIn("*.egg-info/", (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
 
+    def test_an_unpinned_build_backend_is_named_as_such(self):
+        # The gate and the release each resolve the backend when they run; AGENTS.md must say which requirement
+        # is left open, read from pyproject.toml, so a pin or a new floor changes the sentence with it.
+        unpinned = [req for req in PYPROJECT["build-system"]["requires"] if "==" not in req]
+        self.assertEqual(len(unpinned), 1, unpinned)
+        claim = (
+            f"The build backend is not pinned: pyproject.toml asks for `{unpinned[0]}`, and `make dist` and the "
+            "release each build with the newest version uv resolves when they run, so a setuptools release "
+            "between the two can change or break the artifacts."
+        )
+        self.assertIn(claim, prose("AGENTS.md"))
+
 
 class MutationSpecTest(unittest.TestCase):
     def test_every_mutant_names_real_suites_and_an_anchor_found_exactly_once(self):
