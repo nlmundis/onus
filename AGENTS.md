@@ -18,7 +18,8 @@ synthetic: no client names, no real addresses, no paths from anyone's machine, n
 
 The interpreters are pyenv's exact patches, the one in `.python-version` and `COMPAT_PIN` for the floor
 check, each handed to uv by path; never let uv discover or download one. `make interpreters` resolves both
-before any stage runs, and `make gate-env` prints the settings make exports to every stage. Tools run through uvx or `uv run --no-project` at the versions pinned in the Makefile.
+before any stage runs, and `make gate-env` prints the settings make exports to every stage. Tools run
+through uvx or `uv run --no-project` at the versions pinned in the Makefile.
 
 ## Rules
 
@@ -65,8 +66,9 @@ release job makes says whether the tag is spent. A tag whose gate fails skips th
 failure is the commit's own (a test, lint, types, or the dist check failing on its files), the tag is spent
 the same way; when it is not (the network, a lost runner, a tool that could not be fetched), re-running the
 failed jobs clears it, so re-run them once before calling the tag spent. A refusal that says the tag is not
-spent (main could not be fetched, the build could not run) clears by re-running the job. Only the repository admin can take a tag away, by disabling the ruleset, deleting the
-tag, and enabling the ruleset again; after that the name is free to push again.
+spent (main could not be fetched, the build could not run) clears by re-running the job. Only the repository
+admin can take a tag away, by disabling the ruleset, deleting the tag, and enabling the ruleset again; after
+that the name is free to push again.
 
 ## Rulesets
 
