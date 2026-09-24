@@ -296,6 +296,14 @@ find = 'if any(Path(name).parts[1:2] == ("tests",) for name in sdist.getnames())
 replace = "if False:"
 
 [[mutant]]
+name = "sdist_remedy_loses_the_later_add_back"
+why = "A remedy that says only to prune tests misses a later graft or include that adds them back, the other way an sdist ends up carrying them."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "MANIFEST.in must prune tests, and no line after it may add them back"
+replace = "MANIFEST.in must prune tests"
+
+[[mutant]]
 name = "wheel_import_unchecked"
 why = "A wheel whose core imports a third-party package fails for every caller without the extra."
 suites = ["tests.test_repo.DistCheckTest"]

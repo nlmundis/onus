@@ -242,6 +242,13 @@ class DistCheckTest(unittest.TestCase):
                 self.assertEqual(len(found), 1, found)
                 self.assertIn(message, found[0])
 
+    def test_the_sdist_defect_names_its_remedy_whole(self):
+        self.artifacts(sdist_files={"onus-1.2.3/tests/test_repo.py": ""})
+        self.assertEqual(
+            check_dist.problems(self.dist, "1.2.3"),
+            ["the sdist carries tests/: MANIFEST.in must prune tests, and no line after it may add them back"],
+        )
+
     def test_exactly_one_wheel_and_one_sdist(self):
         self.assertIn("found []", check_dist.problems(self.dist, "1.2.3")[0])
         self.artifacts()
