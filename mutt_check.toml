@@ -66,24 +66,24 @@ name = "a_gate_stage_dropped"
 why = "make check is the whole gate; a stage left out passes silently."
 suites = ["tests.test_repo.GateStagesTest"]
 file = "Makefile"
-find = "check: interpreters format lint types coverage test compat dist mutants"
-replace = "check: interpreters format lint types coverage test dist mutants"
+find = "check: interpreters siblings format lint types coverage test compat dist mutants"
+replace = "check: interpreters siblings format lint types coverage test dist mutants"
 
 [[mutant]]
 name = "packaging_left_unchecked_until_the_release"
 why = "Without the dist stage a wheel missing py.typed, or an sdist carrying tests/, first fails in the release run, after a permanent tag."
 suites = ["tests.test_repo.GateStagesTest"]
 file = "Makefile"
-find = "check: interpreters format lint types coverage test compat dist mutants"
-replace = "check: interpreters format lint types coverage test compat mutants"
+find = "check: interpreters siblings format lint types coverage test compat dist mutants"
+replace = "check: interpreters siblings format lint types coverage test compat mutants"
 
 [[mutant]]
 name = "a_missing_interpreter_found_only_mid_gate"
 why = "Without the interpreters prerequisite a missing floor patch surfaces only at the compat stage, after five stages have run."
 suites = ["tests.test_repo.GateInterpreterTest"]
 file = "Makefile"
-find = "check: interpreters format lint types coverage test compat dist mutants"
-replace = "check: format lint types coverage test compat dist mutants"
+find = "check: interpreters siblings format lint types coverage test compat dist mutants"
+replace = "check: siblings format lint types coverage test compat dist mutants"
 
 [[mutant]]
 name = "a_stage_failure_ignored"
@@ -124,6 +124,62 @@ suites = ["tests.test_repo.GateEnvironmentTest"]
 file = "Makefile"
 find = '@echo "MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))"'
 replace = '@echo "MAKEFILE_LIST=Makefile"'
+
+[[mutant]]
+name = "sibling_configs_left_unrefused"
+why = "Without the siblings prerequisite a setup.cfg or .coveragerc beside the Makefile is read before pyproject.toml, and nothing in the gate says so."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "check: interpreters siblings format"
+replace = "check: interpreters format"
+
+[[mutant]]
+name = "a_sibling_config_dropped_from_the_refusal"
+why = "setup.cfg carries sections that mypy and coverage read before pyproject.toml; unlisted, it could switch off strict types or the coverage floor."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = ".coveragerc setup.cfg tox.ini"
+replace = ".coveragerc tox.ini"
+
+[[mutant]]
+name = "the_sibling_refusal_only_prints"
+why = "A refusal that exits 0 prints its message and lets every stage run with the sibling's settings."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "delete it.\" >&2; exit 1; }"
+replace = "delete it.\" >&2; true; }"
+
+[[mutant]]
+name = "the_sibling_refusal_matches_by_substring"
+why = "Without -x, ruff.toml.orig or old-setup.cfg would stop the gate for a file no tool reads."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "grep -Fx"
+replace = "grep -F"
+
+[[mutant]]
+name = "lint_reads_a_nested_ruff_toml"
+why = "Left to find its own config, ruff applies a ruff.toml in any folder to the files below it, so tools/ruff.toml with select = [] switches lint off there."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "$(RUFF) check --config pyproject.toml ."
+replace = "$(RUFF) check ."
+
+[[mutant]]
+name = "coverage_report_finds_its_own_rcfile"
+why = "Left to find its own config, coverage reads .coveragerc, setup.cfg, or tox.ini before pyproject.toml, any of which can lower the floor."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "coverage report --rcfile=pyproject.toml"
+replace = "coverage report"
+
+[[mutant]]
+name = "types_stage_finds_its_own_config"
+why = "Left to find its own config, mypy reads mypy.ini, .mypy.ini, or setup.cfg before pyproject.toml, any of which can switch strict off."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "$(MYPY) --config-file pyproject.toml"
+replace = "$(MYPY)"
 
 [[mutant]]
 name = "lint_rules_emptied"

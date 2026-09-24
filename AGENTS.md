@@ -33,6 +33,9 @@ before any stage runs, and `make gate-env` prints the settings make exports to e
   the diff shows the reviewer every changed line of the gate or the release.
 - **The Makefile is the only makefile.** make reads a `GNUmakefile` or `makefile` before it, so none may
   exist beside it; `GateEnvironmentTest` checks which files make read.
+- **pyproject.toml holds every tool's settings.** `make siblings`, which the gate runs before its first stage,
+  refuses a `ruff.toml`, `.ruff.toml`, `mypy.ini`, `.mypy.ini`, `.coveragerc`, `setup.cfg`, or `tox.ini` at the
+  root, and every tool is handed pyproject.toml explicitly, so a config file in a subfolder is not read either.
 - **Branch, then PR.** Never commit to `main`; the ruleset refuses it anyway. Stage by path.
 
 ## Releasing

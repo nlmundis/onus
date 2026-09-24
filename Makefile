@@ -47,11 +47,12 @@ MUTT_CHECK := mutt_check @ git+https://github.com/nlmundis/mutt_check@8a89dfc4c9
 # Recursive, so PY is resolved only by the targets that use it and `make help` works without pyenv.
 RUN = uv run --no-project --python "$(PY)" --with "$(HYPOTHESIS)"
 
-.PHONY: help check interpreters format lint types coverage test compat dist mutants gate-env
+.PHONY: help check interpreters siblings format lint types coverage test compat dist mutants gate-env
 
 help:
 	@echo "make check        the whole gate, as below, in this order"
 	@echo "make interpreters stop now if pyenv lacks either pinned patch"
+	@echo "make siblings     refuse a file make or a tool would read instead of the Makefile or pyproject.toml"
 	@echo "make format       black, check only"
 	@echo "make lint         ruff"
 	@echo "make types        strict mypy"
@@ -62,24 +63,35 @@ help:
 	@echo "make mutants      mutt_check: every curated mutant caught, the no-op rewrite not"
 	@echo "make gate-env     print the settings make exports to every stage, and the makefiles it read"
 
-check: interpreters format lint types coverage test compat dist mutants
+check: interpreters siblings format lint types coverage test compat dist mutants
 
 # Expands both interpreters before any stage runs, so a missing patch stops the gate at once.
 interpreters:
 	@: "$(PY)" "$(COMPAT_PY)"
 
+# make reads a GNUmakefile or makefile instead of this file, and ruff, mypy, and coverage each read their own
+# file before pyproject.toml's tables; any of them could switch a stage off with this file unchanged. Each is
+# refused by name, as `ls` spells it: on a case-insensitive disk a probe for `makefile` finds this Makefile.
+# Every tool is also handed pyproject.toml, since ruff reads a ruff.toml in any folder for the files below it.
+SIBLINGS := GNUmakefile makefile ruff.toml .ruff.toml mypy.ini .mypy.ini .coveragerc setup.cfg tox.ini
+
+siblings:
+	@found="$$(ls -A | grep -Fx $(foreach name,$(SIBLINGS),-e $(name)))"; test -z "$$found" || { \
+	  echo "the gate refuses" $$found "beside the Makefile: make or a tool would read it instead of the" \
+	    "Makefile or pyproject.toml. Move its settings into those, and delete it." >&2; exit 1; }
+
 format:
-	uvx --python "$(PY)" $(BLACK) --check --diff .
+	uvx --python "$(PY)" $(BLACK) --config pyproject.toml --check --diff .
 
 lint:
-	uvx --python "$(PY)" $(RUFF) check .
+	uvx --python "$(PY)" $(RUFF) check --config pyproject.toml .
 
 types:
-	uvx --python "$(PY)" --with "$(HYPOTHESIS)" $(MYPY)
+	uvx --python "$(PY)" --with "$(HYPOTHESIS)" $(MYPY) --config-file pyproject.toml
 
 coverage:
-	$(RUN) --with "$(COVERAGE)" coverage run -m unittest discover -s tests -t .
-	$(RUN) --with "$(COVERAGE)" coverage report
+	$(RUN) --with "$(COVERAGE)" coverage run --rcfile=pyproject.toml -m unittest discover -s tests -t .
+	$(RUN) --with "$(COVERAGE)" coverage report --rcfile=pyproject.toml
 
 test:
 	$(RUN) python -B -m unittest discover -s tests -t .

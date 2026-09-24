@@ -56,6 +56,9 @@ GUARDED = {
 # `make check PY=...` passes its command-line variables down through MAKEFLAGS.
 LEAKY = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MAKEFILES", "PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
 LEAKY |= {"UV_PYTHON_DOWNLOADS", "HYPOTHESIS_STORAGE_DIRECTORY", "PYTHONDONTWRITEBYTECODE"}
+# Files read instead of the Makefile (by make) or of pyproject.toml's tool tables (by ruff, mypy, coverage).
+SIBLINGS = ["GNUmakefile", "makefile", "ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini", ".coveragerc"]
+SIBLINGS += ["setup.cfg", "tox.ini"]
 
 
 def minor(version: str) -> tuple[int, int]:
@@ -495,8 +498,8 @@ class GateStagesTest(unittest.TestCase):
             "black==",
             "ruff==",
             "mypy==",
-            "coverage run -m unittest discover -s tests -t .",
-            "coverage report",
+            "coverage run --rcfile=pyproject.toml -m unittest discover -s tests -t .",
+            "coverage report --rcfile=pyproject.toml",
             "python -B -m unittest discover -s tests -t .",
             "compile(p.read_bytes()",
             "tools/check_dist.py --build",
@@ -512,6 +515,28 @@ class GateStagesTest(unittest.TestCase):
 
     def test_both_interpreters_are_resolved_before_the_first_stage(self):
         self.assertEqual(self.lines[0], ': "/opt/pinned/bin/python3" "/opt/floor/bin/python3"')
+
+    def test_sibling_configs_are_refused_before_the_first_stage(self):
+        refusal = run_make("-n", "siblings")
+        self.assertEqual(refusal.returncode, 0, refusal.stderr)
+        recipe = [line for line in refusal.stdout.splitlines() if line.strip()]
+        self.assertTrue(recipe)
+        self.assertEqual(self.lines[1 : 1 + len(recipe)], recipe)
+
+    def test_each_tool_is_handed_pyproject_toml_rather_than_finding_a_config(self):
+        # ruff also reads a ruff.toml in any folder below the root for the files in it, so a refusal by name at
+        # the root alone would not close that; an explicit config does.
+        flags = {
+            "black==": "--config pyproject.toml",
+            "ruff==": "--config pyproject.toml",
+            "mypy==": "--config-file pyproject.toml",
+            "coverage run": "--rcfile=pyproject.toml",
+            "coverage report": "--rcfile=pyproject.toml",
+        }
+        for marker, flag in flags.items():
+            with self.subTest(tool=marker):
+                line = next(line for line in self.lines if marker in line and line.startswith(("uv ", "uvx ")))
+                self.assertEqual(line.count(flag), 1, line)
 
     def test_each_stage_is_handed_its_interpreter_by_path(self):
         for line in self.lines:
@@ -538,6 +563,34 @@ class GateStagesTest(unittest.TestCase):
         for line in harness:
             with self.subTest(line=line[:60]):
                 self.assertRegex(line, r'--with "mutt_check @ git\+https://\S+@[0-9a-f]{40}"')
+
+
+class GateSiblingsTest(unittest.TestCase):
+    """The files make or a tool would read instead of the Makefile or pyproject.toml, refused by name."""
+
+    def refuse(self, *names: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            # The Makefile under another name, so that planting `makefile` cannot overwrite it on a
+            # case-insensitive disk.
+            (Path(tmp) / "gate.mk").write_text(MAKEFILE, encoding="utf-8")
+            for name in names:
+                (Path(tmp) / name).write_text("", encoding="utf-8")
+            return run_make("-s", "-f", "gate.mk", "siblings", cwd=Path(tmp))
+
+    def test_each_is_refused_by_name(self):
+        for name in SIBLINGS:
+            with self.subTest(name=name):
+                result = self.refuse(name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"the gate refuses {name} beside the Makefile", result.stderr)
+
+    def test_a_name_that_only_resembles_one_is_not_refused(self):
+        result = self.refuse("pyproject.toml", "ruff.toml.orig", "old-setup.cfg", "GNUmakefile.bak")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_checkout_has_none(self):
+        result = run_make("-s", "siblings")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class ToolConfigTest(unittest.TestCase):
