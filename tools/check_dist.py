@@ -20,8 +20,8 @@ import sys
 import tarfile
 import tempfile
 import zipfile
-from collections.abc import Callable, Sequence
-from pathlib import Path
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -84,12 +84,17 @@ def problems(dist: Path, version: str) -> list[str]:
     return found_problems
 
 
-def untracked_modules(root: Path, tracked: set[str]) -> list[str]:
-    """Return the modules under ``onus/`` that git does not track, which a build from tracked files leaves out."""
+def stray_modules(untracked: Iterable[str]) -> list[str]:
+    """Return the modules among ``untracked``, which a build from the tracked files would leave out.
+
+    ``untracked`` is what git lists as neither tracked nor ignored. Of those, a module is a ``.py`` path whose
+    every part is a Python identifier: an editor's lock file (``.#name.py``), macOS's AppleDouble ``._name.py``,
+    or a file in a folder no import can name is not one, and an ignored file never reaches this list.
+    """
     return sorted(
-        path.relative_to(root).as_posix()
-        for path in (root / "onus").rglob("*.py")
-        if path.relative_to(root).as_posix() not in tracked
+        name
+        for name in untracked
+        if name.endswith(".py") and all(part.isidentifier() for part in PurePosixPath(name).with_suffix("").parts)
     )
 
 
@@ -105,7 +110,11 @@ def build(root: Path, out: Path, python: str, run: Runner | None = None) -> None
     if listing.returncode != 0:
         raise BuildError(f"git ls-files failed in {root}: {listing.stderr.strip()}")
     tracked = set(filter(None, listing.stdout.split("\0")))
-    stray = untracked_modules(root, tracked)
+    others = ["git", "ls-files", "-z", "--others", "--exclude-standard", "--", "onus"]
+    untracked = runner(others, cwd=root, capture_output=True, text=True, check=False)
+    if untracked.returncode != 0:
+        raise BuildError(f"git ls-files --others failed in {root}: {untracked.stderr.strip()}")
+    stray = stray_modules(filter(None, untracked.stdout.split("\0")))
     if stray:
         raise BuildError(f"not tracked by git, so the build would leave them out: {stray}; `git add` them")
     missing = sorted(name for name in tracked if not (root / name).is_file())

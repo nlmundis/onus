@@ -352,3 +352,19 @@ suites = ["tests.test_repo.DistCheckTest"]
 file = "tools/check_dist.py"
 find = "    if stray:"
 replace = "    if False:"
+
+[[mutant]]
+name = "an_ignored_file_called_a_stray_module"
+why = "Without --exclude-standard git lists ignored files too, so a generated or ignored .py under onus/ would stop every build."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = '"--others", "--exclude-standard",'
+replace = '"--others",'
+
+[[mutant]]
+name = "an_unimportable_file_called_a_stray_module"
+why = "An editor's lock file, an AppleDouble ._name.py, or a file in a folder no import can name is not a module the build needs; calling it one stops the build."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'if name.endswith(".py") and all(part.isidentifier() for part in PurePosixPath(name).with_suffix("").parts)'
+replace = 'if name.endswith(".py")'

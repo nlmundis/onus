@@ -99,6 +99,24 @@ def fake_pyenv(directory: Path, installed: dict[str, str]) -> Path:
     return directory
 
 
+def fake_runner(untracked: str = "", failing: list[str] | None = None, stderr: str = "") -> check_dist.Runner:
+    """Return a stand-in for ``subprocess.run`` in ``check_dist.build``.
+
+    git lists ``onus/__init__.py`` and ``README.md`` as tracked, and ``untracked`` (NUL-separated) as neither
+    tracked nor ignored. A command that starts with ``failing`` exits 1 with ``stderr``; any other succeeds.
+    """
+
+    def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if failing is not None and command[: len(failing)] == failing:
+            return subprocess.CompletedProcess(command, 1, "", stderr)
+        if command[:2] == ["git", "ls-files"]:
+            listing = untracked if "--others" in command else "onus/__init__.py\0README.md\0"
+            return subprocess.CompletedProcess(command, 0, listing, "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    return runner
+
+
 def job_block(workflow: str, job: str) -> str:
     """Return one top-level job of a workflow file, from its key to the next job's key; comments stay inside."""
     match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [\w-]+:\s*$|\Z)", workflow)
@@ -290,43 +308,55 @@ class DistCheckTest(unittest.TestCase):
         def runner(command, **kwargs):
             calls.append(command)
             if command[:2] == ["git", "ls-files"]:
-                return subprocess.CompletedProcess(command, 0, "onus/__init__.py\0README.md\0", "")
+                listing = "" if "--others" in command else "onus/__init__.py\0README.md\0"
+                return subprocess.CompletedProcess(command, 0, listing, "")
             scratch = Path(command[-1])
             copied = sorted(p.relative_to(scratch).as_posix() for p in scratch.rglob("*") if p.is_file())
             self.assertEqual(copied, ["README.md", "onus/__init__.py"])
             return subprocess.CompletedProcess(command, 0, "", "")
 
         check_dist.build(source, self.dist / "out", "/py/bin/python3", run=runner)
-        uv = calls[1]
+        uv = calls[2]
         self.assertEqual(uv[:4], ["uv", "build", "--python", "/py/bin/python3"])
         self.assertEqual(uv[uv.index("--out-dir") + 1], str((self.dist / "out").resolve()))
         self.assertNotEqual(Path(uv[-1]).resolve(), source.resolve())
 
     def test_a_build_that_cannot_run_says_why(self):
-        def fails(stage, stderr):
-            def runner(command, **kwargs):
-                code = 1 if command[0] == stage else 0
-                listing = "onus/__init__.py\0README.md\0" if command[0] == "git" else ""
-                return subprocess.CompletedProcess(command, code, listing, stderr if code else "")
-
-            return runner
-
         self.source()
         cases = {
-            "git ls-files failed in": fails("git", "not a git repository"),
-            "uv build exited 1: no network": fails("uv", "no network"),
+            "git ls-files failed in": fake_runner(failing=["git", "ls-files", "-z"], stderr="not a git repository"),
+            "git ls-files --others failed in": fake_runner(failing=["git", "ls-files", "-z", "--others"]),
+            "uv build exited 1: no network": fake_runner(failing=["uv", "build"], stderr="no network"),
         }
         for message, runner in cases.items():
             with self.subTest(message=message):
                 with self.assertRaisesRegex(check_dist.BuildError, message):
                     check_dist.build(self.dist / "source", self.dist / "out", "/py", run=runner)
-        (self.dist / "source" / "onus" / "stray.py").write_text("", encoding="utf-8")
         with self.assertRaisesRegex(check_dist.BuildError, r"not tracked by git.*onus/stray\.py.*git add"):
-            check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fails("none", ""))
-        (self.dist / "source" / "onus" / "stray.py").unlink()
+            check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fake_runner("onus/stray.py\0"))
         (self.dist / "source" / "README.md").unlink()
         with self.assertRaisesRegex(check_dist.BuildError, r"missing from the working tree.*README\.md.*git rm"):
-            check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fails("none", ""))
+            check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fake_runner())
+
+    def test_only_an_importable_module_git_neither_tracks_nor_ignores_is_stray(self):
+        # A real git repository, since whether a path is ignored is git's to say.
+        source = self.dist / "source"
+        (source / "onus" / "not-a-package").mkdir(parents=True)
+        (source / ".gitignore").write_text("onus/generated.py\n", encoding="utf-8")
+        for name in ("__init__.py", "new.py", "._new.py", ".#new.py", "generated.py", "not-a-package/x.py"):
+            (source / "onus" / name).write_text("", encoding="utf-8")
+        for command in (["git", "init", "-q"], ["git", "add", ".gitignore", "onus/__init__.py"]):
+            subprocess.run(command, cwd=source, check=True, capture_output=True)
+
+        def runner(command, **kwargs):
+            if command[0] == "git":
+                return subprocess.run(command, **kwargs)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with self.assertRaisesRegex(check_dist.BuildError, r"^not tracked by git.*\['onus/new\.py'\]; `git add`"):
+            check_dist.build(source, self.dist / "out", "/py", run=runner)
+        (source / "onus" / "new.py").unlink()
+        check_dist.build(source, self.dist / "out", "/py", run=runner)
 
     def test_the_command_line_checks_builds_and_refuses(self):
         self.artifacts()
