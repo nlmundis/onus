@@ -45,10 +45,16 @@ version = { attr = "onus.__version__" }
 [tool.black]
 line-length = 120
 target-version = ["py311"]
+# Black's default exclusions, set explicitly: with exclude unset, black also skips whatever any .gitignore at any
+# depth lists, so one such file could take a module out of the format stage.
+exclude = '/(\.direnv|\.eggs|\.git|\.hg|\.ipynb_checkpoints|\.mypy_cache|\.nox|\.pytest_cache|\.ruff_cache|\.tox|\.svn|\.venv|\.vscode|__pypackages__|_build|buck-out|build|dist|venv)/'
 
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# ruff otherwise skips whatever a .gitignore, .ignore, or .git/info/exclude lists, at any depth; its own default
+# exclusions (.venv, build, dist, the caches) still apply.
+respect-gitignore = false
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "D", "ANN", "B", "UP"]

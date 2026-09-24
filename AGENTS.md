@@ -42,6 +42,8 @@ through uvx or `uv run --no-project` at the versions pinned in the Makefile.
 - **pyproject.toml holds every tool's settings.** `make siblings`, which the gate runs before its first stage,
   refuses a `ruff.toml`, `.ruff.toml`, `mypy.ini`, `.mypy.ini`, `.coveragerc`, `setup.cfg`, or `tox.ini` at the
   root, and every tool is handed pyproject.toml explicitly, so a config file in a subfolder is not read either.
+  pyproject.toml also stops black and ruff from skipping what a `.gitignore`, `.ignore`, or
+  `.git/info/exclude` lists, so no ignore file can take a module out of the format or lint stage.
 - **Branch, then PR.** Never commit to `main`; the ruleset refuses it anyway. Stage by path.
 
 ## Releasing

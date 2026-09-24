@@ -593,6 +593,39 @@ class GateSiblingsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class GateFileSelectionTest(unittest.TestCase):
+    """The format and lint stages check every Python file, whatever an ignore file says.
+
+    black and ruff both skip what git ignores unless told not to, and they read any `.gitignore` or `.ignore` at
+    any depth, tracked or not, so one such file could take a module out of both stages with every guarded file
+    unchanged. Each stage is run for real on a small repository whose bad modules are each hidden a different way.
+    """
+
+    def test_no_ignore_file_hides_a_module_from_format_or_lint(self):
+        hidden = {
+            "onus/.ignore": "bad_ignore.py\n",
+            "onus/.gitignore": "bad_nested.py\n",
+            ".gitignore": "onus/bad_root.py\n",
+            ".git/info/exclude": "onus/bad_exclude.py\n",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            for name in ("Makefile", "pyproject.toml", ".python-version"):
+                (repo / name).write_bytes((ROOT / name).read_bytes())
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+            (repo / "onus").mkdir()
+            (repo / "onus" / "__init__.py").write_text('"""A package."""\n', encoding="utf-8")
+            for ignore, entry in hidden.items():
+                (repo / ignore).write_text(entry, encoding="utf-8")
+                (repo / "onus" / Path(entry.strip()).name).write_text("import os\nx=1\n", encoding="utf-8")
+            for stage in ("format", "lint"):
+                with self.subTest(stage=stage):
+                    result = run_make("-f", "Makefile", stage, f"PY={sys.executable}", cwd=repo)
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    for entry in hidden.values():
+                        self.assertIn(Path(entry.strip()).name, result.stdout + result.stderr, entry)
+
+
 class ToolConfigTest(unittest.TestCase):
     """The settings coverage and mypy read from pyproject.toml; ApprovedFilesTest pins the rest of the file."""
 

@@ -182,6 +182,22 @@ find = "$(MYPY) --config-file pyproject.toml"
 replace = "$(MYPY)"
 
 [[mutant]]
+name = "lint_skips_what_an_ignore_file_lists"
+why = "ruff skips what any .gitignore, .ignore, or .git/info/exclude lists, tracked or not, so one line in onus/.ignore takes a module out of lint."
+suites = ["tests.test_repo.GateFileSelectionTest"]
+file = "pyproject.toml"
+find = "respect-gitignore = false\n"
+replace = ""
+
+[[mutant]]
+name = "format_skips_what_a_gitignore_lists"
+why = "With exclude unset black skips what any .gitignore lists, at any depth, so a nested .gitignore takes a module out of the format stage."
+suites = ["tests.test_repo.GateFileSelectionTest"]
+file = "pyproject.toml"
+find = "exclude = '/("
+replace = "# exclude = '/("
+
+[[mutant]]
 name = "lint_rules_emptied"
 why = "An empty rule selection makes the lint stage pass anything, with the Makefile untouched."
 suites = ["tests.test_repo.ApprovedFilesTest"]
