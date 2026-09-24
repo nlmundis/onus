@@ -743,7 +743,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
     """Nothing is released that did not pass the gate, is not on main, does not match its version, or fails checks.
 
     Every refusal the release job makes says whether the tag is spent, and what releases the next version or
-    clears it; a failed gate skips the release job, and AGENTS.md says the tag is spent then too.
+    clears it; a failed gate skips the release job, and AGENTS.md says when that spends the tag.
     """
 
     def test_every_permanent_tag_triggers_it_and_the_gate_runs_first(self):
@@ -918,6 +918,18 @@ class DocumentedClaimsTest(unittest.TestCase):
         for name, claim in claims.items():
             with self.subTest(file=name):
                 self.assertIn(claim, prose(name))
+
+    def test_a_failed_gate_spends_the_tag_only_when_the_failure_is_the_commits_own(self):
+        # A gate run fails for the network or a lost runner as well as for the commit; re-running the failed
+        # jobs of the same run tests the same commit again, so only a failure that repeats spends the tag.
+        claim = (
+            "A tag whose gate fails skips the release job. When the failure is the commit's own (a test, lint, "
+            "types, or the dist check failing on its files), the tag is spent the same way; when it is not (the "
+            "network, a lost runner, a tool that could not be fetched), re-running the failed jobs clears it, so "
+            "re-run them once before calling the tag spent."
+        )
+        self.assertIn(claim, prose("AGENTS.md"))
+        self.assertNotIn("a tag whose gate fails skips the release job and is spent the same way", prose("AGENTS.md"))
 
 
 class MutationSpecTest(unittest.TestCase):

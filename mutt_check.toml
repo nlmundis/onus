@@ -529,3 +529,14 @@ file = "AGENTS.md"
 find = "so either of the others beside it would be read instead,"
 replace = "so either of the others beside it would be read before it,"
 
+[[mutant]]
+name = "agents_says_every_failed_gate_spends_the_tag"
+why = "A gate that failed on the network or a lost runner tests the same commit again when re-run; calling every failure spent burns a version a re-run would release."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """A tag whose gate fails skips the release job. When the
+failure is the commit's own (a test, lint, types, or the dist check failing on its files), the tag is spent
+the same way; when it is not (the network, a lost runner, a tool that could not be fetched), re-running the
+failed jobs clears it, so re-run them once before calling the tag spent."""
+replace = "A tag whose gate fails skips the release job and is spent the same way."
+
