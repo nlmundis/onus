@@ -118,6 +118,22 @@ find = "$(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN))"
 replace = "$(if $(COMPAT_HOME),,$(COMPAT_PIN))"
 
 [[mutant]]
+name = "uv_reads_a_config_file"
+why = "Unexported, uv reads a uv.toml from any parent folder or the user's config, which can point every --with package at another index."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = "export UV_NO_CONFIG := 1"
+replace = "UV_NO_CONFIG := 1"
+
+[[mutant]]
+name = "a_root_uv_toml_left_unrefused"
+why = "A uv.toml at the root is read by every uv run stage and can swap in a package that exits 0 before any test runs."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "setup.cfg tox.ini uv.toml"
+replace = "setup.cfg tox.ini"
+
+[[mutant]]
 name = "makefiles_read_hidden"
 why = "A GNUmakefile read before the Makefile could override any pinned recipe; gate-env is where it shows."
 suites = ["tests.test_repo.GateEnvironmentTest"]

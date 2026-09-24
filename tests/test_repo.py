@@ -55,10 +55,10 @@ GUARDED = {
 # Settings a parent make or the caller's shell would otherwise leak into the make runs below: a parent
 # `make check PY=...` passes its command-line variables down through MAKEFLAGS.
 LEAKY = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MAKEFILES", "PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
-LEAKY |= {"UV_PYTHON_DOWNLOADS", "HYPOTHESIS_STORAGE_DIRECTORY", "PYTHONDONTWRITEBYTECODE"}
-# Files read instead of the Makefile (by make) or of pyproject.toml's tool tables (by ruff, mypy, coverage).
+LEAKY |= {"UV_PYTHON_DOWNLOADS", "UV_NO_CONFIG", "HYPOTHESIS_STORAGE_DIRECTORY", "PYTHONDONTWRITEBYTECODE"}
+# Files read instead of the Makefile (by make) or of pyproject.toml's tool tables (by ruff, mypy, coverage, uv).
 SIBLINGS = ["GNUmakefile", "makefile", "ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini", ".coveragerc"]
-SIBLINGS += ["setup.cfg", "tox.ini"]
+SIBLINGS += ["setup.cfg", "tox.ini", "uv.toml"]
 
 
 def minor(version: str) -> tuple[int, int]:
@@ -709,6 +709,11 @@ class GateEnvironmentTest(unittest.TestCase):
 
     def test_uv_never_downloads_its_own_python(self):
         self.assertEqual(self.env["UV_PYTHON_DOWNLOADS"], "never")
+
+    def test_uv_reads_no_config_file(self):
+        # A uv.toml, here or in any parent folder or the user's config, could change the index every --with
+        # package comes from; the siblings stage refuses one at the root, and this setting ignores all of them.
+        self.assertEqual(self.env["UV_NO_CONFIG"], "1")
 
     def test_hypothesis_caches_outside_the_checkout(self):
         storage = Path(self.env["HYPOTHESIS_STORAGE_DIRECTORY"])

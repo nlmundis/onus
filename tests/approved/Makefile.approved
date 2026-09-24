@@ -31,6 +31,9 @@ PY ?= $(or $(PIN_HOME),$(STOP))/bin/python3
 COMPAT_PY ?= $(or $(COMPAT_HOME),$(STOP))/bin/python3
 # uv may not fetch its own CPython behind pyenv's back, even when an override asks for a version, not a path.
 export UV_PYTHON_DOWNLOADS ?= never
+# uv reads a uv.toml here, in any parent folder, or in the user's config, and one could change the index every
+# --with package comes from; the gate uses none of them. (The siblings stage also refuses a uv.toml at the root.)
+export UV_NO_CONFIG := 1
 # Keeps Hypothesis's cache (a charmap and constants, written even with database=None on 6.168.1) out of the
 # checkout, so the first Hypothesis test inherits a gate that writes nothing into the tree.
 export HYPOTHESIS_STORAGE_DIRECTORY ?= $(or $(TMPDIR),/tmp)/onus-hypothesis
@@ -71,11 +74,11 @@ check: interpreters siblings format lint types coverage test compat dist mutants
 interpreters:
 	@: "$(PY)" "$(COMPAT_PY)"
 
-# make reads a GNUmakefile or makefile instead of this file, and ruff, mypy, and coverage each read their own
+# make reads a GNUmakefile or makefile instead of this file, and ruff, mypy, coverage, and uv each read their own
 # file before pyproject.toml's tables; any of them could switch a stage off with this file unchanged. Each is
 # refused by name, as `ls` spells it: on a case-insensitive disk a probe for `makefile` finds this Makefile.
 # Every tool is also handed pyproject.toml, since ruff reads a ruff.toml in any folder for the files below it.
-SIBLINGS := GNUmakefile makefile ruff.toml .ruff.toml mypy.ini .mypy.ini .coveragerc setup.cfg tox.ini
+SIBLINGS := GNUmakefile makefile ruff.toml .ruff.toml mypy.ini .mypy.ini .coveragerc setup.cfg tox.ini uv.toml
 
 siblings:
 	@found="$$(ls -A | grep -Fx $(foreach name,$(SIBLINGS),-e $(name)))"; test -z "$$found" || { \
@@ -119,5 +122,6 @@ mutants:
 gate-env:
 	@echo "MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))"
 	@echo "UV_PYTHON_DOWNLOADS=$$UV_PYTHON_DOWNLOADS"
+	@echo "UV_NO_CONFIG=$$UV_NO_CONFIG"
 	@echo "HYPOTHESIS_STORAGE_DIRECTORY=$$HYPOTHESIS_STORAGE_DIRECTORY"
 	@echo "PYTHONDONTWRITEBYTECODE=$$PYTHONDONTWRITEBYTECODE"
