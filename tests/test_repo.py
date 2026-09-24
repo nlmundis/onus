@@ -1,16 +1,18 @@
 """Pin the repository's own decisions: packaging, the gate, CI, releases, and the mutation specs.
 
-What each test reads, it reads from the thing that acts where it can: make's dry run and exported environment,
-a built sdist and wheel, a fresh interpreter importing the package. Where only the text can be read, as for the
-GitHub workflows, the lines that carry a guard are compared whole rather than searched for a fragment, and
-ApprovedFilesTest pins the Makefile and both workflows byte for byte, since a guard can be switched off (a `-`
-recipe prefix, `|| true`, `if: always()`) without changing any line another test reads.
+Where the thing that acts can be asked, the tests ask it: make's dry run, the environment make exports and the
+makefiles it read, a fresh interpreter importing the package, tools/check_dist.py run on sdists and wheels
+shaped like real ones. The real artifacts are built by the gate's dist stage, not by a test. Where only text
+can be read, as for the GitHub workflows, the lines that carry a guard are compared whole rather than searched
+for a fragment, and ApprovedFilesTest pins the files that define the gate and the release byte for byte,
+since a guard can be switched off without changing any line another test reads.
 
 Pinned here: one version source; the supported Pythons, the floor, and CI's matrix agreeing; a core that
-imports with the standard library alone; the type marker declared as package data and the sdist leaving out
-tests/; the gate's stages, the interpreters they get, and the environment they run with; the CI and release
-workflows' guards and refusals; the artifact checks in tools/check_dist.py; the ruleset records; the ignored
-caches; the make targets AGENTS.md names; and the mutation specs.
+imports with the standard library alone; the type marker declared as package data, and the manifest pruning
+tests/; the gate's stages, the interpreters they get, the environment they run with, and the one makefile make
+reads; the tool settings in pyproject.toml; the CI and release workflows' guards and refusals; the artifact
+checks in tools/check_dist.py; the ruleset records; the ignored caches; the make targets AGENTS.md names; and
+the mutation specs.
 """
 
 import ast
@@ -41,15 +43,17 @@ MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
 CHECK_YML = (ROOT / ".github" / "workflows" / "check.yml").read_text(encoding="utf-8")
 RELEASE_YML = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 APPROVED = ROOT / "tests" / "approved"
-# Each file whose lines are guards, and its reviewed copy under tests/approved/.
+# Each file that defines the gate or the release, and its reviewed copy under tests/approved/.
 GUARDED = {
     "Makefile": "Makefile.approved",
+    "pyproject.toml": "pyproject.toml.approved",
+    "MANIFEST.in": "MANIFEST.in.approved",
     ".github/workflows/check.yml": "check.yml.approved",
     ".github/workflows/release.yml": "release.yml.approved",
 }
 # Settings a parent make or the caller's shell would otherwise leak into the make runs below: a parent
 # `make check PY=...` passes its command-line variables down through MAKEFLAGS.
-LEAKY = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
+LEAKY = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MAKEFILES", "PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
 LEAKY |= {"UV_PYTHON_DOWNLOADS", "HYPOTHESIS_STORAGE_DIRECTORY", "PYTHONDONTWRITEBYTECODE"}
 
 
@@ -69,12 +73,12 @@ def classifier_pythons() -> list[str]:
     ]
 
 
-def run_make(*args: str, path_prefix: Path | None = None) -> subprocess.CompletedProcess[str]:
-    """Run make in the repository with none of the caller's make variables or gate settings inherited."""
+def run_make(*args: str, path_prefix: Path | None = None, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+    """Run make in the repository, or ``cwd``, with none of the caller's make variables or gate settings inherited."""
     env = {key: value for key, value in os.environ.items() if key not in LEAKY}
     if path_prefix is not None:
         env["PATH"] = f"{path_prefix}{os.pathsep}{env.get('PATH', '')}"
-    return subprocess.run(["make", *args], cwd=ROOT, env=env, capture_output=True, text=True)
+    return subprocess.run(["make", *args], cwd=cwd, env=env, capture_output=True, text=True)
 
 
 def fake_pyenv(directory: Path, installed: dict[str, str]) -> Path:
@@ -186,9 +190,9 @@ class StdlibOnlyTest(unittest.TestCase):
         self.assertTrue((ROOT / "onus" / "py.typed").is_file())
         self.assertEqual(PYPROJECT["tool"]["setuptools"]["package-data"], {"onus": ["py.typed"]})
 
-    def test_the_sdist_leaves_out_the_repository_tests(self):
-        # tests/ reads the Makefile, workflows, and rulesets, none of which an sdist carries; the dist stage
-        # checks the built sdist itself.
+    def test_the_manifest_prunes_tests(self):
+        # tests/ reads the Makefile, workflows, and rulesets, none of which an sdist carries. Whether the built
+        # sdist leaves tests/ out is checked by the dist stage; ApprovedFilesTest pins every MANIFEST.in line.
         manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8").splitlines()
         self.assertIn("prune tests", manifest)
 
@@ -246,26 +250,65 @@ class DistCheckTest(unittest.TestCase):
         )
         self.assertIn("exactly one wheel", check_dist.problems(self.dist, "1.2.3")[0])
 
-    def test_the_build_copies_only_tracked_files_and_builds_outside_the_checkout(self):
+    def test_a_relative_dist_folder_is_checked_like_an_absolute_one(self):
+        # The release passes `dist`, relative to the checkout.
+        self.artifacts()
+        here = Path.cwd()
+        os.chdir(self.dist.parent)
+        self.addCleanup(os.chdir, here)
+        self.assertEqual(check_dist.problems(Path(self.dist.name), "1.2.3"), [])
+
+    def source(self, *untracked):
         source = self.dist / "source"
         (source / "onus").mkdir(parents=True)
-        (source / "onus" / "__init__.py").write_text("", encoding="utf-8")
-        (source / "untracked.txt").write_text("", encoding="utf-8")
+        for name in ("onus/__init__.py", "README.md", *untracked):
+            (source / name).write_text("", encoding="utf-8")
+        return source
+
+    def test_the_build_copies_only_tracked_files_and_builds_outside_the_checkout(self):
+        source = self.source("untracked.txt")
         calls = []
 
         def runner(command, **kwargs):
             calls.append(command)
             if command[:2] == ["git", "ls-files"]:
-                return subprocess.CompletedProcess(command, 0, "onus/__init__.py\0", "")
+                return subprocess.CompletedProcess(command, 0, "onus/__init__.py\0README.md\0", "")
             scratch = Path(command[-1])
-            self.assertEqual(sorted(p.name for p in scratch.rglob("*") if p.is_file()), ["__init__.py"])
+            copied = sorted(p.relative_to(scratch).as_posix() for p in scratch.rglob("*") if p.is_file())
+            self.assertEqual(copied, ["README.md", "onus/__init__.py"])
             return subprocess.CompletedProcess(command, 0, "", "")
 
         check_dist.build(source, self.dist / "out", "/py/bin/python3", run=runner)
         uv = calls[1]
         self.assertEqual(uv[:4], ["uv", "build", "--python", "/py/bin/python3"])
-        self.assertEqual(uv[uv.index("--out-dir") + 1], str(self.dist / "out"))
+        self.assertEqual(uv[uv.index("--out-dir") + 1], str((self.dist / "out").resolve()))
         self.assertNotEqual(Path(uv[-1]).resolve(), source.resolve())
+
+    def test_a_build_that_cannot_run_says_why(self):
+        def fails(stage, stderr):
+            def runner(command, **kwargs):
+                code = 1 if command[0] == stage else 0
+                listing = "onus/__init__.py\0README.md\0" if command[0] == "git" else ""
+                return subprocess.CompletedProcess(command, code, listing, stderr if code else "")
+
+            return runner
+
+        self.source()
+        cases = {
+            "git ls-files failed in": fails("git", "not a git repository"),
+            "uv build exited 1: no network": fails("uv", "no network"),
+        }
+        for message, runner in cases.items():
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(check_dist.BuildError, message):
+                    check_dist.build(self.dist / "source", self.dist / "out", "/py", run=runner)
+        (self.dist / "source" / "onus" / "stray.py").write_text("", encoding="utf-8")
+        with self.assertRaisesRegex(check_dist.BuildError, r"not tracked by git.*onus/stray\.py.*git add"):
+            check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fails("none", ""))
+        (self.dist / "source" / "onus" / "stray.py").unlink()
+        (self.dist / "source" / "README.md").unlink()
+        with self.assertRaisesRegex(check_dist.BuildError, r"missing from the working tree.*README\.md.*git rm"):
+            check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fails("none", ""))
 
     def test_the_command_line_checks_builds_and_refuses(self):
         self.artifacts()
@@ -275,11 +318,15 @@ class DistCheckTest(unittest.TestCase):
             self.assertEqual(check_dist.main([str(self.dist), "--version", "9.9.9"]), 1)
             with mock.patch.object(check_dist, "build") as build:
                 self.assertEqual(check_dist.main(["--build", str(self.dist), "--version", "1.2.3"]), 0)
+                self.assertEqual(check_dist.main(["--build", str(self.dist), "--version", "9.9.9"]), 1)
+            with mock.patch.object(check_dist, "build", side_effect=check_dist.BuildError("uv build exited 2")):
+                self.assertEqual(check_dist.main(["--build", str(self.dist), "--version", "1.2.3"]), 2)
             with self.assertRaises(SystemExit):
                 check_dist.main([])
-        build.assert_called_once_with(check_dist.ROOT, self.dist, sys.executable)
+        build.assert_called_with(check_dist.ROOT, self.dist, sys.executable)
         self.assertIn("onus 1.2.3", out.getvalue())
         self.assertIn("not 9.9.9", err.getvalue())
+        self.assertIn("nothing was checked, because the build could not run: uv build exited 2", err.getvalue())
 
     def test_the_source_version_needs_a_string_assignment(self):
         (self.dist / "onus").mkdir()
@@ -309,7 +356,8 @@ class GateStagesTest(unittest.TestCase):
             "mutt_check mutt_check.toml",
             "mutt_check mutt_check.noop.toml",
         ]
-        # A stage counts only on a line that runs it: `: uv ...` or `echo ... uv ...` does not.
+        # A stage counts only on a line that starts by running uv (`: uv ...` or `echo ... uv ...` does not); a
+        # marker inside a shell comment on such a line would still count, and ApprovedFilesTest sees that edit.
         runs = [(i, line) for i, line in enumerate(self.lines) if line.startswith(("uv ", "uvx ", "out="))]
         found = [next((i for i, line in runs if marker in line), -1) for marker in expected]
         self.assertNotIn(-1, found, dict(zip(expected, found, strict=True)))
@@ -344,12 +392,17 @@ class GateStagesTest(unittest.TestCase):
             with self.subTest(line=line[:60]):
                 self.assertRegex(line, r'--with "mutt_check @ git\+https://\S+@[0-9a-f]{40}"')
 
+
+class ToolConfigTest(unittest.TestCase):
+    """The settings coverage and mypy read from pyproject.toml; ApprovedFilesTest pins the rest of the file."""
+
     def test_coverage_floor_branch_coverage_and_strict_types_are_on(self):
-        # Read from pyproject.toml, where coverage and mypy read them; ApprovedFilesTest pins the recipes.
         tools = PYPROJECT["tool"]
         self.assertEqual(tools["coverage"]["report"]["fail_under"], 95)
         self.assertIs(tools["coverage"]["run"]["branch"], True)
+        self.assertEqual(tools["coverage"]["run"]["source"], ["onus", "tools"])
         self.assertIs(tools["mypy"]["strict"], True)
+        self.assertEqual(tools["mypy"]["files"], ["onus", "tests", "tools"])
 
 
 class GateInterpreterTest(unittest.TestCase):
@@ -381,6 +434,16 @@ class GateInterpreterTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(f"pyenv install {self.pin}", result.stderr)
 
+    def test_one_stop_names_every_missing_patch_and_none_an_override_replaces(self):
+        bin_dir = fake_pyenv(Path(self.tmp.name), {})
+        result = run_make("-n", "check", path_prefix=bin_dir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"`pyenv install {self.pin}` and `pyenv install {self.floor}`", result.stderr)
+        result = run_make("-n", "check", "PY=/given/bin/python3", path_prefix=bin_dir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"pyenv install {self.floor}", result.stderr)
+        self.assertNotIn(f"pyenv install {self.pin}", result.stderr)
+
     def test_a_missing_floor_patch_stops_the_gate_before_its_first_stage(self):
         bin_dir = fake_pyenv(Path(self.tmp.name), {self.pin: "/pyenv/pinned"})
         result = run_make("-n", "check", path_prefix=bin_dir)
@@ -395,9 +458,10 @@ class GateInterpreterTest(unittest.TestCase):
 
 
 class GateEnvironmentTest(unittest.TestCase):
-    """The settings make exports to every recipe, as the gate-env recipe's shell sees them.
+    """The settings make exports to every recipe, as the gate-env recipe's shell sees them, and the files make read.
 
-    A target-specific override on another target would not show here; ApprovedFilesTest catches one.
+    A target-specific override in the Makefile would not show here; ApprovedFilesTest catches one. One in a
+    GNUmakefile or makefile, which make reads before the Makefile, shows up as an extra file make read.
     """
 
     def setUp(self):
@@ -415,6 +479,18 @@ class GateEnvironmentTest(unittest.TestCase):
 
     def test_no_bytecode_is_written(self):
         self.assertEqual(self.env["PYTHONDONTWRITEBYTECODE"], "1")
+
+    def test_make_reads_the_makefile_alone(self):
+        self.assertEqual(self.env["MAKEFILE_LIST"].split(), ["Makefile"])
+
+    def test_a_makefile_read_before_it_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "Makefile").write_text(MAKEFILE, encoding="utf-8")
+            (Path(tmp) / "GNUmakefile").write_text("include Makefile\n.IGNORE:\n", encoding="utf-8")
+            result = run_make("-s", "gate-env", cwd=Path(tmp))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        read = dict(line.split("=", 1) for line in result.stdout.splitlines())["MAKEFILE_LIST"]
+        self.assertEqual(read.split(), ["GNUmakefile", "Makefile"])
 
 
 class CheckWorkflowTest(unittest.TestCase):
@@ -444,7 +520,8 @@ class CheckWorkflowTest(unittest.TestCase):
 class ReleaseWorkflowTest(unittest.TestCase):
     """Nothing is released that did not pass the gate, is not on main, does not match its version, or fails checks.
 
-    Every refusal says the tag is spent and how to release the next version.
+    Every refusal the release job makes says whether the tag is spent, and what releases the next version or
+    clears it; a failed gate skips the release job, and AGENTS.md says the tag is spent then too.
     """
 
     def test_every_permanent_tag_triggers_it_and_the_gate_runs_first(self):
@@ -461,17 +538,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
         commands = run_lines(job_block(RELEASE_YML, "release"))
         self.assertIn('git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \\', commands)
         self.assertIn('test "v$version" = "$GITHUB_REF_NAME" \\', commands)
-        self.assertIn('if [ "$refused" -ne 0 ]; then', commands)
-        remedies = [command for command in commands if "is spent" in command]
-        self.assertEqual(len(remedies), 2)
-        for remedy in remedies:
+        self.assertIn('if [ "$on_main$matches" != 11 ]; then', commands)
+        spent = [command for command in commands if "is spent" in command and "not spent" not in command]
+        self.assertEqual(len(spent), 2)
+        for remedy in spent:
             with self.subTest(remedy=remedy[:50]):
                 self.assertIn("set onus.__version__ to the next unused version", remedy)
                 self.assertIn("tag that merge commit", remedy)
+        self.assertEqual(sum("is not spent" in command and "re-run this job" in command for command in commands), 2)
+        self.assertTrue(any("tag this same commit v$version" in command for command in commands))
 
     def test_the_artifacts_are_checked_by_the_gates_own_script_before_publishing(self):
         commands = run_lines(job_block(RELEASE_YML, "release"))
-        check = commands.index('python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist \\')
+        check = commands.index('python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist || status=$?')
+        self.assertEqual(commands[check + 1 : check + 2], ['if [ "$status" -eq 1 ]; then'])
         publish = next(i for i, command in enumerate(commands) if command.startswith("gh release create"))
         self.assertLess(check, publish)
         for upload in ("twine", "pypi-publish", "pypi.org"):
@@ -479,25 +559,26 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
 
 class ApprovedFilesTest(unittest.TestCase):
-    """The Makefile and both workflows, byte for byte against reviewed copies in tests/approved/.
+    """The files that define the gate and the release, byte for byte against reviewed copies in tests/approved/.
 
     The tests above say why each guard exists. A guard can still be switched off without changing what they
-    read: a `-` recipe prefix (make's dry run prints recipes without it), `|| true`, `exit 0`, `if: always()`, a
-    target-specific override. Listing every such escape would be a catch-all negative, so these files are also
-    pinned whole. Changing one means copying it over its approved copy in the same commit, where the diff puts
-    the change in front of the reviewer.
+    read: a `-` recipe prefix (make's dry run prints recipes without it), `|| true` or `exit 0` in a recipe or a
+    step, a target-specific override, an emptied rule list in pyproject.toml's tool tables. Listing every such
+    escape would be a catch-all negative, so these files are pinned whole, and every workflow must be one of
+    them. Changing one means copying it over its approved copy in the same commit, where the diff puts the
+    change in front of the reviewer.
     """
 
     def test_each_guarded_file_matches_its_approved_copy(self):
         for name, approved in GUARDED.items():
             with self.subTest(file=name):
-                current = (ROOT / name).read_text(encoding="utf-8")
-                expected = (APPROVED / approved).read_text(encoding="utf-8")
+                current = (ROOT / name).read_bytes()
+                expected = (APPROVED / approved).read_bytes()
                 if current != expected:
                     diff = "".join(
                         difflib.unified_diff(
-                            expected.splitlines(keepends=True),
-                            current.splitlines(keepends=True),
+                            expected.decode("utf-8", "replace").splitlines(keepends=True),
+                            current.decode("utf-8", "replace").splitlines(keepends=True),
                             f"tests/approved/{approved}",
                             name,
                         )
@@ -509,6 +590,16 @@ class ApprovedFilesTest(unittest.TestCase):
 
     def test_every_approved_copy_guards_a_file(self):
         self.assertEqual(sorted(path.name for path in APPROVED.iterdir()), sorted(GUARDED.values()))
+
+    def test_every_workflow_is_guarded(self):
+        workflows = {path.relative_to(ROOT).as_posix() for path in (ROOT / ".github" / "workflows").iterdir()}
+        self.assertLessEqual(workflows, set(GUARDED))
+
+    def test_no_other_makefile_sits_beside_the_makefile(self):
+        # make reads GNUmakefile or makefile before Makefile, and either could override a pinned recipe.
+        # On a case-insensitive disk `makefile` is the Makefile itself, so the names are listed, not probed.
+        names = {path.name for path in ROOT.iterdir()}
+        self.assertEqual(names & {"GNUmakefile", "makefile"}, set())
 
 
 class RulesetRecordTest(unittest.TestCase):

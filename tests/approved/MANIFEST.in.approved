@@ -1,0 +1,2 @@
+# The repository tests read the Makefile, workflows, and rulesets, none of which an sdist carries.
+prune tests

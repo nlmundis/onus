@@ -1,10 +1,11 @@
 name: release
 
-# Push a tag like v0.1.0 on a commit already on main, after setting onus.__version__ to the same number. The
-# full gate runs on that commit; only if it passes are the tag and version checked, and the sdist and wheel
-# built, checked by the same tools/check_dist.py the gate runs, and attached to a GitHub Release. Nothing is
-# uploaded to PyPI. Every v* tag starts this workflow, the tags the release-tags ruleset makes permanent, so a
-# tag of any other shape is refused here, visibly, rather than ignored.
+# Push a tag like v0.1.0, on its own, on a commit already on main, after setting onus.__version__ to the same
+# number. The full gate runs on that commit; only if it passes are the tag and version checked, and the sdist
+# and wheel built, checked by the same tools/check_dist.py the gate runs, and attached to a GitHub Release.
+# Nothing is uploaded to PyPI. Any v* tag pushed on its own starts this workflow, the tags the release-tags
+# ruleset makes permanent, so a tag of the wrong shape is refused here, visibly. GitHub starts no workflow for
+# tags pushed more than three at a time, or pushed by a workflow's own token; AGENTS.md says what to do then.
 on:
   push:
     tags: ["v*"]
@@ -31,21 +32,33 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Refuse a tag that is not a release of main
         run: |
-          git fetch --no-tags origin main
+          git fetch --no-tags origin main \
+            || { echo "::error::Could not fetch main, so nothing was checked and $GITHUB_REF_NAME is not spent: re-run this job."; exit 1; }
           version="$(python -c 'import onus; print(onus.__version__)')"
-          refused=0
+          on_main=1
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD \
-            || { echo "::error::$GITHUB_REF_NAME is not on main."; refused=1; }
+            || { echo "::error::$GITHUB_REF_NAME is not on main."; on_main=0; }
+          matches=1
           test "v$version" = "$GITHUB_REF_NAME" \
-            || { echo "::error::$GITHUB_REF_NAME does not match onus.__version__, which is $version."; refused=1; }
-          if [ "$refused" -ne 0 ]; then
+            || { echo "::error::$GITHUB_REF_NAME does not match onus.__version__, which is $version."; matches=0; }
+          if [ "$on_main$matches" != 11 ]; then
             echo "::error::Release tags are permanent (the release-tags ruleset), so $GITHUB_REF_NAME is spent. In a PR, set onus.__version__ to the next unused version and merge it to main; then tag that merge commit v<that version>."
+            if [ "$on_main" = 1 ]; then
+              echo "::error::Or, if no tag v$version exists yet, tag this same commit v$version to release $version as it stands."
+            fi
             exit 1
           fi
       - name: Build the sdist and wheel, and check them as the gate does
         run: |
-          python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist \
-            || { echo "::error::The artifacts for $GITHUB_REF_NAME failed the checks above, and release tags are permanent (the release-tags ruleset), so $GITHUB_REF_NAME is spent. Fix the packaging in a PR, set onus.__version__ to the next unused version, merge it to main, and tag that merge commit v<that version>."; exit 1; }
+          status=0
+          python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist || status=$?
+          if [ "$status" -eq 1 ]; then
+            echo "::error::The artifacts for $GITHUB_REF_NAME failed the checks above, and release tags are permanent (the release-tags ruleset), so $GITHUB_REF_NAME is spent. Fix the packaging in a PR, set onus.__version__ to the next unused version, merge it to main, and tag that merge commit v<that version>."
+            exit 1
+          elif [ "$status" -ne 0 ]; then
+            echo "::error::The build could not run (see above), so nothing was checked and $GITHUB_REF_NAME is not spent: fix the cause if it is in the repository, then re-run this job."
+            exit 1
+          fi
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

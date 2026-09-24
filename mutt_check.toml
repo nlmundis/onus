@@ -27,7 +27,7 @@ replace = "HYPOTHESIS_STORAGE_DIRECTORY ?="
 
 [[mutant]]
 name = "bytecode_written_into_the_checkout"
-why = "Without it every test and coverage run writes __pycache__ into the checkout."
+why = "Without it the coverage run, which has no -B, writes __pycache__ into the checkout."
 suites = ["tests.test_repo.GateEnvironmentTest"]
 file = "Makefile"
 find = "export PYTHONDONTWRITEBYTECODE := 1"
@@ -40,16 +40,16 @@ name = "missing_pyenv_patch_falls_back_to_system_python"
 why = "With the refusal gone, a missing patch hands uv /bin/python3: the system interpreter on Linux, a remedy-less error on macOS."
 suites = ["tests.test_repo.GateInterpreterTest"]
 file = "Makefile"
-find = ',$(error pyenv has no Python $(COMPAT_PIN) for the floor check: run `pyenv install $(COMPAT_PIN)`, or pass COMPAT_PY=/path/to/python3))'
-replace = ')'
+find = "COMPAT_PY ?= $(or $(COMPAT_HOME),$(STOP))/bin/python3"
+replace = "COMPAT_PY ?= $(COMPAT_HOME)/bin/python3"
 
 [[mutant]]
 name = "floor_check_left_to_uv_discovery"
 why = "A bare 3.11 lets uv pick whatever 3.11 it finds instead of pyenv's exact patch."
 suites = ["tests.test_repo.GateInterpreterTest"]
 file = "Makefile"
-find = "COMPAT_PY ?= $(or $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null),"
-replace = "COMPAT_PY ?= 3.11# "
+find = "COMPAT_PY ?= $(or $(COMPAT_HOME),$(STOP))/bin/python3"
+replace = "COMPAT_PY ?= 3.11"
 
 [[mutant]]
 name = "types_stage_left_to_uv_discovery"
@@ -94,6 +94,38 @@ find = "\t$(RUN) --with \"$(MUTT_CHECK)\" mutt_check mutt_check.toml"
 replace = "\t-$(RUN) --with \"$(MUTT_CHECK)\" mutt_check mutt_check.toml"
 
 [[mutant]]
+name = "only_the_first_missing_patch_named"
+why = "A machine missing both patches would learn of the second only after installing the first and running again."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "MISSING = $(strip $(if $(PY_GIVEN)$(PIN_HOME),,$(PIN)) $(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN)))"
+replace = "MISSING = $(firstword $(if $(PY_GIVEN)$(PIN_HOME),,$(PIN)) $(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN)))"
+
+[[mutant]]
+name = "an_override_still_asks_for_its_patch"
+why = "A caller who passes PY would be told to install a patch the gate will never use."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "$(if $(PY_GIVEN)$(PIN_HOME),,$(PIN))"
+replace = "$(if $(PIN_HOME),,$(PIN))"
+
+[[mutant]]
+name = "makefiles_read_hidden"
+why = "A GNUmakefile read before the Makefile could override any pinned recipe; gate-env is where it shows."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = '@echo "MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))"'
+replace = '@echo "MAKEFILE_LIST=Makefile"'
+
+[[mutant]]
+name = "lint_rules_emptied"
+why = "An empty rule selection makes the lint stage pass anything, with the Makefile untouched."
+suites = ["tests.test_repo.ApprovedFilesTest"]
+file = "pyproject.toml"
+find = 'select = ["E", "F", "W", "I", "D", "ANN", "B", "UP"]'
+replace = "select = []"
+
+[[mutant]]
 name = "a_stage_recipe_turned_into_a_no_op"
 why = "A recipe that no longer runs its command still exits 0, so the stage vanishes with the gate green."
 suites = ["tests.test_repo.GateStagesTest"]
@@ -120,7 +152,7 @@ replace = "@v0.0.2"
 [[mutant]]
 name = "coverage_floor_lowered"
 why = "The 95% floor is part of the gate the Makefile header and help advertise."
-suites = ["tests.test_repo.GateStagesTest"]
+suites = ["tests.test_repo.ToolConfigTest"]
 file = "pyproject.toml"
 find = "fail_under = 95"
 replace = "fail_under = 0"
@@ -216,8 +248,8 @@ name = "release_refusal_neutered"
 why = "Without exit 1 the refusal only prints, and a tag that is not on main, or does not match its version, is published."
 suites = ["tests.test_repo.ApprovedFilesTest"]
 file = ".github/workflows/release.yml"
-find = "            exit 1\n          fi\n"
-replace = "            true\n          fi\n"
+find = "            fi\n            exit 1\n          fi\n"
+replace = "            fi\n            true\n          fi\n"
 
 [[mutant]]
 name = "release_ignores_a_version_mismatch"
@@ -260,13 +292,37 @@ name = "wheel_import_unchecked"
 why = "A wheel whose core imports a third-party package fails for every caller without the extra."
 suites = ["tests.test_repo.DistCheckTest"]
 file = "tools/check_dist.py"
-find = "    if result.returncode != 0:"
-replace = "    if False:"
+find = "    if result.returncode != 0:\n        last ="
+replace = "    if False:\n        last ="
 
 [[mutant]]
 name = "build_run_in_the_checkout"
 why = "A build writes onus.egg-info into its source tree, so building in the checkout leaves it dirty."
 suites = ["tests.test_repo.DistCheckTest"]
 file = "tools/check_dist.py"
-find = '"--out-dir", str(out), scratch]'
-replace = '"--out-dir", str(out), str(root)]'
+find = '"--out-dir", str(out.resolve()), scratch]'
+replace = '"--out-dir", str(out.resolve()), str(root)]'
+
+[[mutant]]
+name = "relative_dist_probed_from_inside_it"
+why = "The release passes a relative dist folder; probed from inside it, every sound wheel fails to import."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    dist = dist.resolve()\n"
+replace = ""
+
+[[mutant]]
+name = "a_build_that_cannot_run_called_a_defect"
+why = "The release would call a network failure a spent version, when re-running the job would publish."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "                return NOT_BUILT"
+replace = "                return DEFECTIVE"
+
+[[mutant]]
+name = "untracked_module_left_out_silently"
+why = "A new module not yet git-added would be missing from the wheel, reported as a third-party import."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    if stray:"
+replace = "    if False:"

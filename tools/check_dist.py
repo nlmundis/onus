@@ -5,7 +5,11 @@ finds spends a version number. ``make check`` runs this with ``--build`` on ever
 exists; the release workflow runs the same checks on the artifacts it is about to publish.
 
 The build happens in a scratch copy of the files git tracks, because building writes ``onus.egg-info`` into
-its source tree, and the gate writes nothing into the checkout.
+its source tree, and the gate writes nothing into the checkout but gitignored caches.
+
+Exit status: 0 when the artifacts may be released; 1 when they may not (a packaging defect, which a re-run
+cannot fix); 2 when nothing could be checked, because the build itself could not run (a missing tool, the
+network, a tracked file missing from the working tree), which a re-run after fixing the cause can.
 """
 
 import argparse
@@ -21,6 +25,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+DEFECTIVE, NOT_BUILT = 1, 2
+
+
+class BuildError(Exception):
+    """The build could not run, so nothing was checked; the message says why and what clears it."""
 
 
 def source_version(root: Path = ROOT) -> str:
@@ -38,8 +47,10 @@ def problems(dist: Path, version: str) -> list[str]:
 
     Checks that there is exactly one wheel and one sdist, that the wheel carries the ``py.typed`` marker, that
     the sdist leaves out the repository's own tests, and that the wheel imports with the standard library
-    alone (``-I -S``, straight from the zip) and reports ``version``.
+    alone (``-I -S``, straight from the zip, from outside any checkout) and reports ``version``. ``dist`` may
+    be relative to the current directory.
     """
+    dist = dist.resolve()
     wheels, sdists = sorted(dist.glob("*.whl")), sorted(dist.glob("*.tar.gz"))
     if len(wheels) != 1 or len(sdists) != 1:
         found = [path.name for path in wheels + sdists]
@@ -47,10 +58,14 @@ def problems(dist: Path, version: str) -> list[str]:
     found_problems = []
     with zipfile.ZipFile(wheels[0]) as wheel:
         if "onus/py.typed" not in wheel.namelist():
-            found_problems.append("the wheel has no onus/py.typed: declare it in [tool.setuptools.package-data]")
+            found_problems.append(
+                "the wheel has no onus/py.typed: it must exist and be listed under [tool.setuptools.package-data]"
+            )
     with tarfile.open(sdists[0]) as sdist:
         if any(Path(name).parts[1:2] == ("tests",) for name in sdist.getnames()):
-            found_problems.append("the sdist carries tests/: keep `prune tests` in MANIFEST.in")
+            found_problems.append(
+                "the sdist carries tests/: MANIFEST.in must prune tests, and no line after it may add them back"
+            )
     probe = "import sys; sys.path.insert(0, sys.argv[1]); import onus; print(onus.__version__)"
     result = subprocess.run(
         [sys.executable, "-I", "-S", "-B", "-c", probe, str(wheels[0])],
@@ -67,25 +82,46 @@ def problems(dist: Path, version: str) -> list[str]:
     return found_problems
 
 
+def untracked_modules(root: Path, tracked: set[str]) -> list[str]:
+    """Return the modules under ``onus/`` that git does not track, which a build from tracked files leaves out."""
+    return sorted(
+        path.relative_to(root).as_posix()
+        for path in (root / "onus").rglob("*.py")
+        if path.relative_to(root).as_posix() not in tracked
+    )
+
+
 def build(root: Path, out: Path, python: str, run: Runner | None = None) -> None:
     """Build the sdist and wheel into ``out`` with uv, from a scratch copy of the files git tracks in ``root``.
 
     Raises:
-        subprocess.CalledProcessError: git or uv failed.
+        BuildError: git or uv failed, whose own error output the message carries; a module under ``onus/`` is
+            not tracked; or a tracked file is missing from the working tree.
     """
     runner = subprocess.run if run is None else run
-    tracked = runner(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True).stdout
+    listing = runner(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=False)
+    if listing.returncode != 0:
+        raise BuildError(f"git ls-files failed in {root}: {listing.stderr.strip()}")
+    tracked = set(filter(None, listing.stdout.split("\0")))
+    stray = untracked_modules(root, tracked)
+    if stray:
+        raise BuildError(f"not tracked by git, so the build would leave them out: {stray}; `git add` them")
+    missing = sorted(name for name in tracked if not (root / name).is_file())
+    if missing:
+        raise BuildError(f"tracked but missing from the working tree: {missing}; restore them or `git rm` them")
     with tempfile.TemporaryDirectory(prefix="onus-dist-") as scratch:
-        for name in filter(None, tracked.split("\0")):
+        for name in tracked:
             target = Path(scratch) / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(root / name, target)
-        command = ["uv", "build", "--python", python, "--quiet", "--out-dir", str(out), scratch]
-        runner(command, capture_output=True, text=True, check=True)
+        command = ["uv", "build", "--python", python, "--quiet", "--out-dir", str(out.resolve()), scratch]
+        result = runner(command, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise BuildError(f"uv build exited {result.returncode}: {result.stderr.strip()}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Check a folder of built artifacts, building them first with ``--build``; exit 1 when anything is wrong."""
+    """Check a folder of built artifacts, building them first with ``--build``; see the module for exit codes."""
     parser = argparse.ArgumentParser(description="Build and check onus's sdist and wheel as a release would.")
     parser.add_argument("dist", nargs="?", type=Path, help="folder of built artifacts; with --build, where to put them")
     parser.add_argument("--build", action="store_true", help="build from the tracked files first")
@@ -97,13 +133,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="onus-built-") as scratch:
         dist = args.dist if args.dist is not None else Path(scratch)
         if args.build:
-            build(ROOT, dist, sys.executable)
+            try:
+                build(ROOT, dist, sys.executable)
+            except BuildError as error:
+                print(f"nothing was checked, because the build could not run: {error}", file=sys.stderr)
+                return NOT_BUILT
         found = problems(dist, version)
     for problem in found:
         print(problem, file=sys.stderr)
     if not found:
         print(f"one wheel and one sdist of onus {version}: type marker shipped, tests left out, imports alone")
-    return 1 if found else 0
+    return DEFECTIVE if found else 0
 
 
 if __name__ == "__main__":

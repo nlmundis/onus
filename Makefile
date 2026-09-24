@@ -2,9 +2,12 @@
 # 95% floor, the suite again on the pinned interpreter, a compile check on the oldest supported Python, the
 # sdist and wheel built and checked as a release would check them, then mutt_check proving the suite catches
 # each curated mutant and does not count a behaviour-preserving rewrite as caught. No tool enters a project environment: each runs through uvx or `uv run --no-project`, pinned
-# below. uv needs the network to resolve the pinned tools the first time; after that, `UV_OFFLINE=1 make
-# check` runs offline. Inside the checkout the gate writes only gitignored caches (.coverage, .mypy_cache,
-# .ruff_cache), so `git status` stays clean and a worktree stays cleanable.
+# below. The dist stage builds with whatever setuptools>=77 uv resolves for pyproject's build-system, the same
+# backend a release and any install from the sdist use. uv needs the network to resolve the pinned tools and
+# that backend the first time; after that, `UV_OFFLINE=1 make check` runs offline. Inside the checkout the
+# gate writes only gitignored caches (.coverage, .mypy_cache, .ruff_cache), so `git status` stays clean and a
+# worktree stays cleanable. make must read this file alone: a GNUmakefile or makefile beside it would be read
+# first, and `make gate-env` shows which files make read.
 #
 # The interpreters come from pyenv at exact patches (.python-version, and COMPAT_PIN for the floor), and uv is
 # always handed their paths, never left to discover one: PATH may put another python, such as Homebrew's,
@@ -13,9 +16,17 @@
 # COMPAT_PY as paths to its own interpreter.
 
 PIN := $(shell cat .python-version)
-PY ?= $(or $(shell pyenv prefix $(PIN) 2>/dev/null),$(error pyenv has no Python $(PIN): run `pyenv install $(PIN)`, or pass PY=/path/to/python3))/bin/python3
 COMPAT_PIN := 3.11.14
-COMPAT_PY ?= $(or $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null),$(error pyenv has no Python $(COMPAT_PIN) for the floor check: run `pyenv install $(COMPAT_PIN)`, or pass COMPAT_PY=/path/to/python3))/bin/python3
+# Whether the caller passed an interpreter, so a missing pyenv patch it replaces is not asked for.
+PY_GIVEN := $(filter-out undefined,$(origin PY))
+COMPAT_GIVEN := $(filter-out undefined,$(origin COMPAT_PY))
+PIN_HOME = $(shell pyenv prefix $(PIN) 2>/dev/null)
+COMPAT_HOME = $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null)
+# Every pinned patch pyenv lacks that no override replaces, so one stop names all of them.
+MISSING = $(strip $(if $(PY_GIVEN)$(PIN_HOME),,$(PIN)) $(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN)))
+STOP = $(error pyenv lacks Python $(MISSING): run $(subst ` `,` and `,$(foreach v,$(MISSING),`pyenv install $(v)`)), or pass PY= and COMPAT_PY= as paths to python3)
+PY ?= $(or $(PIN_HOME),$(STOP))/bin/python3
+COMPAT_PY ?= $(or $(COMPAT_HOME),$(STOP))/bin/python3
 # uv may not fetch its own CPython behind pyenv's back, even when an override asks for a version, not a path.
 export UV_PYTHON_DOWNLOADS ?= never
 # Keeps Hypothesis's cache (a charmap and constants, written even with database=None on 6.168.1) out of the
@@ -49,7 +60,7 @@ help:
 	@echo "make compat       compile every module on the oldest supported Python, writing no bytecode"
 	@echo "make dist         build the sdist and wheel from the tracked files and check them as a release would"
 	@echo "make mutants      mutt_check: every curated mutant caught, the no-op rewrite not"
-	@echo "make gate-env     print the environment settings every stage runs with"
+	@echo "make gate-env     print the settings make exports to every stage, and the makefiles it read"
 
 check: interpreters format lint types coverage test compat dist mutants
 
@@ -91,6 +102,7 @@ mutants:
 	  echo "$$out" | grep -q "1 survived" || { echo "no-op spec: expected exactly 1 survived"; exit 1; }
 
 gate-env:
+	@echo "MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))"
 	@echo "UV_PYTHON_DOWNLOADS=$$UV_PYTHON_DOWNLOADS"
 	@echo "HYPOTHESIS_STORAGE_DIRECTORY=$$HYPOTHESIS_STORAGE_DIRECTORY"
 	@echo "PYTHONDONTWRITEBYTECODE=$$PYTHONDONTWRITEBYTECODE"
