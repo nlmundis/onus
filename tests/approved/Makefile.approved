@@ -102,7 +102,8 @@ test:
 compat:
 	uv run --no-project --python "$(COMPAT_PY)" python -B -c "import pathlib; [compile(p.read_bytes(), str(p), 'exec', dont_inherit=True) for p in sorted(pathlib.Path('onus').rglob('*.py'))]"
 
-# Builds in a scratch copy, since a build writes onus.egg-info into its source tree.
+# Builds in a scratch copy of the tracked files, so that only they reach the artifacts: in the checkout,
+# setuptools would read back the file list of an onus.egg-info left by an earlier build.
 dist:
 	uv run --no-project --python "$(PY)" python -B tools/check_dist.py --build
 

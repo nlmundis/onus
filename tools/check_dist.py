@@ -4,8 +4,10 @@ A release tag is permanent (the release-tags ruleset), so a packaging mistake th
 finds spends a version number. ``make check`` runs this with ``--build`` on every change, before any tag
 exists; the release workflow runs the same checks on the artifacts it is about to publish.
 
-The build happens in a scratch copy of the files git tracks, because building writes ``onus.egg-info`` into
-its source tree, and the gate writes nothing into the checkout but gitignored caches.
+The build happens in a scratch copy of the files git tracks, so that only they can reach the artifacts. Built
+in the checkout, the sdist would also take in an untracked module under ``onus/``, through package discovery,
+and every file listed in an ``onus.egg-info/SOURCES.txt`` left by an earlier build, since setuptools reads that
+list back. Keeping ``git status`` clean is not the reason: ``*.egg-info/`` is gitignored.
 
 Exit status: 0 when the artifacts may be released; 3 (``DEFECTIVE``) when they may not, a packaging defect a
 re-run cannot fix, including tracked files the build backend refuses; 4 (``NOT_BUILT``) when nothing could be

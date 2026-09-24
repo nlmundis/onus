@@ -950,6 +950,29 @@ class DocumentedClaimsTest(unittest.TestCase):
             with self.subTest(file=name):
                 self.assertIn(claim, prose(name))
 
+    def test_the_scratch_build_is_for_what_reaches_the_artifacts_not_for_git_status(self):
+        # onus.egg-info is gitignored, so leaving it behind would not show in `git status`; the scratch copy is
+        # there because setuptools reads an existing egg-info's SOURCES.txt back into the sdist.
+        claims = {
+            "tools/check_dist.py": (
+                "The build happens in a scratch copy of the files git tracks, so that only they can reach the "
+                "artifacts. Built in the checkout, the sdist would also take in an untracked module under "
+                "``onus/``, through package discovery, and every file listed in an ``onus.egg-info/SOURCES.txt`` "
+                "left by an earlier build, since setuptools reads that list back. Keeping ``git status`` clean is "
+                "not the reason: ``*.egg-info/`` is gitignored."
+            ),
+            "Makefile": (
+                "Builds in a scratch copy of the tracked files, so that only they reach the artifacts: in the "
+                "checkout, setuptools would read back the file list of an onus.egg-info left by an earlier build."
+            ),
+        }
+        for name, claim in claims.items():
+            with self.subTest(file=name):
+                self.assertIn(claim, prose(name))
+                self.assertNotIn("the gate writes nothing into the checkout but gitignored caches", prose(name))
+                self.assertNotIn("since a build writes onus.egg-info into its source tree", prose(name))
+        self.assertIn("*.egg-info/", (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+
 
 class MutationSpecTest(unittest.TestCase):
     def test_every_mutant_names_real_suites_and_an_anchor_found_exactly_once(self):

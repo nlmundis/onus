@@ -559,3 +559,24 @@ find = """starts this
 replace = """starts this
 # workflow on any commit,"""
 
+[[mutant]]
+name = "check_dist_gives_git_status_as_the_reason"
+why = "egg-info is gitignored, so git status is no reason to build elsewhere; a reader who believes it could move the build back into the checkout, where a stale SOURCES.txt adds files to the sdist."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "tools/check_dist.py"
+find = """so that only they can reach the artifacts. Built
+in the checkout, the sdist would also take in an untracked module under ``onus/``, through package discovery,
+and every file listed in an ``onus.egg-info/SOURCES.txt`` left by an earlier build, since setuptools reads that
+list back. Keeping ``git status`` clean is not the reason: ``*.egg-info/`` is gitignored."""
+replace = """because building writes ``onus.egg-info`` into
+its source tree, and the gate writes nothing into the checkout but gitignored caches."""
+
+[[mutant]]
+name = "makefile_gives_egg_info_as_the_reason"
+why = "The dist recipe's comment must give the real reason for the scratch copy, the same one check_dist gives."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "Makefile"
+find = """# Builds in a scratch copy of the tracked files, so that only they reach the artifacts: in the checkout,
+# setuptools would read back the file list of an onus.egg-info left by an earlier build."""
+replace = "# Builds in a scratch copy, since a build writes onus.egg-info into its source tree."
+
