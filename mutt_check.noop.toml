@@ -1,0 +1,16 @@
+# One behaviour-preserving rewrite. `make mutants` requires it to SURVIVE: a harness that counted any failure,
+# or any edit, as caught would report it caught.
+
+[run]
+suites = ["tests.test_repo"]
+timeout = 300
+
+[[mutant]]
+name = "noop_version_split_across_two_literals"
+why = "Adjacent string literals concatenate at compile time; nothing observable changes."
+# The suites that read the version. MutationSpecTest is left out on purpose: it checks this spec's own
+# anchor, which the rewrite removes, so it would "catch" a change that alters nothing observable.
+suites = ["tests.test_repo.VersionTest", "tests.test_repo.StdlibOnlyTest"]
+file = "onus/__init__.py"
+find = '__version__ = "0.0.0"'
+replace = '__version__ = "0.0" ".0"'

@@ -1,0 +1,85 @@
+# A mutant goes in here only together with the test that kills it. Each one below reverts one decision this
+# repository made about its own packaging and gate; the library's own mutants arrive with the library.
+# `make mutants` runs this spec and requires every mutant caught.
+
+[run]
+suites = ["tests.test_repo"]
+timeout = 300
+
+# --- the gate ---
+
+[[mutant]]
+name = "hypothesis_cache_written_into_the_checkout"
+why = "Hypothesis writes .hypothesis/ into the working directory even with database=None; unexported, a worktree that ran the gate can no longer be cleaned."
+suites = ["tests.test_repo.GateRecipeTest"]
+file = "Makefile"
+find = "export HYPOTHESIS_STORAGE_DIRECTORY ?="
+replace = "HYPOTHESIS_STORAGE_DIRECTORY ?="
+
+[[mutant]]
+name = "uv_allowed_to_fetch_its_own_python"
+why = "uv's discovery downloads its own CPython rather than use pyenv's pinned patch."
+suites = ["tests.test_repo.GateRecipeTest"]
+file = "Makefile"
+find = "export UV_PYTHON_DOWNLOADS ?= never"
+replace = "export UV_PYTHON_DOWNLOADS ?= automatic"
+
+[[mutant]]
+name = "bytecode_written_beside_mutated_sources"
+why = "A stale .pyc beside a mutated source has let a mutant survive before."
+suites = ["tests.test_repo.GateRecipeTest"]
+file = "Makefile"
+find = "export PYTHONDONTWRITEBYTECODE := 1"
+replace = "export PYTHONDONTWRITEBYTECODE :="
+
+[[mutant]]
+name = "a_gate_stage_dropped"
+why = "make check is the whole gate; a stage left out passes silently."
+suites = ["tests.test_repo.GateRecipeTest"]
+file = "Makefile"
+find = "check: format lint types coverage test compat mutants"
+replace = "check: format lint types coverage test mutants"
+
+# --- the core stays stdlib-only ---
+
+[[mutant]]
+name = "core_imports_hypothesis"
+why = "Only onus.invariants may import hypothesis; the core must import where it is not installed."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "onus/__init__.py"
+find = '__version__ = "'
+replace = "import hypothesis  # noqa: F401\n\n__version__ = \""
+
+[[mutant]]
+name = "runtime_dependency_added"
+why = "onus ships into environments that may not allow third-party packages."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "pyproject.toml"
+find = "dependencies = []"
+replace = 'dependencies = ["hypothesis>=6.168.1"]'
+
+# --- supported Pythons and repository hygiene ---
+
+[[mutant]]
+name = "ci_matrix_loses_the_floor"
+why = "A floor the CI never runs on is a claim, not a check."
+suites = ["tests.test_repo.VersionSupportTest"]
+file = ".github/workflows/check.yml"
+find = 'python: ["3.11", '
+replace = 'python: ['
+
+[[mutant]]
+name = "hypothesis_cache_not_ignored"
+why = "The backstop if the storage directory is ever unset."
+suites = ["tests.test_repo.GitignoreTest"]
+file = ".gitignore"
+find = ".hypothesis/\n"
+replace = ""
+
+[[mutant]]
+name = "required_check_renamed"
+why = "The ruleset requires 'all checks passed'; a renamed job leaves every PR unmergeable, or unprotected."
+suites = ["tests.test_repo.RulesetsTest"]
+file = ".github/workflows/check.yml"
+find = "    name: all checks passed"
+replace = "    name: all checks"
