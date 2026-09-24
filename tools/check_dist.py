@@ -59,7 +59,9 @@ def problems(dist: Path, version: str) -> list[str]:
     with zipfile.ZipFile(wheels[0]) as wheel:
         if "onus/py.typed" not in wheel.namelist():
             found_problems.append(
-                "the wheel has no onus/py.typed: it must exist and be listed under [tool.setuptools.package-data]"
+                "the wheel has no onus/py.typed: it must exist and be listed under [tool.setuptools.package-data], "
+                "and neither [tool.setuptools.exclude-package-data] nor a MANIFEST.in exclude may drop it (the wheel "
+                "is built from the sdist)"
             )
     with tarfile.open(sdists[0]) as sdist:
         if any(Path(name).parts[1:2] == ("tests",) for name in sdist.getnames()):

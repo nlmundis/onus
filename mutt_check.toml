@@ -296,6 +296,16 @@ find = 'if any(Path(name).parts[1:2] == ("tests",) for name in sdist.getnames())
 replace = "if False:"
 
 [[mutant]]
+name = "type_marker_remedy_misses_an_exclusion"
+why = "A py.typed listed under package-data can still be dropped by exclude-package-data or a MANIFEST.in exclude; a remedy naming only the listing sends the reader to a setting that is already right."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """, "
+                "and neither [tool.setuptools.exclude-package-data] nor a MANIFEST.in exclude may drop it (the wheel "
+                "is built from the sdist)""""
+replace = "\""
+
+[[mutant]]
 name = "sdist_remedy_loses_the_later_add_back"
 why = "A remedy that says only to prune tests misses a later graft or include that adds them back, the other way an sdist ends up carrying them."
 suites = ["tests.test_repo.DistCheckTest"]

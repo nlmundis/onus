@@ -242,6 +242,17 @@ class DistCheckTest(unittest.TestCase):
                 self.assertEqual(len(found), 1, found)
                 self.assertIn(message, found[0])
 
+    def test_the_type_marker_defect_names_every_cause_whole(self):
+        self.artifacts(wheel_files={"onus/py.typed": None})
+        self.assertEqual(
+            check_dist.problems(self.dist, "1.2.3"),
+            [
+                "the wheel has no onus/py.typed: it must exist and be listed under [tool.setuptools.package-data], "
+                "and neither [tool.setuptools.exclude-package-data] nor a MANIFEST.in exclude may drop it (the wheel "
+                "is built from the sdist)"
+            ],
+        )
+
     def test_the_sdist_defect_names_its_remedy_whole(self):
         self.artifacts(sdist_files={"onus-1.2.3/tests/test_repo.py": ""})
         self.assertEqual(
