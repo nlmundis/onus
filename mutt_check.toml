@@ -368,3 +368,47 @@ suites = ["tests.test_repo.DistCheckTest"]
 file = "tools/check_dist.py"
 find = 'if name.endswith(".py") and all(part.isidentifier() for part in PurePosixPath(name).with_suffix("").parts)'
 replace = 'if name.endswith(".py")'
+
+[[mutant]]
+name = "a_defect_exits_like_a_crash"
+why = "Exit 1 is also what Python gives an uncaught exception, so the release would call a crash (a missing tool, an OSError) a spent tag."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "DEFECTIVE, NOT_BUILT = 3, 4"
+replace = "DEFECTIVE, NOT_BUILT = 1, 4"
+
+[[mutant]]
+name = "a_missing_tool_escapes_as_a_crash"
+why = "A git or uv that cannot be started raises OSError; escaped, it exits 1 with a traceback instead of saying nothing was built."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """    except OSError as error:
+        raise BuildError(f"could not run"""
+replace = """    except ValueError as error:
+        raise BuildError(f"could not run"""
+
+[[mutant]]
+name = "a_failed_copy_escapes_as_a_crash"
+why = "An OSError while copying the tracked files (a full disk, a permission) would exit 1 with a traceback instead of saying nothing was built."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """        except OSError as error:
+            raise BuildError(f"could not copy"""
+replace = """        except ValueError as error:
+            raise BuildError(f"could not copy"""
+
+[[mutant]]
+name = "release_reads_a_crash_as_a_defect"
+why = "Reading exit 1 as the defect code tells the maintainer a tag is spent when check_dist only crashed, and reads a real defect as a crash."
+suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/release.yml"
+find = 'if [ "$status" -eq 3 ]; then'
+replace = 'if [ "$status" -eq 1 ]; then'
+
+[[mutant]]
+name = "release_reads_a_crash_as_not_spent"
+why = "Folding every nonzero exit into 'not spent, re-run' tells the maintainer a crash that repeats on every run will clear."
+suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/release.yml"
+find = 'elif [ "$status" -eq 4 ]; then'
+replace = 'elif [ "$status" -ne 0 ]; then'

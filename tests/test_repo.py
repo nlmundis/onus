@@ -363,18 +363,59 @@ class DistCheckTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             self.assertEqual(check_dist.main([str(self.dist), "--version", "1.2.3"]), 0)
-            self.assertEqual(check_dist.main([str(self.dist), "--version", "9.9.9"]), 1)
+            self.assertEqual(check_dist.main([str(self.dist), "--version", "9.9.9"]), check_dist.DEFECTIVE)
             with mock.patch.object(check_dist, "build") as build:
                 self.assertEqual(check_dist.main(["--build", str(self.dist), "--version", "1.2.3"]), 0)
-                self.assertEqual(check_dist.main(["--build", str(self.dist), "--version", "9.9.9"]), 1)
+                self.assertEqual(
+                    check_dist.main(["--build", str(self.dist), "--version", "9.9.9"]), check_dist.DEFECTIVE
+                )
             with mock.patch.object(check_dist, "build", side_effect=check_dist.BuildError("uv build exited 2")):
-                self.assertEqual(check_dist.main(["--build", str(self.dist), "--version", "1.2.3"]), 2)
+                self.assertEqual(
+                    check_dist.main(["--build", str(self.dist), "--version", "1.2.3"]), check_dist.NOT_BUILT
+                )
             with self.assertRaises(SystemExit):
                 check_dist.main([])
         build.assert_called_with(check_dist.ROOT, self.dist, sys.executable)
         self.assertIn("onus 1.2.3", out.getvalue())
         self.assertIn("not 9.9.9", err.getvalue())
         self.assertIn("nothing was checked, because the build could not run: uv build exited 2", err.getvalue())
+
+    def test_no_verdict_shares_an_exit_code_with_a_crash_or_a_usage_error(self):
+        # Python exits 1 on an uncaught exception and argparse exits 2 on bad arguments; the release reads the
+        # exit code to say whether the tag is spent, so neither may look like a verdict.
+        self.assertEqual(len({0, 1, 2, check_dist.DEFECTIVE, check_dist.NOT_BUILT}), 5)
+
+    def test_a_tool_that_cannot_be_run_means_nothing_was_built(self):
+        self.source()
+        for tool, failing in (("uv", ["uv"]), ("git", ["git", "ls-files", "-z", "--others"])):
+            runner = fake_runner(failing=failing)
+
+            def missing(command, _runner=runner, **kwargs):
+                if _runner(command, **kwargs).returncode:
+                    raise FileNotFoundError(2, "No such file or directory", command[0])
+                return _runner(command, **kwargs)
+
+            with self.subTest(tool=tool):
+                with self.assertRaisesRegex(check_dist.BuildError, r"^could not run (git|uv): .*No such file"):
+                    check_dist.build(self.dist / "source", self.dist / "out", "/py", run=missing)
+
+    def test_a_copy_that_fails_means_nothing_was_built(self):
+        self.source()
+        with mock.patch("tools.check_dist.shutil.copy2", side_effect=PermissionError(13, "Permission denied")):
+            with self.assertRaisesRegex(check_dist.BuildError, r"^could not copy the tracked files.*Permission denied"):
+                check_dist.build(self.dist / "source", self.dist / "out", "/py", run=fake_runner())
+
+    def test_the_script_run_without_git_exits_not_built(self):
+        # As the release runs it, in a fresh interpreter, where an escaped OSError would exit 1.
+        script = ROOT / "tools" / "check_dist.py"
+        result = subprocess.run(
+            [sys.executable, "-B", str(script), "--build", str(self.dist)],
+            env={"PATH": str(self.dist)},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, check_dist.NOT_BUILT, result.stderr)
+        self.assertIn("nothing was checked, because the build could not run: could not run git", result.stderr)
 
     def test_the_source_version_needs_a_string_assignment(self):
         (self.dist / "onus").mkdir()
@@ -592,7 +633,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn('test "v$version" = "$GITHUB_REF_NAME" \\', commands)
         self.assertIn('if [ "$on_main$matches" != 11 ]; then', commands)
         spent = [command for command in commands if "is spent" in command and "not spent" not in command]
-        self.assertEqual(len(spent), 2)
+        self.assertEqual(len(spent), 3)
         for remedy in spent:
             with self.subTest(remedy=remedy[:50]):
                 self.assertIn("set onus.__version__ to the next unused version", remedy)
@@ -603,7 +644,18 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_the_artifacts_are_checked_by_the_gates_own_script_before_publishing(self):
         commands = run_lines(job_block(RELEASE_YML, "release"))
         check = commands.index('python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist || status=$?')
-        self.assertEqual(commands[check + 1 : check + 2], ['if [ "$status" -eq 1 ]; then'])
+        # The release reads check_dist's own exit codes: a defect spends the tag, a build that could not run
+        # does not, and any other exit (a crash) is re-run once before it is called either.
+        branches = [command for command in commands[check + 1 :] if command.startswith(("if [", "elif [", "fi"))]
+        self.assertEqual(
+            branches[:4],
+            [
+                f'if [ "$status" -eq {check_dist.DEFECTIVE} ]; then',
+                f'elif [ "$status" -eq {check_dist.NOT_BUILT} ]; then',
+                'elif [ "$status" -ne 0 ]; then',
+                "fi",
+            ],
+        )
         publish = next(i for i, command in enumerate(commands) if command.startswith("gh release create"))
         self.assertLess(check, publish)
         for upload in ("twine", "pypi-publish", "pypi.org"):

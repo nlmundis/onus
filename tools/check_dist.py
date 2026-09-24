@@ -7,9 +7,11 @@ exists; the release workflow runs the same checks on the artifacts it is about t
 The build happens in a scratch copy of the files git tracks, because building writes ``onus.egg-info`` into
 its source tree, and the gate writes nothing into the checkout but gitignored caches.
 
-Exit status: 0 when the artifacts may be released; 1 when they may not (a packaging defect, which a re-run
-cannot fix); 2 when nothing could be checked, because the build itself could not run (a missing tool, the
-network, a tracked file missing from the working tree), which a re-run after fixing the cause can.
+Exit status: 0 when the artifacts may be released; 3 (``DEFECTIVE``) when they may not, a packaging defect a
+re-run cannot fix; 4 (``NOT_BUILT``) when nothing could be checked, because the build itself could not run (a
+missing tool, the network, a file that could not be copied, a tracked file missing from the working tree),
+which a re-run after fixing the cause can. Any other status is not a verdict: 1 is what Python exits with on an
+uncaught exception, and 2 is argparse's usage error.
 """
 
 import argparse
@@ -25,7 +27,8 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
 Runner = Callable[..., subprocess.CompletedProcess[str]]
-DEFECTIVE, NOT_BUILT = 1, 2
+# Neither 1 (an uncaught exception) nor 2 (argparse's usage error), so a crash never reads as a verdict.
+DEFECTIVE, NOT_BUILT = 3, 4
 
 
 class BuildError(Exception):
@@ -98,20 +101,29 @@ def stray_modules(untracked: Iterable[str]) -> list[str]:
     )
 
 
+def run_tool(runner: Runner, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    """Run ``command`` with ``runner``, turning a tool that cannot be started into a ``BuildError``."""
+    try:
+        return runner(command, **kwargs)
+    except OSError as error:
+        raise BuildError(f"could not run {command[0]}: {error}") from error
+
+
 def build(root: Path, out: Path, python: str, run: Runner | None = None) -> None:
     """Build the sdist and wheel into ``out`` with uv, from a scratch copy of the files git tracks in ``root``.
 
     Raises:
-        BuildError: git or uv failed, whose own error output the message carries; a module under ``onus/`` is
-            not tracked; or a tracked file is missing from the working tree.
+        BuildError: git or uv could not be started, or failed, whose own error output the message carries; a
+            module under ``onus/`` is not tracked; a tracked file is missing from the working tree; or the
+            tracked files could not be copied into the scratch folder.
     """
     runner = subprocess.run if run is None else run
-    listing = runner(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=False)
+    listing = run_tool(runner, ["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=False)
     if listing.returncode != 0:
         raise BuildError(f"git ls-files failed in {root}: {listing.stderr.strip()}")
     tracked = set(filter(None, listing.stdout.split("\0")))
     others = ["git", "ls-files", "-z", "--others", "--exclude-standard", "--", "onus"]
-    untracked = runner(others, cwd=root, capture_output=True, text=True, check=False)
+    untracked = run_tool(runner, others, cwd=root, capture_output=True, text=True, check=False)
     if untracked.returncode != 0:
         raise BuildError(f"git ls-files --others failed in {root}: {untracked.stderr.strip()}")
     stray = stray_modules(filter(None, untracked.stdout.split("\0")))
@@ -121,12 +133,15 @@ def build(root: Path, out: Path, python: str, run: Runner | None = None) -> None
     if missing:
         raise BuildError(f"tracked but missing from the working tree: {missing}; restore them or `git rm` them")
     with tempfile.TemporaryDirectory(prefix="onus-dist-") as scratch:
-        for name in tracked:
-            target = Path(scratch) / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(root / name, target)
+        try:
+            for name in tracked:
+                target = Path(scratch) / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(root / name, target)
+        except OSError as error:
+            raise BuildError(f"could not copy the tracked files into a scratch folder: {error}") from error
         command = ["uv", "build", "--python", python, "--quiet", "--out-dir", str(out.resolve()), scratch]
-        result = runner(command, capture_output=True, text=True, check=False)
+        result = run_tool(runner, command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise BuildError(f"uv build exited {result.returncode}: {result.stderr.strip()}")
 
