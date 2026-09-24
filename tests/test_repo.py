@@ -99,18 +99,22 @@ def fake_pyenv(directory: Path, installed: dict[str, str]) -> Path:
     return directory
 
 
+BUILD_SYSTEM = '[build-system]\nrequires = ["setuptools>=77"]\nbuild-backend = "setuptools.build_meta"\n'
+
+
 def fake_runner(untracked: str = "", failing: list[str] | None = None, stderr: str = "") -> check_dist.Runner:
     """Return a stand-in for ``subprocess.run`` in ``check_dist.build``.
 
-    git lists ``onus/__init__.py`` and ``README.md`` as tracked, and ``untracked`` (NUL-separated) as neither
-    tracked nor ignored. A command that starts with ``failing`` exits 1 with ``stderr``; any other succeeds.
+    git lists ``onus/__init__.py``, ``README.md``, and ``pyproject.toml`` as tracked, and ``untracked``
+    (NUL-separated) as neither tracked nor ignored. A command that starts with ``failing`` exits 1 with
+    ``stderr``; any other succeeds.
     """
 
     def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         if failing is not None and command[: len(failing)] == failing:
             return subprocess.CompletedProcess(command, 1, "", stderr)
         if command[:2] == ["git", "ls-files"]:
-            listing = untracked if "--others" in command else "onus/__init__.py\0README.md\0"
+            listing = untracked if "--others" in command else "onus/__init__.py\0README.md\0pyproject.toml\0"
             return subprocess.CompletedProcess(command, 0, listing, "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -299,6 +303,7 @@ class DistCheckTest(unittest.TestCase):
         (source / "onus").mkdir(parents=True)
         for name in ("onus/__init__.py", "README.md", *untracked):
             (source / name).write_text("", encoding="utf-8")
+        (source / "pyproject.toml").write_text(BUILD_SYSTEM, encoding="utf-8")
         return source
 
     def test_the_build_copies_only_tracked_files_and_builds_outside_the_checkout(self):
@@ -308,25 +313,76 @@ class DistCheckTest(unittest.TestCase):
         def runner(command, **kwargs):
             calls.append(command)
             if command[:2] == ["git", "ls-files"]:
-                listing = "" if "--others" in command else "onus/__init__.py\0README.md\0"
+                listing = "" if "--others" in command else "onus/__init__.py\0README.md\0pyproject.toml\0"
                 return subprocess.CompletedProcess(command, 0, listing, "")
             scratch = Path(command[-1])
             copied = sorted(p.relative_to(scratch).as_posix() for p in scratch.rglob("*") if p.is_file())
-            self.assertEqual(copied, ["README.md", "onus/__init__.py"])
+            if command[:2] == ["uv", "build"]:
+                self.assertEqual(copied, ["README.md", "onus/__init__.py", "pyproject.toml"])
             return subprocess.CompletedProcess(command, 0, "", "")
 
         check_dist.build(source, self.dist / "out", "/py/bin/python3", run=runner)
-        uv = calls[2]
-        self.assertEqual(uv[:4], ["uv", "build", "--python", "/py/bin/python3"])
+        uv = calls[4]
+        self.assertEqual(uv[:2], ["uv", "build"])
         self.assertEqual(uv[uv.index("--out-dir") + 1], str((self.dist / "out").resolve()))
         self.assertNotEqual(Path(uv[-1]).resolve(), source.resolve())
+
+    def test_the_backend_is_fetched_first_then_builds_with_no_network_of_its_own(self):
+        # Fetching the backend can fail for reasons a re-run clears; the build that follows installs nothing,
+        # so when it fails, the backend refused the tracked files as committed.
+        self.source()
+        calls = []
+        runner = fake_runner()
+
+        def recording(command, **kwargs):
+            calls.append(command)
+            return runner(command, **kwargs)
+
+        check_dist.build(self.dist / "source", self.dist / "out", "/py/bin/python3", run=recording)
+        venv, install, build = calls[2:]
+        env = Path(venv[-1])
+        self.assertEqual(venv, ["uv", "venv", "--quiet", "--python", "/py/bin/python3", str(env)])
+        self.assertEqual(
+            install, ["uv", "pip", "install", "--quiet", "--python", str(env / "bin" / "python"), "setuptools>=77"]
+        )
+        self.assertEqual(
+            build[: build.index("--out-dir")],
+            ["uv", "build", "--quiet", "--python", str(env / "bin" / "python"), "--no-build-isolation"],
+        )
+
+    def test_a_build_the_backend_refuses_is_a_defect_and_a_failed_fetch_is_not(self):
+        self.source()
+        cases = {
+            ("uv", "venv"): check_dist.BuildError,
+            ("uv", "pip"): check_dist.BuildError,
+            ("uv", "build"): check_dist.UnbuildableError,
+        }
+        for failing, error in cases.items():
+            with self.subTest(failing=failing):
+                runner = fake_runner(failing=list(failing), stderr="refused")
+                with self.assertRaisesRegex(error, f"^{' '.join(failing)} exited 1: refused"):
+                    check_dist.build(self.dist / "source", self.dist / "out", "/py", run=runner)
+        err = io.StringIO()
+        with redirect_stderr(err), mock.patch.object(check_dist, "build", side_effect=check_dist.UnbuildableError("x")):
+            self.assertEqual(check_dist.main(["--build", str(self.dist)]), check_dist.DEFECTIVE)
+        self.assertIn(
+            "the tracked files do not build, so this commit cannot be released as it stands: x", err.getvalue()
+        )
+
+    def test_a_pyproject_that_names_no_backend_is_a_defect(self):
+        source = self.source()
+        for text in ("[build-system\n", "[project]\n", '[build-system]\nrequires = "setuptools"\n'):
+            with self.subTest(text=text):
+                (source / "pyproject.toml").write_text(text, encoding="utf-8")
+                with self.assertRaisesRegex(check_dist.UnbuildableError, "^pyproject.toml"):
+                    check_dist.build(source, self.dist / "out", "/py", run=fake_runner())
 
     def test_a_build_that_cannot_run_says_why(self):
         self.source()
         cases = {
             "git ls-files failed in": fake_runner(failing=["git", "ls-files", "-z"], stderr="not a git repository"),
             "git ls-files --others failed in": fake_runner(failing=["git", "ls-files", "-z", "--others"]),
-            "uv build exited 1: no network": fake_runner(failing=["uv", "build"], stderr="no network"),
+            "uv pip exited 1: no network": fake_runner(failing=["uv", "pip"], stderr="no network"),
         }
         for message, runner in cases.items():
             with self.subTest(message=message):
@@ -343,9 +399,10 @@ class DistCheckTest(unittest.TestCase):
         source = self.dist / "source"
         (source / "onus" / "not-a-package").mkdir(parents=True)
         (source / ".gitignore").write_text("onus/generated.py\n", encoding="utf-8")
+        (source / "pyproject.toml").write_text(BUILD_SYSTEM, encoding="utf-8")
         for name in ("__init__.py", "new.py", "._new.py", ".#new.py", "generated.py", "not-a-package/x.py"):
             (source / "onus" / name).write_text("", encoding="utf-8")
-        for command in (["git", "init", "-q"], ["git", "add", ".gitignore", "onus/__init__.py"]):
+        for command in (["git", "init", "-q"], ["git", "add", ".gitignore", "pyproject.toml", "onus/__init__.py"]):
             subprocess.run(command, cwd=source, check=True, capture_output=True)
 
         def runner(command, **kwargs):
@@ -369,7 +426,7 @@ class DistCheckTest(unittest.TestCase):
                 self.assertEqual(
                     check_dist.main(["--build", str(self.dist), "--version", "9.9.9"]), check_dist.DEFECTIVE
                 )
-            with mock.patch.object(check_dist, "build", side_effect=check_dist.BuildError("uv build exited 2")):
+            with mock.patch.object(check_dist, "build", side_effect=check_dist.BuildError("uv pip exited 2")):
                 self.assertEqual(
                     check_dist.main(["--build", str(self.dist), "--version", "1.2.3"]), check_dist.NOT_BUILT
                 )
@@ -378,7 +435,7 @@ class DistCheckTest(unittest.TestCase):
         build.assert_called_with(check_dist.ROOT, self.dist, sys.executable)
         self.assertIn("onus 1.2.3", out.getvalue())
         self.assertIn("not 9.9.9", err.getvalue())
-        self.assertIn("nothing was checked, because the build could not run: uv build exited 2", err.getvalue())
+        self.assertIn("nothing was checked, because the build could not run: uv pip exited 2", err.getvalue())
 
     def test_no_verdict_shares_an_exit_code_with_a_crash_or_a_usage_error(self):
         # Python exits 1 on an uncaught exception and argparse exits 2 on bad arguments; the release reads the

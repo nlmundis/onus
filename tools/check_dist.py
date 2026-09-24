@@ -8,10 +8,11 @@ The build happens in a scratch copy of the files git tracks, because building wr
 its source tree, and the gate writes nothing into the checkout but gitignored caches.
 
 Exit status: 0 when the artifacts may be released; 3 (``DEFECTIVE``) when they may not, a packaging defect a
-re-run cannot fix; 4 (``NOT_BUILT``) when nothing could be checked, because the build itself could not run (a
-missing tool, the network, a file that could not be copied, a tracked file missing from the working tree),
-which a re-run after fixing the cause can. Any other status is not a verdict: 1 is what Python exits with on an
-uncaught exception, and 2 is argparse's usage error.
+re-run cannot fix, including tracked files the build backend refuses; 4 (``NOT_BUILT``) when nothing could be
+checked, because the build itself could not run (a missing tool, the network while fetching the backend, a
+file that could not be copied, a tracked file missing from the working tree), which a re-run after fixing the
+cause can. Any other status is not a verdict: 1 is what Python exits with on an uncaught exception, and 2 is
+argparse's usage error.
 """
 
 import argparse
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import zipfile
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path, PurePosixPath
@@ -33,6 +35,10 @@ DEFECTIVE, NOT_BUILT = 3, 4
 
 class BuildError(Exception):
     """The build could not run, so nothing was checked; the message says why and what clears it."""
+
+
+class UnbuildableError(Exception):
+    """The build ran and the backend refused the tracked files, so they cannot be released as they stand."""
 
 
 def source_version(root: Path = ROOT) -> str:
@@ -101,6 +107,21 @@ def stray_modules(untracked: Iterable[str]) -> list[str]:
     )
 
 
+def build_requirements(source: Path) -> list[str]:
+    """Return the ``[build-system]`` requirements ``source/pyproject.toml`` declares.
+
+    Raises:
+        UnbuildableError: the file does not parse, or declares no list of requirements.
+    """
+    try:
+        requires = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))["build-system"]["requires"]
+    except (tomllib.TOMLDecodeError, KeyError) as error:
+        raise UnbuildableError(f"pyproject.toml declares no [build-system] requires: {error!r}") from error
+    if not isinstance(requires, list) or not all(isinstance(item, str) for item in requires):
+        raise UnbuildableError(f"pyproject.toml's [build-system] requires is not a list of strings: {requires!r}")
+    return requires
+
+
 def run_tool(runner: Runner, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
     """Run ``command`` with ``runner``, turning a tool that cannot be started into a ``BuildError``."""
     try:
@@ -112,10 +133,15 @@ def run_tool(runner: Runner, command: list[str], **kwargs: object) -> subprocess
 def build(root: Path, out: Path, python: str, run: Runner | None = None) -> None:
     """Build the sdist and wheel into ``out`` with uv, from a scratch copy of the files git tracks in ``root``.
 
+    The build backend is fetched first, into a scratch environment on ``python``; the build then runs in that
+    environment without isolation, so it fetches nothing. A failure while fetching may clear on a re-run; a
+    failure of the build itself is the backend refusing the tracked files, which a re-run does not change.
+
     Raises:
         BuildError: git or uv could not be started, or failed, whose own error output the message carries; a
             module under ``onus/`` is not tracked; a tracked file is missing from the working tree; or the
-            tracked files could not be copied into the scratch folder.
+            tracked files could not be copied into the scratch folder; or the backend could not be fetched.
+        UnbuildableError: pyproject.toml names no build requirements, or the backend refused the tracked files.
     """
     runner = subprocess.run if run is None else run
     listing = run_tool(runner, ["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=False)
@@ -133,17 +159,29 @@ def build(root: Path, out: Path, python: str, run: Runner | None = None) -> None
     if missing:
         raise BuildError(f"tracked but missing from the working tree: {missing}; restore them or `git rm` them")
     with tempfile.TemporaryDirectory(prefix="onus-dist-") as scratch:
+        source, env = Path(scratch) / "source", Path(scratch) / "env"
         try:
             for name in tracked:
-                target = Path(scratch) / name
+                target = source / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(root / name, target)
         except OSError as error:
             raise BuildError(f"could not copy the tracked files into a scratch folder: {error}") from error
-        command = ["uv", "build", "--python", python, "--quiet", "--out-dir", str(out.resolve()), scratch]
+        requires = build_requirements(source)
+        env_python = str(env / "bin" / "python")
+        fetch = [
+            ["uv", "venv", "--quiet", "--python", python, str(env)],
+            ["uv", "pip", "install", "--quiet", "--python", env_python, *requires],
+        ]
+        for command in fetch:
+            result = run_tool(runner, command, capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                raise BuildError(f"{' '.join(command[:2])} exited {result.returncode}: {result.stderr.strip()}")
+        command = ["uv", "build", "--quiet", "--python", env_python, "--no-build-isolation"]
+        command += ["--out-dir", str(out.resolve()), str(source)]
         result = run_tool(runner, command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            raise BuildError(f"uv build exited {result.returncode}: {result.stderr.strip()}")
+            raise UnbuildableError(f"uv build exited {result.returncode}: {result.stderr.strip()}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -164,6 +202,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             except BuildError as error:
                 print(f"nothing was checked, because the build could not run: {error}", file=sys.stderr)
                 return NOT_BUILT
+            except UnbuildableError as error:
+                print(
+                    f"the tracked files do not build, so this commit cannot be released as it stands: {error}",
+                    file=sys.stderr,
+                )
+                return DEFECTIVE
         found = problems(dist, version)
     for problem in found:
         print(problem, file=sys.stderr)

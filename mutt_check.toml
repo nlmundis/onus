@@ -326,7 +326,7 @@ name = "build_run_in_the_checkout"
 why = "A build writes onus.egg-info into its source tree, so building in the checkout leaves it dirty."
 suites = ["tests.test_repo.DistCheckTest"]
 file = "tools/check_dist.py"
-find = '"--out-dir", str(out.resolve()), scratch]'
+find = '"--out-dir", str(out.resolve()), str(source)]'
 replace = '"--out-dir", str(out.resolve()), str(root)]'
 
 [[mutant]]
@@ -412,3 +412,38 @@ suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesT
 file = ".github/workflows/release.yml"
 find = 'elif [ "$status" -eq 4 ]; then'
 replace = 'elif [ "$status" -ne 0 ]; then'
+
+[[mutant]]
+name = "a_refused_build_called_not_built"
+why = "When the backend refuses the tracked files, a re-run refuses them again; calling it not built sends the release round a loop of re-runs on a tag that is already spent."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'raise UnbuildableError(f"uv build exited'
+replace = 'raise BuildError(f"uv build exited'
+
+[[mutant]]
+name = "a_failed_backend_fetch_called_a_defect"
+why = "Fetching the backend needs the network; calling its failure a defect tells the maintainer a tag is spent when a re-run would release it."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "raise BuildError(f\"{' '.join(command[:2])} exited"
+replace = "raise UnbuildableError(f\"{' '.join(command[:2])} exited"
+
+[[mutant]]
+name = "the_build_fetches_its_own_backend"
+why = "With isolation the build step fetches the backend again, so a network failure there would be read as the backend refusing the files."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = ', "--no-build-isolation"]'
+replace = "]"
+
+[[mutant]]
+name = "a_refused_build_exits_not_built"
+why = "The release reads check_dist's exit code; a refused build exiting 4 would tell it to re-run a tag that is spent."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """                return DEFECTIVE
+"""
+replace = """                return NOT_BUILT
+"""
+
