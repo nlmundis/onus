@@ -584,12 +584,23 @@ class GateSiblingsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(f"the gate refuses {name} beside the Makefile", result.stderr)
 
+    def test_each_is_refused_in_any_case(self):
+        # On a case-insensitive disk make's probe for GNUmakefile opens GNUMakefile, and mypy's for mypy.ini opens
+        # MyPy.ini, so the names are compared without case. Only the Makefile itself is let through.
+        for name in ("GNUMakefile", "MyPy.ini", "Setup.CFG", "UV.toml"):
+            with self.subTest(name=name):
+                result = self.refuse(name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"the gate refuses {name} beside the Makefile", result.stderr)
+
     def test_a_name_that_only_resembles_one_is_not_refused(self):
-        result = self.refuse("pyproject.toml", "ruff.toml.orig", "old-setup.cfg", "GNUmakefile.bak")
+        names = ("Makefile", "pyproject.toml", "ruff.toml.orig", "old-setup.cfg", "GNUmakefile.bak")
+        result = self.refuse(*names)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_the_checkout_has_none(self):
-        result = run_make("-s", "siblings")
+        # -f Makefile, as CI runs it: a GNUmakefile in the checkout could otherwise replace this very recipe.
+        result = run_make("-s", "-f", "Makefile", "siblings")
         self.assertEqual(result.returncode, 0, result.stderr)
 
 

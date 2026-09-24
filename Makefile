@@ -76,12 +76,13 @@ interpreters:
 
 # make reads a GNUmakefile or makefile instead of this file, and ruff, mypy, coverage, and uv each read their own
 # file before pyproject.toml's tables; any of them could switch a stage off with this file unchanged. Each is
-# refused by name, as `ls` spells it: on a case-insensitive disk a probe for `makefile` finds this Makefile.
+# refused by name, as `ls` spells it and in any case, since on a case-insensitive disk make's probe for
+# GNUmakefile opens a GNUMakefile; only this Makefile itself is let through.
 # Every tool is also handed pyproject.toml, since ruff reads a ruff.toml in any folder for the files below it.
 SIBLINGS := GNUmakefile makefile ruff.toml .ruff.toml mypy.ini .mypy.ini .coveragerc setup.cfg tox.ini uv.toml
 
 siblings:
-	@found="$$(ls -A | grep -Fx $(foreach name,$(SIBLINGS),-e $(name)))"; test -z "$$found" || { \
+	@found="$$(ls -A | grep -vx Makefile | grep -Fxi $(foreach name,$(SIBLINGS),-e $(name)))"; test -z "$$found" || { \
 	  echo "the gate refuses" $$found "beside the Makefile: make or a tool would read it instead of the" \
 	    "Makefile or pyproject.toml. Move its settings into those, and delete it." >&2; exit 1; }
 

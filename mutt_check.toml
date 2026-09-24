@@ -151,7 +151,7 @@ replace = "check: interpreters format"
 
 [[mutant]]
 name = "a_sibling_config_dropped_from_the_refusal"
-why = "setup.cfg carries sections that mypy and coverage read before pyproject.toml; unlisted, it could switch off strict types or the coverage floor."
+why = "coverage reads setup.cfg's [coverage:*] sections before pyproject.toml; unlisted, it could lower the coverage floor or narrow what is measured."
 suites = ["tests.test_repo.GateSiblingsTest"]
 file = "Makefile"
 find = ".coveragerc setup.cfg tox.ini"
@@ -174,6 +174,22 @@ find = "grep -Fx"
 replace = "grep -F"
 
 [[mutant]]
+name = "the_sibling_refusal_matches_only_one_case"
+why = "On a case-insensitive disk make opens a GNUMakefile for its GNUmakefile probe, and the tools open MyPy.ini or Setup.CFG; matched with case, each would pass."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "grep -Fxi"
+replace = "grep -Fx"
+
+[[mutant]]
+name = "the_sibling_refusal_refuses_the_makefile"
+why = "Compared without case, the Makefile matches the makefile entry; without the exception every checkout would be refused."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "ls -A | grep -vx Makefile | grep"
+replace = "ls -A | grep"
+
+[[mutant]]
 name = "lint_reads_a_nested_ruff_toml"
 why = "Left to find its own config, ruff applies a ruff.toml in any folder to the files below it, so tools/ruff.toml with select = [] switches lint off there."
 suites = ["tests.test_repo.GateStagesTest"]
@@ -191,7 +207,7 @@ replace = "coverage report"
 
 [[mutant]]
 name = "types_stage_finds_its_own_config"
-why = "Left to find its own config, mypy reads mypy.ini, .mypy.ini, or setup.cfg before pyproject.toml, any of which can switch strict off."
+why = "Left to find its own config, mypy reads mypy.ini or .mypy.ini before pyproject.toml, either of which can switch strict off."
 suites = ["tests.test_repo.GateStagesTest"]
 file = "Makefile"
 find = "$(MYPY) --config-file pyproject.toml"
