@@ -210,6 +210,14 @@ find = "python-version: ${{ matrix.python }}"
 replace = 'python-version: "3.13"'
 
 [[mutant]]
+name = "ci_reads_whatever_makefile_it_finds_first"
+why = "Without -f Makefile, a GNUmakefile holding `include Makefile` and `.IGNORE:` turns every CI job green, and the tests that refuse it run inside that same make."
+suites = ["tests.test_repo.CheckWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/check.yml"
+find = "run: make -f Makefile check"
+replace = "run: make check"
+
+[[mutant]]
 name = "required_check_skipped_when_a_job_fails"
 why = "Without always(), a failed matrix job skips the required check, a skip counts as passing, and a red PR merges."
 suites = ["tests.test_repo.CheckWorkflowTest"]

@@ -21,6 +21,7 @@ import io
 import json
 import os
 import re
+import shlex
 import stat
 import subprocess
 import sys
@@ -649,11 +650,28 @@ class CheckWorkflowTest(unittest.TestCase):
     def test_each_matrix_job_runs_the_whole_gate_on_its_own_python(self):
         check = job_block(CHECK_YML, "check")
         self.assertIn("          python-version: ${{ matrix.python }}\n", check)
-        self.assertEqual(run_lines(check), ['make check PY="$(command -v python)" COMPAT_PY="$(command -v python)"'])
+        self.assertEqual(
+            run_lines(check), ['make -f Makefile check PY="$(command -v python)" COMPAT_PY="$(command -v python)"']
+        )
         for escape in ("exclude:", "include:", "continue-on-error", "if:"):
             with self.subTest(escape=escape):
                 self.assertNotIn(escape, check)
         self.assertNotIn("UV_PYTHON_DOWNLOADS", CHECK_YML)
+
+    def test_ci_reads_the_makefile_whatever_sits_beside_it(self):
+        # make reads a GNUmakefile instead of the Makefile, and one holding `include Makefile` and `.IGNORE:`
+        # would turn CI green; the tests that forbid it run inside that same make. CI's own make options, taken
+        # from the workflow, must make it read the Makefile alone.
+        command = shlex.split(run_lines(job_block(CHECK_YML, "check"))[0])
+        self.assertEqual(command[0], "make")
+        options = command[1 : command.index("check")]
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "Makefile").write_text(MAKEFILE, encoding="utf-8")
+            (Path(tmp) / "GNUmakefile").write_text("include Makefile\n.IGNORE:\n", encoding="utf-8")
+            result = run_make(*options, "-s", "gate-env", cwd=Path(tmp))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        read = dict(line.split("=", 1) for line in result.stdout.splitlines())["MAKEFILE_LIST"]
+        self.assertEqual(read.split(), ["Makefile"])
 
     def test_the_required_check_fails_whenever_any_matrix_job_did_not_succeed(self):
         gate = job_block(CHECK_YML, "all-checks")
