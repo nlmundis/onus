@@ -90,6 +90,15 @@ class GateRecipeTest(unittest.TestCase):
             MAKEFILE, r"(?m)^export HYPOTHESIS_STORAGE_DIRECTORY \?= \$\(or \$\(TMPDIR\),/tmp\)/onus-hypothesis$"
         )
 
+    def test_the_floor_check_runs_on_pyenvs_exact_floor_patch(self):
+        pin = re.search(r"(?m)^COMPAT_PIN := (\S+)$", MAKEFILE)
+        assert pin is not None
+        self.assertRegex(pin.group(1), r"^\d+\.\d+\.\d+$")
+        self.assertEqual(minor(pin.group(1)), minor(PYPROJECT["project"]["requires-python"].removeprefix(">=")))
+        self.assertRegex(
+            MAKEFILE, r"(?m)^COMPAT_PY \?= \$\(shell pyenv prefix \$\(COMPAT_PIN\) 2>/dev/null\)/bin/python3$"
+        )
+
     def test_no_bytecode_is_written(self):
         self.assertRegex(MAKEFILE, r"(?m)^export PYTHONDONTWRITEBYTECODE := 1$")
 

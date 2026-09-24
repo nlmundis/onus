@@ -33,6 +33,14 @@ find = "export PYTHONDONTWRITEBYTECODE := 1"
 replace = "export PYTHONDONTWRITEBYTECODE :="
 
 [[mutant]]
+name = "floor_check_left_to_uv_discovery"
+why = "A bare 3.11 lets uv pick whatever 3.11 it finds, or download one, instead of pyenv's exact patch."
+suites = ["tests.test_repo.GateRecipeTest"]
+file = "Makefile"
+find = "COMPAT_PY ?= $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null)/bin/python3"
+replace = "COMPAT_PY ?= 3.11"
+
+[[mutant]]
 name = "a_gate_stage_dropped"
 why = "make check is the whole gate; a stage left out passes silently."
 suites = ["tests.test_repo.GateRecipeTest"]

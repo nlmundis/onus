@@ -11,8 +11,9 @@
 
 PIN := $(shell cat .python-version)
 PY ?= $(shell pyenv prefix $(PIN) 2>/dev/null)/bin/python3
-# ⚠ SHORTCUT (2026-09-23) — the floor check runs on uv's managed CPython 3.11.11 because pyenv has no 3.11 — ceiling: compileall only; the suite itself runs on the pin and, in CI, on 3.11 — exit: `pyenv install 3.11.<patch>` on Nathan's go-ahead, then COMPAT_PY := $(shell pyenv prefix 3.11.<patch>)/bin/python3
-COMPAT_PY ?= 3.11
+# The floor check runs on pyenv's exact 3.11 patch too, never on an interpreter uv finds for itself.
+COMPAT_PIN := 3.11.14
+COMPAT_PY ?= $(shell pyenv prefix $(COMPAT_PIN) 2>/dev/null)/bin/python3
 # uv may not fetch its own CPython behind pyenv's back.
 export UV_PYTHON_DOWNLOADS ?= never
 # Hypothesis writes a charmap and constants cache into the working directory even with database=None
