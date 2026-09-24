@@ -443,6 +443,10 @@ class GateInterpreterTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(f"pyenv install {self.floor}", result.stderr)
         self.assertNotIn(f"pyenv install {self.pin}", result.stderr)
+        result = run_make("-n", "check", "COMPAT_PY=/given/bin/python3", path_prefix=bin_dir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"pyenv install {self.pin}", result.stderr)
+        self.assertNotIn(f"pyenv install {self.floor}", result.stderr)
 
     def test_a_missing_floor_patch_stops_the_gate_before_its_first_stage(self):
         bin_dir = fake_pyenv(Path(self.tmp.name), {self.pin: "/pyenv/pinned"})

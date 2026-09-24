@@ -110,6 +110,14 @@ find = "$(if $(PY_GIVEN)$(PIN_HOME),,$(PIN))"
 replace = "$(if $(PIN_HOME),,$(PIN))"
 
 [[mutant]]
+name = "a_floor_override_still_asks_for_its_patch"
+why = "A caller who passes COMPAT_PY, as CI does, would be told to install a floor patch the gate will never use."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "$(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN))"
+replace = "$(if $(COMPAT_HOME),,$(COMPAT_PIN))"
+
+[[mutant]]
 name = "makefiles_read_hidden"
 why = "A GNUmakefile read before the Makefile could override any pinned recipe; gate-env is where it shows."
 suites = ["tests.test_repo.GateEnvironmentTest"]
