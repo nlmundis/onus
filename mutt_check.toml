@@ -11,7 +11,7 @@ timeout = 300
 
 [[mutant]]
 name = "uv_allowed_to_fetch_its_own_python"
-why = "An override such as PY=3.13 asks uv for a version, not a path; with downloads allowed uv fetches a CPython instead of refusing."
+why = "An override such as PY=3.13 asks uv for a version, not a path; on a machine with no 3.13, uv would then download a CPython instead of refusing."
 suites = ["tests.test_repo.GateEnvironmentTest"]
 file = "Makefile"
 find = "export UV_PYTHON_DOWNLOADS ?= never"
@@ -66,8 +66,32 @@ name = "a_gate_stage_dropped"
 why = "make check is the whole gate; a stage left out passes silently."
 suites = ["tests.test_repo.GateStagesTest"]
 file = "Makefile"
-find = "check: format lint types coverage test compat mutants"
-replace = "check: format lint types coverage test mutants"
+find = "check: interpreters format lint types coverage test compat dist mutants"
+replace = "check: interpreters format lint types coverage test dist mutants"
+
+[[mutant]]
+name = "packaging_left_unchecked_until_the_release"
+why = "Without the dist stage a wheel missing py.typed, or an sdist carrying tests/, first fails in the release run, after a permanent tag."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "check: interpreters format lint types coverage test compat dist mutants"
+replace = "check: interpreters format lint types coverage test compat mutants"
+
+[[mutant]]
+name = "a_missing_interpreter_found_only_mid_gate"
+why = "Without the interpreters prerequisite a missing floor patch surfaces only at the compat stage, after five stages have run."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "check: interpreters format lint types coverage test compat dist mutants"
+replace = "check: format lint types coverage test compat dist mutants"
+
+[[mutant]]
+name = "a_stage_failure_ignored"
+why = "A `-` prefix lets make carry on past a failing stage; make's dry run prints the recipe without it, so only the approved copy sees it."
+suites = ["tests.test_repo.ApprovedFilesTest"]
+file = "Makefile"
+find = "\t$(RUN) --with \"$(MUTT_CHECK)\" mutt_check mutt_check.toml"
+replace = "\t-$(RUN) --with \"$(MUTT_CHECK)\" mutt_check mutt_check.toml"
 
 [[mutant]]
 name = "a_stage_recipe_turned_into_a_no_op"
@@ -172,6 +196,30 @@ find = "    needs: checks\n"
 replace = ""
 
 [[mutant]]
+name = "release_runs_after_a_failed_gate"
+why = "if: always() makes the release job run when the gate job failed, so a red commit is published."
+suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/release.yml"
+find = "    needs: checks\n    runs-on: ubuntu-latest\n"
+replace = "    needs: checks\n    if: always()\n    runs-on: ubuntu-latest\n"
+
+[[mutant]]
+name = "release_trigger_narrower_than_the_ruleset"
+why = "A v* tag the trigger ignores is still made permanent by the ruleset, and nothing says it was not released."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = 'tags: ["v*"]'
+replace = 'tags: ["v[0-9]+.[0-9]+.[0-9]+"]'
+
+[[mutant]]
+name = "release_refusal_neutered"
+why = "Without exit 1 the refusal only prints, and a tag that is not on main, or does not match its version, is published."
+suites = ["tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/release.yml"
+find = "            exit 1\n          fi\n"
+replace = "            true\n          fi\n"
+
+[[mutant]]
 name = "release_ignores_a_version_mismatch"
 why = "A tag that does not match __version__ would publish a wheel under the wrong number."
 suites = ["tests.test_repo.ReleaseWorkflowTest"]
@@ -188,3 +236,37 @@ suites = ["tests.test_repo.RulesetRecordTest"]
 file = ".github/rulesets/main.json"
 find = '"bypass_actors": [],'
 replace = '"bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always"}],'
+
+# --- the artifact checks the gate and the release share ---
+
+[[mutant]]
+name = "wheel_type_marker_unchecked"
+why = "A wheel without py.typed ships untyped to every caller."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'if "onus/py.typed" not in wheel.namelist():'
+replace = "if False:"
+
+[[mutant]]
+name = "sdist_tests_unchecked"
+why = "tests/ read files an sdist does not carry, so a downstream test run crashes."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'if any(Path(name).parts[1:2] == ("tests",) for name in sdist.getnames()):'
+replace = "if False:"
+
+[[mutant]]
+name = "wheel_import_unchecked"
+why = "A wheel whose core imports a third-party package fails for every caller without the extra."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    if result.returncode != 0:"
+replace = "    if False:"
+
+[[mutant]]
+name = "build_run_in_the_checkout"
+why = "A build writes onus.egg-info into its source tree, so building in the checkout leaves it dirty."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = '"--out-dir", str(out), scratch]'
+replace = '"--out-dir", str(out), str(root)]'

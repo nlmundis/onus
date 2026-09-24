@@ -1,0 +1,34 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The release workflow runs this same gate on the tagged commit before publishing.
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v6
+      # CI has no pyenv: hand uv this job's interpreter by path for every stage, the floor check included.
+      # uv still fetches the pinned tools; it never needs to download a Python, since it is given one.
+      - run: make check PY="$(command -v python)" COMPAT_PY="$(command -v python)"
+
+  # The one check branch protection requires. Requiring each matrix job by name
+  # would silently stop protecting main the day the matrix changes.
+  all-checks:
+    name: all checks passed
+    if: always()
+    needs: [check]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.check.result }}" = "success"

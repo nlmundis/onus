@@ -57,13 +57,13 @@ select = ["E", "F", "W", "I", "D", "ANN", "B", "UP"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-# A test's name is its documentation and its signature is always (self) -> None.
+# A test's name is its documentation, and test methods and helpers need no annotations.
 "tests/*" = ["D100", "D101", "D102", "D103", "D104", "ANN001", "ANN002", "ANN003", "ANN201", "ANN202", "ANN204", "ANN205", "ANN206"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["onus", "tests"]
+files = ["onus", "tests", "tools"]
 
 [[tool.mypy.overrides]]
 # Tests are type-checked, but test methods need not be annotated.
@@ -74,7 +74,7 @@ disallow_untyped_calls = false
 
 [tool.coverage.run]
 branch = true
-source = ["onus"]
+source = ["onus", "tools"]
 
 [tool.coverage.report]
 fail_under = 95
