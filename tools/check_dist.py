@@ -13,8 +13,9 @@ Exit status: 0 when the artifacts may be released; 3 (``DEFECTIVE``) when they m
 re-run cannot fix, including tracked files the build backend refuses; 4 (``NOT_BUILT``) when nothing could be
 checked, because the build itself could not run (a missing tool, the network while fetching the backend, a
 file that could not be copied, a tracked file missing from the working tree), which a re-run after fixing the
-cause can. Any other status is not a verdict: 1 is what Python exits with on an uncaught exception, and 2 is
-argparse's usage error.
+cause can; a build requirement no index has exits 4 as well, so a 4 that repeats is the commit's own. Any
+other status is not a verdict: 1 is what Python exits with on an uncaught exception, and 2 is argparse's usage
+error.
 """
 
 import argparse

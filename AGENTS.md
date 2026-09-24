@@ -62,16 +62,17 @@ time, or pushed by a workflow's own token, so push release tags by hand and one 
 started no run is stranded, since the ruleset keeps it from being pushed again; the admin removal below, then
 pushing it alone, releases it.
 
-**Every `v*` tag is permanent.** The "release tags never move" ruleset refuses deleting or moving one, and
-no one can bypass it, so a tag pushed by mistake stays, and its version is spent: fix the cause, set
+**Every `v*` tag is permanent.** The "release tags never move" ruleset refuses deleting or moving one, and no
+one can bypass it, so a tag pushed by mistake stays, and its version is spent: fix the cause, set
 `__version__` to the next unused version in a PR, merge it, and tag that merge commit. Each refusal the
 release job makes says whether the tag is spent. A tag whose gate fails skips the release job. When the
 failure is the commit's own (a test, lint, types, or the dist check failing on its files), the tag is spent
 the same way; when it is not (the network, a lost runner, a tool that could not be fetched), re-running the
 failed jobs clears it, so re-run them once before calling the tag spent. A refusal that says the tag is not
-spent (main could not be fetched, the build could not run) clears by re-running the job. Only the repository
-admin can take a tag away, by disabling the ruleset, deleting the tag, and enabling the ruleset again; after
-that the name is free to push again.
+spent (main could not be fetched, the build could not run) usually clears by re-running the job; a build that
+still cannot run on the re-run has its cause in the commit, such as a build requirement no index has, and the
+tag is spent. Only the repository admin can take a tag away, by disabling the ruleset, deleting the tag, and
+enabling the ruleset again; after that the name is free to push again.
 
 ## Rulesets
 

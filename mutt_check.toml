@@ -623,3 +623,21 @@ find = """  The build backend is not pinned: pyproject.toml asks for `setuptools
 """
 replace = ""
 
+[[mutant]]
+name = "release_says_a_repeated_not_built_clears"
+why = "A build requirement no index has exits 4 on every run; a message that only says re-run sends the maintainer round a loop on a tag that is already spent."
+suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/release.yml"
+find = "is not spent yet: re-run this job once. If it stops the same way, the cause is in this commit and $GITHUB_REF_NAME is spent: fix it in a PR, set onus.__version__ to the next unused version, merge it to main, and tag that merge commit v<that version>."
+replace = "is not spent: re-run this job."
+
+[[mutant]]
+name = "agents_says_a_build_that_cannot_run_always_clears"
+why = "An agent told every not-built refusal clears on a re-run would keep re-running a build whose requirement no index has."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """usually clears by re-running the job; a build that
+still cannot run on the re-run has its cause in the commit, such as a build requirement no index has, and the
+tag is spent."""
+replace = "clears by re-running the job."
+

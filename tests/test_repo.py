@@ -808,6 +808,16 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(sum("is not spent" in command and "re-run this job" in command for command in commands), 2)
         self.assertTrue(any("tag this same commit v$version" in command for command in commands))
 
+    def test_a_build_that_cannot_run_twice_is_called_spent(self):
+        # A build requirement no index has also stops the fetch, which exits NOT_BUILT; only a repeat tells that
+        # apart from the network, so the message must say what a repeat means.
+        commands = run_lines(job_block(RELEASE_YML, "release"))
+        branch = commands.index(f'elif [ "$status" -eq {check_dist.NOT_BUILT} ]; then')
+        message = commands[branch + 1]
+        self.assertIn("is not spent yet: re-run this job once.", message)
+        self.assertIn("If it stops the same way, the cause is in this commit", message)
+        self.assertIn("set onus.__version__ to the next unused version", message)
+
     def test_the_artifacts_are_checked_by_the_gates_own_script_before_publishing(self):
         commands = run_lines(job_block(RELEASE_YML, "release"))
         check = commands.index('python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist || status=$?')
@@ -1020,6 +1030,14 @@ class DocumentedClaimsTest(unittest.TestCase):
             f"The build backend is not pinned: pyproject.toml asks for `{unpinned[0]}`, and `make dist` and the "
             "release each build with the newest version uv resolves when they run, so a setuptools release "
             "between the two can change or break the artifacts."
+        )
+        self.assertIn(claim, prose("AGENTS.md"))
+
+    def test_a_build_that_still_cannot_run_spends_the_tag(self):
+        claim = (
+            "A refusal that says the tag is not spent (main could not be fetched, the build could not run) usually "
+            "clears by re-running the job; a build that still cannot run on the re-run has its cause in the "
+            "commit, such as a build requirement no index has, and the tag is spent."
         )
         self.assertIn(claim, prose("AGENTS.md"))
 
