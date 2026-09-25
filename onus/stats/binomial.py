@@ -5,7 +5,9 @@ distribution is symmetric and doubling the smaller tail is unambiguous; elsewher
 """
 
 import math
+import numbers
 from collections.abc import Sequence
+from decimal import Decimal
 from fractions import Fraction
 from functools import lru_cache
 
@@ -131,13 +133,22 @@ def sign_test(wins: int, losses: int, *, ties: int, alternative: str, method: st
     return TestResult("sign", method, alternative, _p_exact(wins, n, HALF, alternative), wins, n, HALF, ties=ties)
 
 
-def _missing(value: object) -> bool:
-    return value is None or (isinstance(value, float) and math.isnan(value))
+Paired = float | int | Fraction | Decimal | None
+
+
+def _present(value: Paired, name: str) -> Paired:
+    """Return ``value``, or None when it is missing (None or a NaN); refuse anything that is not a real number."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, numbers.Real | Decimal):
+        raise TypeError(f"{name} must be a real number or None, not {value!r}")
+    missing = value.is_nan() if isinstance(value, Decimal) else math.isnan(value)
+    return None if missing else value
 
 
 def paired_sign_test(
-    first: Sequence[float | int | Fraction | None],
-    second: Sequence[float | int | Fraction | None],
+    first: Sequence[Paired],
+    second: Sequence[Paired],
     *,
     alternative: str,
     missing: str,
@@ -145,12 +156,14 @@ def paired_sign_test(
 ) -> TestResult:
     """Sign test on paired values: a win where ``first`` exceeds ``second``, a loss where it falls short.
 
-    A pair with a missing value (None or NaN) is refused with ``missing="refuse"``, or dropped and counted in
+    Each value is a real number (an int, float, Fraction, or Decimal) or None. A pair with a missing value
+    (None, or a float or Decimal NaN) is refused with ``missing="refuse"``, or dropped and counted in
     the result with ``missing="drop"``. Equal values are ties, recorded and left out.
 
     Raises:
         MissingDataError: a pair has a missing value and ``missing`` is "refuse".
         EmptySampleError: no pair is a win or a loss.
+        TypeError: a value is not a real number or None.
         ValueError: the sequences differ in length, or an unknown alternative, method, or missing policy.
     """
     if missing not in ("refuse", "drop"):
@@ -158,8 +171,9 @@ def paired_sign_test(
     if len(first) != len(second):
         raise ValueError(f"first and second must be paired: {len(first)} values against {len(second)}")
     gaps, wins, losses, ties = [], 0, 0, 0
-    for index, (a, b) in enumerate(zip(first, second, strict=True)):
-        if a is None or b is None or _missing(a) or _missing(b):
+    for index, pair in enumerate(zip(first, second, strict=True)):
+        a, b = _present(pair[0], f"first[{index}]"), _present(pair[1], f"second[{index}]")
+        if a is None or b is None:
             gaps.append(index)
         elif a > b:
             wins += 1

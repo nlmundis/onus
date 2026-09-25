@@ -911,6 +911,38 @@ find = "return min(Fraction(1), 2 * min(upper, lower))"
 replace = "return min(Fraction(1), min(upper, lower))"
 
 [[mutant]]
+name = "a_decimal_nan_compared_as_a_number"
+why = "A Decimal NaN compared with a number raises InvalidOperation, so a pair missing its value crashes instead of being refused or dropped as asked."
+suites = ["tests.test_stats.SignTestTest"]
+file = "onus/stats/binomial.py"
+find = "missing = value.is_nan() if isinstance(value, Decimal) else math.isnan(value)"
+replace = "missing = isinstance(value, float) and math.isnan(value)"
+
+[[mutant]]
+name = "a_float_nan_compared_as_a_number"
+why = "A float NaN is neither above nor below anything, so a missing value would be counted as a tie."
+suites = ["tests.test_stats.SignTestTest"]
+file = "onus/stats/binomial.py"
+find = "missing = value.is_nan() if isinstance(value, Decimal) else math.isnan(value)"
+replace = "missing = isinstance(value, Decimal) and value.is_nan()"
+
+[[mutant]]
+name = "a_non_number_compared_as_it_is"
+why = "Strings compare as text, so '10' against '9' would be scored a loss; a value that is not a real number must be refused."
+suites = ["tests.test_stats.SignTestTest"]
+file = "onus/stats/binomial.py"
+find = "if isinstance(value, bool) or not isinstance(value, numbers.Real | Decimal):"
+replace = "if isinstance(value, bool):"
+
+[[mutant]]
+name = "a_bool_taken_as_a_number"
+why = "True against 0 would be scored a win; a bool is a flag, not a measurement."
+suites = ["tests.test_stats.SignTestTest"]
+file = "onus/stats/binomial.py"
+find = "if isinstance(value, bool) or not isinstance(value, numbers.Real | Decimal):"
+replace = "if not isinstance(value, numbers.Real | Decimal):"
+
+[[mutant]]
 name = "two_sided_cap_removed"
 why = "Doubled without the cap, a p-value near the middle exceeds 1, which no probability can."
 suites = ["tests.test_stats.OracleTest"]

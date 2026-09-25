@@ -20,6 +20,7 @@ import types
 import unittest
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stderr
+from decimal import Decimal
 from fractions import Fraction
 from itertools import product
 from pathlib import Path
@@ -285,6 +286,19 @@ class SignTestTest(unittest.TestCase):
             paired_sign_test(first, second, alternative="greater", missing="ignore", method="exact")
         with self.assertRaisesRegex(ValueError, "3 values against 2"):
             paired_sign_test([1, 2, 3], [1, 2], alternative="greater", missing="drop", method="exact")
+
+    def test_a_decimal_nan_is_missing_and_a_non_number_is_refused(self):
+        first: list[float | Fraction | Decimal] = [Decimal("3"), Decimal("NaN"), Decimal("sNaN"), Fraction(1, 2), 2.5]
+        second: list[float | Fraction | Decimal] = [Decimal("1"), Decimal("2"), 1, Decimal("0.25"), 3]
+        with self.assertRaisesRegex(MissingDataError, r"2 pairs have a missing value \(the first at index 1\)"):
+            paired_sign_test(first, second, alternative="greater", missing="refuse", method="exact")
+        dropped = paired_sign_test(first, second, alternative="greater", missing="drop", method="exact")
+        self.assertEqual((dropped.successes, dropped.n, dropped.missing), (2, 3, 2))
+        values: list[Any] = ["3", True, 1j, b"3", [3]]
+        for value in values:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(TypeError, r"second\[1\] must be a real number or None, not"):
+                    paired_sign_test([None, 2], [1, value], alternative="greater", missing="drop", method="exact")
 
     def test_exact_mcnemar_is_the_sign_test_on_the_discordant_pairs(self):
         result = mcnemar_exact(9, 2, alternative="two-sided", method="exact")
