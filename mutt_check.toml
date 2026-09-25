@@ -468,6 +468,22 @@ find = """        if not line.strip():
 replace = ""
 
 [[mutant]]
+name = "package_find_matches_sibling_packages"
+why = "onus* also matches a top-level onus_extras/, which ships in the wheel while mypy, coverage, compat, and the stdlib-only checks look only at onus/."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "pyproject.toml"
+find = 'include = ["onus", "onus.*"]'
+replace = 'include = ["onus*"]'
+
+[[mutant]]
+name = "wheel_contents_beyond_the_package_unchecked"
+why = "A sibling package, a setup.py py_modules entry, or a .data folder would ship in the wheel with no check ever having looked at it."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "        if extra:"
+replace = "        if False:"
+
+[[mutant]]
 name = "wheel_import_unchecked"
 why = "A wheel whose core imports a third-party package fails for every caller without the extra."
 suites = ["tests.test_repo.DistCheckTest"]

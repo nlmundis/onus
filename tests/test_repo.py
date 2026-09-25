@@ -228,6 +228,10 @@ class StdlibOnlyTest(unittest.TestCase):
         self.assertTrue((ROOT / "onus" / "py.typed").is_file())
         self.assertEqual(PYPROJECT["tool"]["setuptools"]["package-data"], {"onus": ["py.typed"]})
 
+    def test_only_the_onus_package_is_found(self):
+        # "onus*" also matches a top-level onus_extras/, which every check that looks at onus/ would skip.
+        self.assertEqual(PYPROJECT["tool"]["setuptools"]["packages"]["find"]["include"], ["onus", "onus.*"])
+
     def test_the_manifest_prunes_tests(self):
         # tests/ reads the Makefile, workflows, and rulesets, none of which an sdist carries. Whether the built
         # sdist leaves tests/ out is checked by the dist stage; ApprovedFilesTest pins every MANIFEST.in line.
@@ -330,6 +334,13 @@ class DistCheckTest(unittest.TestCase):
                 "the wheel is named onus-1.2.3.dev7-py3-none-any.whl, not onus-1.2.3-py3-none-any.whl",
                 "the sdist is named onus-1.2.3.dev7.tar.gz, not onus-1.2.3.tar.gz",
             ],
+        )
+
+    def test_the_wheel_carries_only_the_package_and_its_metadata(self):
+        self.artifacts(wheel_files={"onus_extras/__init__.py": "import hypothesis\n", "onus-1.2.3.data/data/x": ""})
+        self.assertEqual(
+            check_dist.problems(self.dist, "1.2.3"),
+            ["the wheel carries more than onus/ and its .dist-info: ['onus-1.2.3.data', 'onus_extras']"],
         )
 
     def test_a_version_is_read_from_the_headers_only(self):

@@ -65,6 +65,11 @@ def metadata_version(text: str) -> str | None:
     return None
 
 
+def dist_info(wheel: zipfile.ZipFile) -> set[str]:
+    """Return the wheel's top-level ``.dist-info`` folder names; a well-formed wheel has exactly one."""
+    return {name.split("/")[0] for name in wheel.namelist() if re.fullmatch(r"onus-[^/]+\.dist-info/.+", name)}
+
+
 def version_problems(wheel: zipfile.ZipFile, sdist: tarfile.TarFile, names: tuple[str, str], version: str) -> list[str]:
     """Return how the artifacts' own names and metadata disagree with ``version``.
 
@@ -93,10 +98,11 @@ def version_problems(wheel: zipfile.ZipFile, sdist: tarfile.TarFile, names: tupl
 def problems(dist: Path, version: str) -> list[str]:
     """Return what stops the artifacts in ``dist`` from being released as ``version``; empty when nothing does.
 
-    Checks that there is exactly one wheel and one sdist, named and described (METADATA, PKG-INFO) as
-    ``version``; that the wheel carries the ``py.typed`` marker; that the sdist leaves out the repository's own
-    tests; and that the wheel imports with the standard library alone (``-I -S``, straight from the zip, from
-    outside any checkout) and reports ``version``. ``dist`` may be relative to the current directory.
+    Checks that there is exactly one wheel and one sdist, named and described (METADATA, PKG-INFO) as ``version``;
+    that the wheel carries nothing but ``onus/`` and its ``.dist-info``, and the ``py.typed`` marker; that the sdist
+    leaves out the repository's own tests; and that the wheel imports with the standard library alone (``-I -S``,
+    straight from the zip, from outside any checkout) and reports ``version``. ``dist`` may be relative to the
+    current directory.
     """
     dist = dist.resolve()
     wheels, sdists = sorted(dist.glob("*.whl")), sorted(dist.glob("*.tar.gz"))
@@ -105,6 +111,9 @@ def problems(dist: Path, version: str) -> list[str]:
         return [f"expected exactly one wheel and one sdist in {dist}, found {found}"]
     found_problems = []
     with zipfile.ZipFile(wheels[0]) as wheel:
+        extra = sorted({name.split("/")[0] for name in wheel.namelist()} - {"onus", *dist_info(wheel)})
+        if extra:
+            found_problems.append(f"the wheel carries more than onus/ and its .dist-info: {extra}")
         if "onus/py.typed" not in wheel.namelist():
             found_problems.append(
                 "the wheel has no onus/py.typed: it must exist and be listed under [tool.setuptools.package-data], "

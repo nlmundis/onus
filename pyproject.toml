@@ -33,7 +33,8 @@ dependencies = []
 invariants = ["hypothesis>=6.168.1,<7"]
 
 [tool.setuptools.packages.find]
-include = ["onus*"]
+# The package and its subpackages only: "onus*" would also ship a top-level onus_extras/ no check looks at.
+include = ["onus", "onus.*"]
 
 [tool.setuptools.package-data]
 onus = ["py.typed"]
