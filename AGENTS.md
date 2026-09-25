@@ -55,6 +55,9 @@ through uvx or `uv run --no-project` at the versions pinned in the Makefile.
   every checkout sets `persist-credentials: false`, and the gate's token can only read; `WorkflowTokenTest`
   checks all three. Only the release's Create step holds a write token, through `GH_TOKEN`.
 - **Branch, then PR.** Never commit to `main`; the ruleset refuses it anyway. Stage by path.
+- **End every working session with a handoff note** in `docs/handoffs/`, committed with the session's work
+  (or in its own PR when there is none). `docs/handoffs/README.md` gives the file name, the front matter, and
+  the sections. Notes are kept, not deleted: they are the project's progress log. Read the newest one first.
 
 ## Releasing
 
