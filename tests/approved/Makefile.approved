@@ -46,13 +46,16 @@ RUFF := ruff==0.16.8
 MYPY := mypy==2.3.1
 COVERAGE := coverage[toml]==7.16.1
 HYPOTHESIS := hypothesis==6.168.1
+# Only for `make reference`, the second opinion onus.stats is checked against; never imported by onus.
+SCIPY := scipy==1.18.1
+STATSMODELS := statsmodels==0.15.0
 # v0.0.2, pinned by commit: a tag can move and would change the tool that decides caught and survived.
 MUTT_CHECK := mutt_check @ git+https://github.com/nlmundis/mutt_check@8a89dfc4c93357e294cbc51d1b723b27078c5481
 
 # Recursive, so PY is resolved only by the targets that use it and `make help` works without pyenv.
 RUN = uv run --no-project --python "$(PY)" --with "$(HYPOTHESIS)"
 
-.PHONY: help check interpreters siblings format lint types coverage test compat dist mutants gate-env
+.PHONY: help check interpreters siblings format lint types coverage test compat dist mutants gate-env reference sims
 
 help:
 	@echo "make check        the whole gate, as below, in this order"
@@ -67,6 +70,8 @@ help:
 	@echo "make dist         build the sdist and wheel from the tracked files and check them as a release would"
 	@echo "make mutants      mutt_check: every curated mutant caught, the no-op rewrite not"
 	@echo "make gate-env     print the settings make exports to every stage, and the makefiles it read"
+	@echo "make reference    rewrite tests/reference/stats_reference.json from pinned scipy and statsmodels"
+	@echo "make sims         rewrite tests/reference/sims.json, the simulated rejection rates"
 
 check: interpreters siblings format lint types coverage test compat dist mutants
 
@@ -127,3 +132,12 @@ gate-env:
 	@echo "UV_NO_CONFIG=$$UV_NO_CONFIG"
 	@echo "HYPOTHESIS_STORAGE_DIRECTORY=$$HYPOTHESIS_STORAGE_DIRECTORY"
 	@echo "PYTHONDONTWRITEBYTECODE=$$PYTHONDONTWRITEBYTECODE"
+
+# Opt-in, never part of check: each rewrites a committed file that tests/test_stats.py checks, so its diff is
+# the review. The reference fixture is scipy's and statsmodels' answers for a fixed case list; the sims file is
+# the sign test's simulated rejection rates, which must lie within 3 standard errors of the exact figures.
+reference:
+	uv run --no-project --python "$(PY)" --with "$(SCIPY)" --with "$(STATSMODELS)" python -B -m tools.reference.make_reference tests/reference/stats_reference.json
+
+sims:
+	uv run --no-project --python "$(PY)" python -B -m tools.sims.ht_sims tests/reference/sims.json

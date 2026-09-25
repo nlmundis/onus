@@ -1,0 +1,67 @@
+{
+ "cases": [
+  {
+   "alpha": "0.05",
+   "alternative": "two-sided",
+   "looks": [
+    15
+   ],
+   "name": "size, n=15, two-sided",
+   "p_win": "1/2",
+   "rate": 0.03475,
+   "reps": 20000
+  },
+  {
+   "alpha": "0.05",
+   "alternative": "greater",
+   "looks": [
+    20
+   ],
+   "name": "power, n=20, p=0.7, greater",
+   "p_win": "7/10",
+   "rate": 0.41635,
+   "reps": 20000
+  },
+  {
+   "alpha": "0.05",
+   "alternative": "two-sided",
+   "looks": [
+    30
+   ],
+   "name": "power, n=30, p=0.65, two-sided",
+   "p_win": "13/20",
+   "rate": 0.36205,
+   "reps": 20000
+  },
+  {
+   "alpha": "1/10",
+   "alternative": "less",
+   "looks": [
+    40
+   ],
+   "name": "power, n=40, p=0.4, less",
+   "p_win": "2/5",
+   "rate": 0.43645,
+   "reps": 20000
+  },
+  {
+   "alpha": "0.05",
+   "alternative": "two-sided",
+   "looks": [
+    10,
+    20,
+    30,
+    40,
+    50
+   ],
+   "name": "peeking size, looks 10..50, two-sided",
+   "p_win": "1/2",
+   "rate": 0.1022,
+   "reps": 20000
+  }
+ ],
+ "header": {
+  "script_sha256": "df35d1ee0d66d18b60677eb7258bd5f6169b63f8abff027b86cc8331ea63f59f",
+  "seed": 20260925
+ }
+}

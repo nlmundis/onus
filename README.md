@@ -10,7 +10,9 @@ It is built for `unittest` suites and has no runtime dependencies.
 
 ## Status
 
-Scaffold only (v0.0.0): packaging, the gate, and the repository's own invariants. v0.1.0 brings:
+Pre-release (v0.0.0). The gate and the exact statistics are in place: `onus.stats` has the binomial, sign,
+paired sign, and exact McNemar tests, Wilson and Clopper-Pearson intervals, Holm and Benjamini-Hochberg over
+declared families, and exact power, minimum detectable effect, and peeking size. v0.1.0 brings:
 
 | Subpackage | What it gives a caller |
 |---|---|
