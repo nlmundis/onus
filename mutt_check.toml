@@ -898,9 +898,9 @@ why = "Answering 'greater' with the lower tail reports strong evidence for the o
 suites = ["tests.test_stats.OracleTest"]
 file = "onus/stats/binomial.py"
 find = """    if alternative == "greater":
-        return upper"""
+        return binom_tail(k, n, p=null, tail="upper")"""
 replace = """    if alternative == "greater":
-        return lower"""
+        return binom_tail(k, n, p=null, tail="lower")"""
 
 [[mutant]]
 name = "two_sided_not_doubled"
@@ -1138,3 +1138,19 @@ suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
 find = "high = 1.0 if k == n else 1 - _root(lambda p: _upper(n - k, n, p), tail)"
 replace = "high = 1.0 if k == n else _root(lambda p: _upper(k + 1, n, p), 1 - tail)"
+
+[[mutant]]
+name = "the_half_row_recomputes_each_coefficient"
+why = "Computing each C(n, k) from scratch makes the tail superquadratic: a sign test on 20000 pairs took 55 seconds, and 50000 did not finish."
+suites = ["tests.test_stats.ScaleTest"]
+file = "onus/stats/binomial.py"
+find = "coefficient = coefficient * (n - k) // (k + 1)  # C(n, k + 1), from C(n, k)"
+replace = "coefficient = math.comb(n, k + 1)"
+
+[[mutant]]
+name = "the_general_tail_recomputes_each_coefficient"
+why = "Away from 1/2 the same recomputation made a one-sided test on 5000 trials take over a second."
+suites = ["tests.test_stats.ScaleTest"]
+file = "onus/stats/binomial.py"
+find = "        coefficient = coefficient * (n - j) // (j + 1)\n"
+replace = "        coefficient = math.comb(n, j + 1)\n"

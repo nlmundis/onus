@@ -14,6 +14,7 @@ import math
 import re
 import sys
 import tempfile
+import time
 import types
 import unittest
 from contextlib import redirect_stderr
@@ -124,6 +125,24 @@ class DecisionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"alpha must lie in \[0, 1\]"):
             decide(result, "3/2")
         self.assertEqual(result.p_value, 0.0625)
+
+
+class ScaleTest(unittest.TestCase):
+    """Exact tails stay fast at sample sizes a real experiment reaches; budgets are generous, failures are not."""
+
+    def test_a_sign_test_on_twenty_thousand_pairs_takes_seconds_not_minutes(self):
+        from onus.stats import binomial
+
+        binomial._half_prefix.cache_clear()
+        start = time.perf_counter()
+        result = sign_test(10100, 9900, ties=0, alternative="two-sided", method="exact")
+        self.assertLess(time.perf_counter() - start, 5.0)
+        self.assertTrue(0 < result.p_exact < 1)
+
+    def test_a_one_sided_test_away_from_one_half_computes_one_tail(self):
+        start = time.perf_counter()
+        binomial_test(1700, 5000, p="1/3", alternative="greater", method="exact")
+        self.assertLess(time.perf_counter() - start, 0.5)
 
 
 class ExactSizeTest(unittest.TestCase):

@@ -24,13 +24,15 @@ METHODS = ("exact",)
 TAILS = ("upper", "lower")
 
 
-@lru_cache(maxsize=512)
+# A few rows only: a row of n + 1 sums of up to n bits each is large at the sample sizes experiments reach.
+@lru_cache(maxsize=16)
 def _half_prefix(n: int) -> tuple[int, ...]:
     """Return the running sums of the n-th binomial row: element k is C(n, 0) + ... + C(n, k - 1)."""
-    sums, total = [0], 0
+    sums, total, coefficient = [0], 0, 1
     for k in range(n + 1):
-        total += math.comb(n, k)
+        total += coefficient
         sums.append(total)
+        coefficient = coefficient * (n - k) // (k + 1)  # C(n, k + 1), from C(n, k)
     return tuple(sums)
 
 
@@ -61,19 +63,26 @@ def binom_tail(k: int, n: int, *, p: Fraction | int | str, tail: str) -> Fractio
         sums = _half_prefix(n)
         count = sums[n + 1] - sums[k] if tail == "upper" else sums[k + 1]
         return Fraction(count, 2**n)
-    js = range(k, n + 1) if tail == "upper" else range(0, k + 1)
+    first, last = (k, n) if tail == "upper" else (0, k)
     num, den = prob.numerator, prob.denominator
-    total = sum(math.comb(n, j) * num**j * (den - num) ** (n - j) for j in js)
+    # Sum C(n, j) num^j (den - num)^(n - j) over the tail, each factor stepped from the last rather than recomputed.
+    rest = [1]
+    for _ in range(n - first):
+        rest.append(rest[-1] * (den - num))
+    coefficient, power, total = math.comb(n, first), num**first, 0
+    for j in range(first, last + 1):
+        total += coefficient * power * rest[n - j]
+        coefficient = coefficient * (n - j) // (j + 1)
+        power *= num
     return Fraction(total, den**n)
 
 
 def _p_exact(k: int, n: int, null: Fraction, alternative: str) -> Fraction:
-    upper = binom_tail(k, n, p=null, tail="upper")
-    lower = binom_tail(k, n, p=null, tail="lower")
     if alternative == "greater":
-        return upper
+        return binom_tail(k, n, p=null, tail="upper")
     if alternative == "less":
-        return lower
+        return binom_tail(k, n, p=null, tail="lower")
+    upper, lower = binom_tail(k, n, p=null, tail="upper"), binom_tail(k, n, p=null, tail="lower")
     return min(Fraction(1), 2 * min(upper, lower))
 
 
