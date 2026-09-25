@@ -1275,5 +1275,26 @@ class MutationSpecTest(unittest.TestCase):
                 self.assertEqual(ours, theirs)
 
 
+class MutationSuitesTest(unittest.TestCase):
+    """Which tests judge each mutant; its own class, so that a mutant of these rules is judged by them alone."""
+
+    def test_every_mutant_is_judged_by_the_classes_that_pin_its_behaviour(self):
+        # Without its own suites a mutant runs [run]'s whole module, where this class fails for every mutant whose
+        # anchor disappears, so even a rewrite that changes nothing would count as caught. ApprovedFilesTest fails
+        # on any byte of a pinned file, so beside a behavioural class it would catch the mutant however that
+        # class behaved.
+        for spec_name in ("mutt_check.toml", "mutt_check.noop.toml"):
+            spec = tomllib.loads((ROOT / spec_name).read_text(encoding="utf-8"))
+            for mutant in spec["mutant"]:
+                with self.subTest(spec=spec_name, mutant=mutant["name"]):
+                    suites = mutant.get("suites")
+                    self.assertTrue(suites, "a mutant names its own suites")
+                    for suite in suites:
+                        self.assertRegex(suite, r"^tests\.\w+\.[A-Z]\w*$", "a class, not a whole module")
+                    self.assertNotIn("tests.test_repo.MutationSpecTest", suites)
+                    if "tests.test_repo.ApprovedFilesTest" in suites:
+                        self.assertEqual(suites, ["tests.test_repo.ApprovedFilesTest"])
+
+
 if __name__ == "__main__":
     unittest.main()

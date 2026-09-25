@@ -316,7 +316,7 @@ replace = 'python-version: "3.13"'
 [[mutant]]
 name = "ci_reads_whatever_makefile_it_finds_first"
 why = "Without -f Makefile, a GNUmakefile holding `include Makefile` and `.IGNORE:` turns every CI job green, and the tests that refuse it run inside that same make."
-suites = ["tests.test_repo.CheckWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+suites = ["tests.test_repo.CheckWorkflowTest"]
 file = ".github/workflows/check.yml"
 find = "run: make -f Makefile check"
 replace = "run: make check"
@@ -382,7 +382,7 @@ replace = ""
 [[mutant]]
 name = "release_runs_after_a_failed_gate"
 why = "if: always() makes the release job run when the gate job failed, so a red commit is published."
-suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
 file = ".github/workflows/release.yml"
 find = "    needs: checks\n    runs-on: ubuntu-latest\n"
 replace = "    needs: checks\n    if: always()\n    runs-on: ubuntu-latest\n"
@@ -618,7 +618,7 @@ replace = """        except ValueError as error:
 [[mutant]]
 name = "release_reads_a_crash_as_a_defect"
 why = "Reading exit 1 as the defect code tells the maintainer a tag is spent when check_dist only crashed, and reads a real defect as a crash."
-suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
 file = ".github/workflows/release.yml"
 find = 'if [ "$status" -eq 3 ]; then'
 replace = 'if [ "$status" -eq 1 ]; then'
@@ -626,7 +626,7 @@ replace = 'if [ "$status" -eq 1 ]; then'
 [[mutant]]
 name = "release_reads_a_crash_as_not_spent"
 why = "Folding every nonzero exit into 'not spent, re-run' tells the maintainer a crash that repeats on every run will clear."
-suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
 file = ".github/workflows/release.yml"
 find = 'elif [ "$status" -eq 4 ]; then'
 replace = 'elif [ "$status" -ne 0 ]; then'
@@ -748,7 +748,7 @@ replace = ""
 [[mutant]]
 name = "release_says_a_repeated_not_built_clears"
 why = "A build requirement no index has exits 4 on every run; a message that only says re-run sends the maintainer round a loop on a tag that is already spent."
-suites = ["tests.test_repo.ReleaseWorkflowTest", "tests.test_repo.ApprovedFilesTest"]
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
 file = ".github/workflows/release.yml"
 find = "is not spent yet: re-run this job once. If it stops the same way, the cause is in this commit and $GITHUB_REF_NAME is spent: fix it in a PR, set onus.__version__ to the next unused version, merge it to main, and tag that merge commit v<that version>."
 replace = "is not spent: re-run this job."
@@ -773,3 +773,37 @@ file = "tests/test_repo.py"
 find = ' and not key.startswith("GIT_")}'
 replace = "}"
 
+
+# --- the rules for the mutants themselves ---
+
+[[mutant]]
+name = "a_mutant_left_on_the_default_suites"
+why = "Without its own suites a mutant runs the whole module, where MutationSpecTest fails for any mutant whose anchor disappears, so a rewrite that changes nothing counts as caught."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.GitEnvironmentTest\"]\n"
+replace = ""
+
+[[mutant]]
+name = "a_mutant_judged_by_a_whole_module"
+why = "A whole module includes MutationSpecTest, which catches every mutant whose anchor disappears, whatever the behaviour."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.GitEnvironmentTest\"]"
+replace = "suites = [\"tests.test_repo\"]"
+
+[[mutant]]
+name = "a_mutant_judged_by_the_anchor_check"
+why = "MutationSpecTest fails whenever a mutant's anchor disappears, so a mutant it judges is caught however its behaviour changes."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.WorkflowTokenTest\"]\nfile = \".github/workflows/check.yml\""
+replace = "suites = [\"tests.test_repo.MutationSpecTest\"]\nfile = \".github/workflows/check.yml\""
+
+[[mutant]]
+name = "the_byte_pin_listed_beside_a_behavioural_class"
+why = "ApprovedFilesTest fails on any byte of a pinned file, so beside a behavioural class it catches the mutant however that class behaves."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.WorkflowTokenTest\"]\nfile = \".github/workflows/release.yml\"\nfind = \"uses: astral"
+replace = "suites = [\"tests.test_repo.WorkflowTokenTest\", \"tests.test_repo.ApprovedFilesTest\"]\nfile = \".github/workflows/release.yml\"\nfind = \"uses: astral"
