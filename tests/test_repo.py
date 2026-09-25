@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tokenize
 import tomllib
 import unittest
 import zipfile
@@ -134,6 +135,40 @@ def fake_runner(untracked: str = "", failing: list[str] | None = None, stderr: s
         return subprocess.CompletedProcess(command, 0, "", "")
 
     return runner
+
+
+# In-source directives that switch a stage off for a whole file, or a line, without naming what they suppress.
+DIRECTIVES = {
+    r"#\s*mypy\s*:": "inline mypy configuration",
+    r"#\s*type\s*:\s*ignore(?!\[)": "a bare type: ignore",
+    r"#\s*(ruff|flake8)\s*:\s*noqa": "a file-level noqa",
+    r"#\s*noqa(?!\s*:)": "a bare noqa",
+    r"#\s*isort\s*:\s*(skip_file|off)": "an isort switch",
+    r"#\s*(fmt\s*:\s*(off|skip)|yapf\s*:\s*disable)": "a formatter switch",
+}
+
+
+def directives(source: str) -> list[str]:
+    """Return each in-source directive in ``source`` that switches off a gate stage, as ``line N: what``.
+
+    A coded suppression after code on the same line (``# noqa: E501``, ``# type: ignore[attr-defined]``) stays
+    allowed; a type: ignore on a line of its own is refused, since one before the first statement ignores the file.
+    """
+    found = []
+    code_lines = set()
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.NAME and token.string == "no_type_check":
+            found.append(f"line {token.start[0]}: no_type_check")
+        if token.type not in (tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT):
+            code_lines.add(token.start[0])
+        if token.type != tokenize.COMMENT:
+            continue
+        for pattern, what in DIRECTIVES.items():
+            if re.match(pattern, token.string):
+                found.append(f"line {token.start[0]}: {what}")
+        if re.match(r"#\s*type\s*:\s*ignore\[", token.string) and token.start[0] not in code_lines:
+            found.append(f"line {token.start[0]}: a type: ignore on a line of its own")
+    return found
 
 
 def job_block(workflow: str, job: str) -> str:
@@ -745,6 +780,39 @@ class GitEnvironmentTest(unittest.TestCase):
         self.assertEqual(bare.stdout.strip(), "false")
         self.assertEqual(staged.stdout, "")
         self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+
+
+class DirectiveTest(unittest.TestCase):
+    """No file switches a stage off from inside itself.
+
+    mypy obeys inline configuration and a type: ignore before the first statement, ruff a file-level noqa, and
+    black `fmt: off` and `fmt: skip`, all with pyproject.toml unchanged and the stage green.
+    """
+
+    def test_each_switch_is_found_and_a_coded_suppression_is_not(self):
+        cases = {
+            "# mypy: ignore-errors\nx = 1\n": ["line 1: inline mypy configuration"],
+            "# type: ignore\nx = 1\n": ["line 1: a bare type: ignore"],
+            "# type: ignore[assignment]\nx: int = ''\n": ["line 1: a type: ignore on a line of its own"],
+            "# ruff: noqa\nimport os\n": ["line 1: a file-level noqa"],
+            "# flake8: noqa\nimport os\n": ["line 1: a file-level noqa"],
+            "import os  # noqa\n": ["line 1: a bare noqa"],
+            "# isort: skip_file\nimport os\n": ["line 1: an isort switch"],
+            "# fmt: off\nx=1\n": ["line 1: a formatter switch"],
+            "x=1  # fmt: skip\n": ["line 1: a formatter switch"],
+            "# yapf: disable\nx=1\n": ["line 1: a formatter switch"],
+            "import typing\n@typing.no_type_check\ndef f(): pass\n": ["line 2: no_type_check"],
+            "import os  # noqa: F401\nx: int = ''  # type: ignore[assignment]\n": [],
+            "s = '# fmt: off'\n": [],
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(directives(source), expected)
+
+    def test_no_file_carries_one(self):
+        for path in sorted(p for folder in ("onus", "tools", "tests") for p in (ROOT / folder).rglob("*.py")):
+            with self.subTest(file=path.relative_to(ROOT).as_posix()):
+                self.assertEqual(directives(path.read_text(encoding="utf-8")), [])
 
 
 class ToolConfigTest(unittest.TestCase):

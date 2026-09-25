@@ -815,3 +815,69 @@ suites = ["tests.test_repo.MutationSuitesTest"]
 file = "mutt_check.toml"
 find = "suites = [\"tests.test_repo.WorkflowTokenTest\"]\nfile = \".github/workflows/release.yml\"\nfind = \"uses: astral"
 replace = "suites = [\"tests.test_repo.WorkflowTokenTest\", \"tests.test_repo.ApprovedFilesTest\"]\nfile = \".github/workflows/release.yml\"\nfind = \"uses: astral"
+
+# --- in-source switches ---
+
+[[mutant]]
+name = "inline_mypy_configuration_allowed"
+why = "`# mypy: ignore-errors` at the top of a module switches strict mypy off for it with pyproject.toml unchanged."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*mypy\s*:": "inline mypy configuration",'
+replace = ""
+
+[[mutant]]
+name = "a_bare_type_ignore_allowed"
+why = "A bare `# type: ignore` before the first statement makes mypy ignore the whole module."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*type\s*:\s*ignore(?!\[)": "a bare type: ignore",'
+replace = ""
+
+[[mutant]]
+name = "a_file_level_noqa_allowed"
+why = "`# ruff: noqa` exempts the whole file from every lint rule."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*(ruff|flake8)\s*:\s*noqa": "a file-level noqa",'
+replace = ""
+
+[[mutant]]
+name = "a_bare_noqa_allowed"
+why = "A bare `# noqa` suppresses every rule on its line without naming one."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*noqa(?!\s*:)": "a bare noqa",'
+replace = ""
+
+[[mutant]]
+name = "an_isort_switch_allowed"
+why = "ruff's import sorting obeys `# isort: skip_file`, taking the file out of the I rules."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*isort\s*:\s*(skip_file|off)": "an isort switch",'
+replace = ""
+
+[[mutant]]
+name = "a_formatter_switch_allowed"
+why = "black leaves everything after `# fmt: off` unformatted, and `--check` passes."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*(fmt\s*:\s*(off|skip)|yapf\s*:\s*disable)": "a formatter switch",'
+replace = ""
+
+[[mutant]]
+name = "a_standalone_coded_type_ignore_allowed"
+why = "A coded type: ignore before the first statement still makes mypy ignore the whole module."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = "and token.start[0] not in code_lines:"
+replace = "and False:"
+
+[[mutant]]
+name = "no_type_check_allowed"
+why = "@typing.no_type_check makes mypy skip the decorated function's body."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = 'if token.type == tokenize.NAME and token.string == "no_type_check":'
+replace = "if False:"
