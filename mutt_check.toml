@@ -1330,3 +1330,11 @@ suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
 find = "            crit = math.inf\n"
 replace = "            raise\n"
+
+[[mutant]]
+name = "a_huge_int_quantile_printed_in_full"
+why = "An int past Python's 4300-digit print limit makes repr raise its own ValueError, so the refusal names neither z nor the reason."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "if math.isinf(crit) and isinstance(z, int) else repr(z)"
+replace = "if False else repr(z)"

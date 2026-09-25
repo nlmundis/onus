@@ -374,6 +374,8 @@ class IntervalTest(unittest.TestCase):
                     wilson(3, 10, z=z)
         with self.assertRaisesRegex(ValueError, "confidence or z, not both"):
             wilson(3, 10, confidence="0.9", z=1.64)
+        with self.assertRaisesRegex(ValueError, "not an int of 16610 bits"):
+            wilson(3, 10, z=10**5000)
         wrong: list[Any] = [True, "1.96", Fraction(49, 25), Decimal("1.96")]
         for z in wrong:
             with self.subTest(z=z):

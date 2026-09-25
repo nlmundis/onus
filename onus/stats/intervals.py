@@ -69,8 +69,10 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
             crit = math.inf
         implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan
         if not 0 < implied < 1:
+            # An int beyond any float may also be beyond the digits Python will print; name its size instead.
+            shown = f"an int of {z.bit_length()} bits" if math.isinf(crit) and isinstance(z, int) else repr(z)
             raise ValueError(
-                f"z must be a positive finite quantile below about 8 (where float confidence is 1), not {z!r}"
+                f"z must be a positive finite quantile below about 8 (where float confidence is 1), not {shown}"
             )
         level = _checked(k, n, Fraction(implied))
     phat = k / n
