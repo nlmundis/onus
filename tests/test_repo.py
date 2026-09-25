@@ -381,6 +381,7 @@ class DistCheckTest(unittest.TestCase):
     def test_a_version_is_read_from_the_headers_only(self):
         self.assertEqual(check_dist.metadata_version("Name: onus\nVersion: 1.2.3\n\nbody"), "1.2.3")
         self.assertIsNone(check_dist.metadata_version("Name: onus\n\nVersion: 1.2.3 in the description\n"))
+        self.assertIsNone(check_dist.metadata_version("Name: onus\n"))
 
     def test_the_sdist_defect_names_its_remedy_whole(self):
         self.artifacts(sdist_files={"onus-1.2.3/tests/test_repo.py": ""})
