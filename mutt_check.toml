@@ -1,0 +1,883 @@
+# A mutant goes in here only together with the test that kills it, and that test must fail for the reason the
+# mutant names. Each one below reverts one decision this repository made about its packaging, its gate, its
+# workflows, or its ruleset records; the library's own mutants arrive with the library.
+# `make mutants` runs this spec and requires every mutant caught.
+
+[run]
+suites = ["tests.test_repo"]
+timeout = 300
+
+# --- the environment every stage runs with ---
+
+[[mutant]]
+name = "uv_allowed_to_fetch_its_own_python"
+why = "An override such as PY=3.13 asks uv for a version, not a path; on a machine with no 3.13, uv would then download a CPython instead of refusing."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = "export UV_PYTHON_DOWNLOADS ?= never"
+replace = "export UV_PYTHON_DOWNLOADS ?= automatic"
+
+[[mutant]]
+name = "hypothesis_cache_left_in_the_checkout"
+why = "Unexported, the setting never reaches a stage, and the first Hypothesis test would write its cache into the tree."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = "export HYPOTHESIS_STORAGE_DIRECTORY ?="
+replace = "HYPOTHESIS_STORAGE_DIRECTORY ?="
+
+[[mutant]]
+name = "bytecode_written_into_the_checkout"
+why = "Without it the coverage run, which has no -B, writes __pycache__ into the checkout."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = "export PYTHONDONTWRITEBYTECODE := 1"
+replace = "export PYTHONDONTWRITEBYTECODE :="
+
+# --- the interpreters ---
+
+[[mutant]]
+name = "missing_pyenv_patch_falls_back_to_system_python"
+why = "With the refusal gone, a missing patch hands uv /bin/python3: the system interpreter on Linux, a remedy-less error on macOS."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "COMPAT_PY ?= $(or $(COMPAT_HOME),$(STOP))/bin/python3"
+replace = "COMPAT_PY ?= $(COMPAT_HOME)/bin/python3"
+
+[[mutant]]
+name = "floor_check_left_to_uv_discovery"
+why = "A bare 3.11 lets uv pick whatever 3.11 it finds instead of pyenv's exact patch."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "COMPAT_PY ?= $(or $(COMPAT_HOME),$(STOP))/bin/python3"
+replace = "COMPAT_PY ?= 3.11"
+
+[[mutant]]
+name = "types_stage_left_to_uv_discovery"
+why = "A stage without --python runs on whatever interpreter uv discovers, not the pinned one."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = 'uvx --python "$(PY)" --with "$(HYPOTHESIS)" $(MYPY)'
+replace = 'uvx --with "$(HYPOTHESIS)" $(MYPY)'
+
+# --- the stages ---
+
+[[mutant]]
+name = "a_gate_stage_dropped"
+why = "make check is the whole gate; a stage left out passes silently."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "check: interpreters siblings format lint types coverage test compat dist mutants"
+replace = "check: interpreters siblings format lint types coverage test dist mutants"
+
+[[mutant]]
+name = "packaging_left_unchecked_until_the_release"
+why = "Without the dist stage a wheel missing py.typed, or an sdist carrying tests/, first fails in the release run, after a permanent tag."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "check: interpreters siblings format lint types coverage test compat dist mutants"
+replace = "check: interpreters siblings format lint types coverage test compat mutants"
+
+[[mutant]]
+name = "a_missing_interpreter_found_only_mid_gate"
+why = "Without the interpreters prerequisite a missing floor patch surfaces only at the compat stage, after five stages have run."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "check: interpreters siblings format lint types coverage test compat dist mutants"
+replace = "check: siblings format lint types coverage test compat dist mutants"
+
+[[mutant]]
+name = "a_stage_failure_ignored"
+why = "A `-` prefix lets make carry on past a failing stage; make's dry run prints the recipe without it, so only the approved copy sees it."
+suites = ["tests.test_repo.ApprovedFilesTest"]
+file = "Makefile"
+find = "\t$(RUN) --with \"$(MUTT_CHECK)\" mutt_check mutt_check.toml"
+replace = "\t-$(RUN) --with \"$(MUTT_CHECK)\" mutt_check mutt_check.toml"
+
+[[mutant]]
+name = "only_the_first_missing_patch_named"
+why = "A machine missing both patches would learn of the second only after installing the first and running again."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "MISSING = $(strip $(if $(PY_GIVEN)$(PIN_HOME),,$(PIN)) $(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN)))"
+replace = "MISSING = $(firstword $(if $(PY_GIVEN)$(PIN_HOME),,$(PIN)) $(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN)))"
+
+[[mutant]]
+name = "an_override_still_asks_for_its_patch"
+why = "A caller who passes PY would be told to install a patch the gate will never use."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "$(if $(PY_GIVEN)$(PIN_HOME),,$(PIN))"
+replace = "$(if $(PIN_HOME),,$(PIN))"
+
+[[mutant]]
+name = "a_floor_override_still_asks_for_its_patch"
+why = "A caller who passes COMPAT_PY, as CI does, would be told to install a floor patch the gate will never use."
+suites = ["tests.test_repo.GateInterpreterTest"]
+file = "Makefile"
+find = "$(if $(COMPAT_GIVEN)$(COMPAT_HOME),,$(COMPAT_PIN))"
+replace = "$(if $(COMPAT_HOME),,$(COMPAT_PIN))"
+
+[[mutant]]
+name = "uv_reads_a_config_file"
+why = "Unexported, uv reads a uv.toml from any parent folder or the user's config, which can point every --with package at another index."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = "export UV_NO_CONFIG := 1"
+replace = "UV_NO_CONFIG := 1"
+
+[[mutant]]
+name = "a_root_uv_toml_left_unrefused"
+why = "A uv.toml at the root is read by every uv run stage and can swap in a package that exits 0 before any test runs."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "setup.cfg tox.ini uv.toml"
+replace = "setup.cfg tox.ini"
+
+[[mutant]]
+name = "makefiles_read_hidden"
+why = "A GNUmakefile read before the Makefile could override any pinned recipe; gate-env is where it shows."
+suites = ["tests.test_repo.GateEnvironmentTest"]
+file = "Makefile"
+find = '@echo "MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))"'
+replace = '@echo "MAKEFILE_LIST=Makefile"'
+
+[[mutant]]
+name = "a_root_setup_py_left_unrefused"
+why = "setuptools runs a root setup.py in the gate's dist stage and in the release, where it can add modules to the wheel or re-version the artifacts."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "tox.ini uv.toml setup.py"
+replace = "tox.ini uv.toml"
+
+[[mutant]]
+name = "sibling_configs_left_unrefused"
+why = "Without the siblings prerequisite a setup.cfg or .coveragerc beside the Makefile is read before pyproject.toml, and nothing in the gate says so."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "check: interpreters siblings format"
+replace = "check: interpreters format"
+
+[[mutant]]
+name = "a_sibling_config_dropped_from_the_refusal"
+why = "coverage reads setup.cfg's [coverage:*] sections before pyproject.toml; unlisted, it could lower the coverage floor or narrow what is measured."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = ".coveragerc setup.cfg tox.ini"
+replace = ".coveragerc tox.ini"
+
+[[mutant]]
+name = "the_sibling_refusal_only_prints"
+why = "A refusal that exits 0 prints its message and lets every stage run with the sibling's settings."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "delete it.\" >&2; exit 1; }"
+replace = "delete it.\" >&2; true; }"
+
+[[mutant]]
+name = "the_sibling_refusal_matches_by_substring"
+why = "Without -x, ruff.toml.orig or old-setup.cfg would stop the gate for a file no tool reads."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "grep -Fx"
+replace = "grep -F"
+
+[[mutant]]
+name = "the_sibling_refusal_matches_only_one_case"
+why = "On a case-insensitive disk make opens a GNUMakefile for its GNUmakefile probe, and the tools open MyPy.ini or Setup.CFG; matched with case, each would pass."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "grep -Fxi"
+replace = "grep -Fx"
+
+[[mutant]]
+name = "the_sibling_refusal_refuses_the_makefile"
+why = "Compared without case, the Makefile matches the makefile entry; without the exception every checkout would be refused."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "ls -A | grep -vx Makefile | grep"
+replace = "ls -A | grep"
+
+[[mutant]]
+name = "lint_reads_a_nested_ruff_toml"
+why = "Left to find its own config, ruff applies a ruff.toml in any folder to the files below it, so tools/ruff.toml with select = [] switches lint off there."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "$(RUFF) check --config pyproject.toml ."
+replace = "$(RUFF) check ."
+
+[[mutant]]
+name = "coverage_report_finds_its_own_rcfile"
+why = "Left to find its own config, coverage reads .coveragerc, setup.cfg, or tox.ini before pyproject.toml, any of which can lower the floor."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "coverage report --rcfile=pyproject.toml"
+replace = "coverage report"
+
+[[mutant]]
+name = "types_stage_finds_its_own_config"
+why = "Left to find its own config, mypy reads mypy.ini or .mypy.ini before pyproject.toml, either of which can switch strict off."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "$(MYPY) --config-file pyproject.toml"
+replace = "$(MYPY)"
+
+[[mutant]]
+name = "lint_skips_what_an_ignore_file_lists"
+why = "ruff skips what any .gitignore, .ignore, or .git/info/exclude lists, tracked or not, so one line in onus/.ignore takes a module out of lint."
+suites = ["tests.test_repo.GateFileSelectionTest"]
+file = "pyproject.toml"
+find = "respect-gitignore = false\n"
+replace = ""
+
+[[mutant]]
+name = "format_skips_what_a_gitignore_lists"
+why = "With exclude unset black skips what any .gitignore lists, at any depth, so a nested .gitignore takes a module out of the format stage."
+suites = ["tests.test_repo.GateFileSelectionTest"]
+file = "pyproject.toml"
+find = "exclude = '/("
+replace = "# exclude = '/("
+
+[[mutant]]
+name = "lint_rules_emptied"
+why = "An empty rule selection makes the lint stage pass anything, with the Makefile untouched."
+suites = ["tests.test_repo.ApprovedFilesTest"]
+file = "pyproject.toml"
+find = 'select = ["E", "F", "W", "I", "D", "ANN", "B", "UP"]'
+replace = "select = []"
+
+[[mutant]]
+name = "a_stage_recipe_turned_into_a_no_op"
+why = "A recipe that no longer runs its command still exits 0, so the stage vanishes with the gate green."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "\tuv run --no-project --python \"$(COMPAT_PY)\""
+replace = "\t: uv run --no-project --python \"$(COMPAT_PY)\""
+
+[[mutant]]
+name = "floor_check_writes_bytecode"
+why = "compileall writes .pyc into the checkout; compile() checks the same grammar and writes nothing."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = '''python -B -c "import pathlib; [compile(p.read_bytes(), str(p), 'exec', dont_inherit=True) for p in sorted(pathlib.Path('onus').rglob('*.py'))]"'''
+replace = "python -m compileall -q onus"
+
+[[mutant]]
+name = "mutation_harness_pinned_by_a_movable_tag"
+why = "A tag can be moved, silently changing the tool that decides caught and survived."
+suites = ["tests.test_repo.GateStagesTest"]
+file = "Makefile"
+find = "@8a89dfc4c93357e294cbc51d1b723b27078c5481"
+replace = "@v0.0.2"
+
+[[mutant]]
+name = "coverage_floor_lowered"
+why = "The 95% floor is part of the gate the Makefile header and help advertise."
+suites = ["tests.test_repo.ToolConfigTest"]
+file = "pyproject.toml"
+find = "fail_under = 95"
+replace = "fail_under = 0"
+
+# --- the core stays stdlib-only, and the sdist carries only the package ---
+
+[[mutant]]
+name = "core_imports_hypothesis"
+why = "Only onus.invariants may import hypothesis; the core must import with the standard library alone."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "onus/__init__.py"
+find = '__version__ = "'
+replace = "import hypothesis  # noqa: F401\n\n__version__ = \""
+
+[[mutant]]
+name = "runtime_dependency_added"
+why = "onus ships into environments that may not allow third-party packages."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "pyproject.toml"
+find = "dependencies = []"
+replace = 'dependencies = ["hypothesis>=6.168.1"]'
+
+[[mutant]]
+name = "sdist_ships_the_repository_tests"
+why = "The repository tests read files an sdist does not carry, so a downstream test run crashes."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "MANIFEST.in"
+find = "prune tests"
+replace = "graft tests"
+
+# --- CI ---
+
+[[mutant]]
+name = "ci_matrix_loses_the_floor"
+why = "A floor the CI never runs on is a claim, not a check."
+suites = ["tests.test_repo.VersionSupportTest"]
+file = ".github/workflows/check.yml"
+find = 'python: ["3.11", '
+replace = 'python: ['
+
+[[mutant]]
+name = "ci_job_ignores_the_matrix_python"
+why = "Jobs labelled 3.11 to 3.14 would all run one interpreter, so the floor is never exercised."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "python-version: ${{ matrix.python }}"
+replace = 'python-version: "3.13"'
+
+[[mutant]]
+name = "ci_reads_whatever_makefile_it_finds_first"
+why = "Without -f Makefile, a GNUmakefile holding `include Makefile` and `.IGNORE:` turns every CI job green, and the tests that refuse it run inside that same make."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "run: make -f Makefile check"
+replace = "run: make check"
+
+[[mutant]]
+name = "ci_checks_the_pins_only_inside_make"
+why = "Inside make, one `.IGNORE:` line in the Makefile lets make carry on past ApprovedFilesTest's own failure, so the job goes green with the pinned file changed."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "      - run: python -B -m unittest tests.test_repo.ApprovedFilesTest\n"
+replace = ""
+
+[[mutant]]
+name = "required_check_skipped_when_a_job_fails"
+why = "Without always(), a failed matrix job skips the required check, a skip counts as passing, and a red PR merges."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "    if: always()\n"
+replace = ""
+
+[[mutant]]
+name = "required_check_renamed"
+why = "The ruleset requires 'all checks passed'; a renamed job leaves every PR unmergeable, or unprotected."
+suites = ["tests.test_repo.CheckWorkflowTest", "tests.test_repo.RulesetRecordTest"]
+file = ".github/workflows/check.yml"
+find = "    name: all checks passed"
+replace = "    name: all checks"
+
+# --- release ---
+
+[[mutant]]
+name = "an_action_pinned_by_a_movable_tag"
+why = "A tag can be moved to other code, which then runs in the release job beside its write token."
+suites = ["tests.test_repo.WorkflowTokenTest"]
+file = ".github/workflows/release.yml"
+find = "uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6"
+replace = "uses: astral-sh/setup-uv@v6"
+
+[[mutant]]
+name = "release_checkout_leaves_its_write_token"
+why = "checkout persists its token in .git/config by default, where every later step's third-party code can read it and create permanent tags or replace release files."
+suites = ["tests.test_repo.WorkflowTokenTest"]
+file = ".github/workflows/release.yml"
+find = "          persist-credentials: false\n"
+replace = ""
+
+[[mutant]]
+name = "gate_token_takes_the_repository_default"
+why = "Without its own permissions block the gate's token has whatever scope the repository default grants, which no file records."
+suites = ["tests.test_repo.WorkflowTokenTest"]
+file = ".github/workflows/check.yml"
+find = "permissions:\n  contents: read\n"
+replace = ""
+
+[[mutant]]
+name = "release_skips_the_gate"
+why = "Without needs: checks a tag publishes a release from a commit whose gate never ran."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = "    needs: checks\n"
+replace = ""
+
+[[mutant]]
+name = "release_runs_after_a_failed_gate"
+why = "if: always() makes the release job run when the gate job failed, so a red commit is published."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = "    needs: checks\n    runs-on: ubuntu-latest\n"
+replace = "    needs: checks\n    if: always()\n    runs-on: ubuntu-latest\n"
+
+[[mutant]]
+name = "release_trigger_narrower_than_the_ruleset"
+why = "A v* tag the trigger ignores is still made permanent by the ruleset, and nothing says it was not released."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = 'tags: ["v*"]'
+replace = 'tags: ["v[0-9]+.[0-9]+.[0-9]+"]'
+
+[[mutant]]
+name = "release_refusal_neutered"
+why = "Without exit 1 the refusal only prints, and a tag that is not on main, or does not match its version, is published."
+suites = ["tests.test_repo.ApprovedFilesTest"]
+file = ".github/workflows/release.yml"
+find = "            fi\n            exit 1\n          fi\n"
+replace = "            fi\n            true\n          fi\n"
+
+[[mutant]]
+name = "release_ignores_a_version_mismatch"
+why = "A tag that does not match __version__ would publish a wheel under the wrong number."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = 'test "v$version" = "$GITHUB_REF_NAME"'
+replace = "true"
+
+# --- ruleset records ---
+
+[[mutant]]
+name = "main_ruleset_record_gains_a_bypass"
+why = "A bypass actor lets someone push to main past the required check."
+suites = ["tests.test_repo.RulesetRecordTest"]
+file = ".github/rulesets/main.json"
+find = '"bypass_actors": [],'
+replace = '"bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always"}],'
+
+# --- the artifact checks the gate and the release share ---
+
+[[mutant]]
+name = "wheel_type_marker_unchecked"
+why = "A wheel without py.typed ships untyped to every caller."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'if "onus/py.typed" not in wheel.namelist():'
+replace = "if False:"
+
+[[mutant]]
+name = "sdist_tests_unchecked"
+why = "tests/ read files an sdist does not carry, so a downstream test run crashes."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'if any(Path(name).parts[1:2] == ("tests",) for name in sdist.getnames()):'
+replace = "if False:"
+
+[[mutant]]
+name = "type_marker_remedy_misses_an_exclusion"
+why = "A py.typed listed under package-data can still be dropped by exclude-package-data or a MANIFEST.in exclude; a remedy naming only the listing sends the reader to a setting that is already right."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """, "
+                "and neither [tool.setuptools.exclude-package-data] nor a MANIFEST.in exclude may drop it (the wheel "
+                "is built from the sdist)""""
+replace = "\""
+
+[[mutant]]
+name = "sdist_remedy_loses_the_later_add_back"
+why = "A remedy that says only to prune tests misses a later graft or include that adds them back, the other way an sdist ends up carrying them."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "MANIFEST.in must prune tests, and no line after it may add them back"
+replace = "MANIFEST.in must prune tests"
+
+[[mutant]]
+name = "artifact_names_unchecked"
+why = "gh release create uploads whatever the files are named; an onus-0.0.0.dev7 wheel would be attached to the permanent tag v0.0.0."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "        if name != expected:"
+replace = "        if False:"
+
+[[mutant]]
+name = "wheel_metadata_version_unchecked"
+why = "pip installs by METADATA's Version; a wheel whose METADATA disagrees with the tag installs as another version."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'elif (said := metadata_version(wheel.read(metadata[0]).decode("utf-8"))) != version:'
+replace = 'elif (said := metadata_version(wheel.read(metadata[0]).decode("utf-8"))) is None:'
+
+[[mutant]]
+name = "sdist_pkg_info_version_unchecked"
+why = "An install from the sdist builds with PKG-INFO's Version; one that disagrees with the tag ships another version."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'elif (said := metadata_version(extracted.read().decode("utf-8"))) != version:'
+replace = 'elif (said := metadata_version(extracted.read().decode("utf-8"))) is None:'
+
+[[mutant]]
+name = "metadata_version_read_from_the_description"
+why = "The headers end at the first blank line; reading past it takes a 'Version:' line from the package's description for its version."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """        if not line.strip():
+            break
+"""
+replace = ""
+
+[[mutant]]
+name = "package_find_matches_sibling_packages"
+why = "onus* also matches a top-level onus_extras/, which ships in the wheel while mypy, coverage, compat, and the stdlib-only checks look only at onus/."
+suites = ["tests.test_repo.StdlibOnlyTest"]
+file = "pyproject.toml"
+find = 'include = ["onus", "onus.*"]'
+replace = 'include = ["onus*"]'
+
+[[mutant]]
+name = "wheel_contents_beyond_the_package_unchecked"
+why = "A sibling package, a setup.py py_modules entry, or a .data folder would ship in the wheel with no check ever having looked at it."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "        if extra:"
+replace = "        if False:"
+
+[[mutant]]
+name = "release_builds_into_the_checkout"
+why = "The checkout's dist/ is a folder the gate never builds into; a tracked file there breaks the build, and one inside it rides along into the release."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = '"${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/onus-dist" || status=$?'
+replace = '"${GITHUB_REF_NAME#v}" dist || status=$?'
+
+[[mutant]]
+name = "release_publishes_whatever_is_in_the_folder"
+why = "Uploading the whole folder attaches any file that landed beside the checked pair to the permanent release, unchecked."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = '"$RUNNER_TEMP"/onus-dist/*.whl "$RUNNER_TEMP"/onus-dist/*.tar.gz --verify-tag'
+replace = '"$RUNNER_TEMP"/onus-dist/* --verify-tag'
+
+[[mutant]]
+name = "stray_files_beside_the_artifacts_unchecked"
+why = "A file left beside the wheel and the sdist would pass the check and, uploaded with them, reach the release unchecked."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    if others:"
+replace = "    if False:"
+
+[[mutant]]
+name = "wheel_import_unchecked"
+why = "A wheel whose core imports a third-party package fails for every caller without the extra."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    if result.returncode != 0:\n        last ="
+replace = "    if False:\n        last ="
+
+[[mutant]]
+name = "build_run_in_the_checkout"
+why = "A build writes onus.egg-info into its source tree, so building in the checkout leaves it dirty."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = '"--out-dir", str(out.resolve()), str(source)]'
+replace = '"--out-dir", str(out.resolve()), str(root)]'
+
+[[mutant]]
+name = "relative_dist_probed_from_inside_it"
+why = "The release passes a relative dist folder; probed from inside it, every sound wheel fails to import."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    dist = dist.resolve()\n"
+replace = ""
+
+[[mutant]]
+name = "a_build_that_cannot_run_called_a_defect"
+why = "The release would call a network failure a spent version, when re-running the job would publish."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "                return NOT_BUILT"
+replace = "                return DEFECTIVE"
+
+[[mutant]]
+name = "untracked_module_left_out_silently"
+why = "A new module not yet git-added would be missing from the wheel, reported as a third-party import."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    if stray:"
+replace = "    if False:"
+
+[[mutant]]
+name = "an_ignored_file_called_a_stray_module"
+why = "Without --exclude-standard git lists ignored files too, so a generated or ignored .py under onus/ would stop every build."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = '"--others", "--exclude-standard",'
+replace = '"--others",'
+
+[[mutant]]
+name = "an_unimportable_file_called_a_stray_module"
+why = "An editor's lock file, an AppleDouble ._name.py, or a file in a folder no import can name is not a module the build needs; calling it one stops the build."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'if name.endswith(".py") and all(part.isidentifier() for part in PurePosixPath(name).with_suffix("").parts)'
+replace = 'if name.endswith(".py")'
+
+[[mutant]]
+name = "a_defect_exits_like_a_crash"
+why = "Exit 1 is also what Python gives an uncaught exception, so the release would call a crash (a missing tool, an OSError) a spent tag."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "DEFECTIVE, NOT_BUILT = 3, 4"
+replace = "DEFECTIVE, NOT_BUILT = 1, 4"
+
+[[mutant]]
+name = "a_missing_tool_escapes_as_a_crash"
+why = "A git or uv that cannot be started raises OSError; escaped, it exits 1 with a traceback instead of saying nothing was built."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """    except OSError as error:
+        raise BuildError(f"could not run"""
+replace = """    except ValueError as error:
+        raise BuildError(f"could not run"""
+
+[[mutant]]
+name = "a_failed_copy_escapes_as_a_crash"
+why = "An OSError while copying the tracked files (a full disk, a permission) would exit 1 with a traceback instead of saying nothing was built."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """        except OSError as error:
+            raise BuildError(f"could not copy"""
+replace = """        except ValueError as error:
+            raise BuildError(f"could not copy"""
+
+[[mutant]]
+name = "release_reads_a_crash_as_a_defect"
+why = "Reading exit 1 as the defect code tells the maintainer a tag is spent when check_dist only crashed, and reads a real defect as a crash."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = 'if [ "$status" -eq 3 ]; then'
+replace = 'if [ "$status" -eq 1 ]; then'
+
+[[mutant]]
+name = "release_reads_a_crash_as_not_spent"
+why = "Folding every nonzero exit into 'not spent, re-run' tells the maintainer a crash that repeats on every run will clear."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = 'elif [ "$status" -eq 4 ]; then'
+replace = 'elif [ "$status" -ne 0 ]; then'
+
+[[mutant]]
+name = "a_refused_build_called_not_built"
+why = "When the backend refuses the tracked files, a re-run refuses them again; calling it not built sends the release round a loop of re-runs on a tag that is already spent."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'raise UnbuildableError(f"uv build exited'
+replace = 'raise BuildError(f"uv build exited'
+
+[[mutant]]
+name = "a_failed_backend_fetch_called_a_defect"
+why = "Fetching the backend needs the network; calling its failure a defect tells the maintainer a tag is spent when a re-run would release it."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "raise BuildError(f\"{' '.join(command[:2])} exited"
+replace = "raise UnbuildableError(f\"{' '.join(command[:2])} exited"
+
+[[mutant]]
+name = "the_build_fetches_its_own_backend"
+why = "With isolation the build step fetches the backend again, so a network failure there would be read as the backend refusing the files."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = ', "--no-build-isolation"]'
+replace = "]"
+
+[[mutant]]
+name = "a_refused_build_exits_not_built"
+why = "The release reads check_dist's exit code; a refused build exiting 4 would tell it to re-run a tag that is spent."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """                return DEFECTIVE
+"""
+replace = """                return NOT_BUILT
+"""
+
+# --- what the docs claim about make, the gate, and the release ---
+
+[[mutant]]
+name = "makefile_comment_says_read_before"
+why = "make reads the first makefile it finds and no other; 'read first' suggests the Makefile is still read after it, which hides that a GNUmakefile replaces it."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "Makefile"
+find = "beside this file would be read instead of it,"
+replace = "beside this file would be read before it,"
+
+[[mutant]]
+name = "agents_says_read_before"
+why = "An agent told a GNUmakefile is read before the Makefile would expect the Makefile's recipes to still run."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = "so either of the others beside it would be read instead,"
+replace = "so either of the others beside it would be read before it,"
+
+[[mutant]]
+name = "agents_says_every_failed_gate_spends_the_tag"
+why = "A gate that failed on the network or a lost runner tests the same commit again when re-run; calling every failure spent burns a version a re-run would release."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """A tag whose gate fails skips the release job. When the
+failure is the commit's own (a test, lint, types, or the dist check failing on its files), the tag is spent
+the same way; when it is not (the network, a lost runner, a tool that could not be fetched), re-running the
+failed jobs clears it, so re-run them once before calling the tag spent."""
+replace = "A tag whose gate fails skips the release job and is spent the same way."
+
+[[mutant]]
+name = "agents_says_any_tag_starts_the_release"
+why = "A tag on a commit without release.yml, such as main's first, starts no run and is still permanent; an agent told any v* tag starts the release waits for a run that never comes."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """so a `v*` tag starts the release workflow only on a
+commit that carries `.github/workflows/release.yml`;"""
+replace = "so a `v*` tag starts the release workflow;"
+
+[[mutant]]
+name = "release_comment_says_any_tag_starts_it"
+why = "The workflow's own header is where a reader looks first; it must not promise a run for a tag on a commit without the file."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = ".github/workflows/release.yml"
+find = """starts this
+# workflow only on a commit that carries this file,"""
+replace = """starts this
+# workflow on any commit,"""
+
+[[mutant]]
+name = "check_dist_gives_git_status_as_the_reason"
+why = "egg-info is gitignored, so git status is no reason to build elsewhere; a reader who believes it could move the build back into the checkout, where a stale SOURCES.txt adds files to the sdist."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "tools/check_dist.py"
+find = """so that only they can reach the artifacts. Built
+in the checkout, the sdist would also take in an untracked module under ``onus/``, through package discovery,
+and every file listed in an ``onus.egg-info/SOURCES.txt`` left by an earlier build, since setuptools reads that
+list back. Keeping ``git status`` clean is not the reason: ``*.egg-info/`` is gitignored."""
+replace = """because building writes ``onus.egg-info`` into
+its source tree, and the gate writes nothing into the checkout but gitignored caches."""
+
+[[mutant]]
+name = "makefile_gives_egg_info_as_the_reason"
+why = "The dist recipe's comment must give the real reason for the scratch copy, the same one check_dist gives."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "Makefile"
+find = """# Builds in a scratch copy of the tracked files, so that only they reach the artifacts: in the checkout,
+# setuptools would read back the file list of an onus.egg-info left by an earlier build."""
+replace = "# Builds in a scratch copy, since a build writes onus.egg-info into its source tree."
+
+[[mutant]]
+name = "agents_silent_on_the_unpinned_backend"
+why = "The gate and the release each resolve setuptools when they run; an agent not told so reads a green dist stage as proof the release will build the same artifacts."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """  The build backend is not pinned: pyproject.toml asks for `setuptools>=77`, and `make dist` and the release
+  each build with the newest version uv resolves when they run, so a setuptools release between the two can
+  change or break the artifacts.
+"""
+replace = ""
+
+[[mutant]]
+name = "release_says_a_repeated_not_built_clears"
+why = "A build requirement no index has exits 4 on every run; a message that only says re-run sends the maintainer round a loop on a tag that is already spent."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = "is not spent yet: re-run this job once. If it stops the same way, the cause is in this commit and $GITHUB_REF_NAME is spent: fix it in a PR, set onus.__version__ to the next unused version, merge it to main, and tag that merge commit v<that version>."
+replace = "is not spent: re-run this job."
+
+[[mutant]]
+name = "agents_says_a_build_that_cannot_run_always_clears"
+why = "An agent told every not-built refusal clears on a re-run would keep re-running a build whose requirement no index has."
+suites = ["tests.test_repo.DocumentedClaimsTest"]
+file = "AGENTS.md"
+find = """usually clears by re-running the job; a build that
+still cannot run on the re-run has its cause in the commit, such as a build requirement no index has, and the
+tag is spent."""
+replace = "clears by re-running the job."
+
+# --- the suite's own hygiene ---
+
+[[mutant]]
+name = "scratch_git_inherits_the_callers_git_environment"
+why = "git hands GIT_DIR and GIT_INDEX_FILE to hooks; inherited, a hook running the suite stages the tests' stub files into the developer's own repository."
+suites = ["tests.test_repo.GitEnvironmentTest"]
+file = "tests/test_repo.py"
+find = ' and not key.startswith("GIT_")}'
+replace = "}"
+
+
+# --- the rules for the mutants themselves ---
+
+[[mutant]]
+name = "a_mutant_left_on_the_default_suites"
+why = "Without its own suites a mutant runs the whole module, where MutationSpecTest fails for any mutant whose anchor disappears, so a rewrite that changes nothing counts as caught."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.GitEnvironmentTest\"]\n"
+replace = ""
+
+[[mutant]]
+name = "a_mutant_judged_by_a_whole_module"
+why = "A whole module includes MutationSpecTest, which catches every mutant whose anchor disappears, whatever the behaviour."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.GitEnvironmentTest\"]"
+replace = "suites = [\"tests.test_repo\"]"
+
+[[mutant]]
+name = "a_mutant_judged_by_the_anchor_check"
+why = "MutationSpecTest fails whenever a mutant's anchor disappears, so a mutant it judges is caught however its behaviour changes."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.WorkflowTokenTest\"]\nfile = \".github/workflows/check.yml\""
+replace = "suites = [\"tests.test_repo.MutationSpecTest\"]\nfile = \".github/workflows/check.yml\""
+
+[[mutant]]
+name = "the_byte_pin_listed_beside_a_behavioural_class"
+why = "ApprovedFilesTest fails on any byte of a pinned file, so beside a behavioural class it catches the mutant however that class behaves."
+suites = ["tests.test_repo.MutationSuitesTest"]
+file = "mutt_check.toml"
+find = "suites = [\"tests.test_repo.WorkflowTokenTest\"]\nfile = \".github/workflows/release.yml\"\nfind = \"uses: astral"
+replace = "suites = [\"tests.test_repo.WorkflowTokenTest\", \"tests.test_repo.ApprovedFilesTest\"]\nfile = \".github/workflows/release.yml\"\nfind = \"uses: astral"
+
+# --- in-source switches ---
+
+[[mutant]]
+name = "inline_mypy_configuration_allowed"
+why = "`# mypy: ignore-errors` at the top of a module switches strict mypy off for it with pyproject.toml unchanged."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*mypy\s*:": "inline mypy configuration",'
+replace = ""
+
+[[mutant]]
+name = "a_bare_type_ignore_allowed"
+why = "A bare `# type: ignore` before the first statement makes mypy ignore the whole module."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*type\s*:\s*ignore(?!\[)": "a bare type: ignore",'
+replace = ""
+
+[[mutant]]
+name = "a_file_level_noqa_allowed"
+why = "`# ruff: noqa` exempts the whole file from every lint rule."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*(ruff|flake8)\s*:\s*noqa": "a file-level noqa",'
+replace = ""
+
+[[mutant]]
+name = "a_bare_noqa_allowed"
+why = "A bare `# noqa` suppresses every rule on its line without naming one."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*noqa(?!\s*:)": "a bare noqa",'
+replace = ""
+
+[[mutant]]
+name = "an_isort_switch_allowed"
+why = "ruff's import sorting obeys `# isort: skip_file`, taking the file out of the I rules."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*isort\s*:\s*(skip_file|off)": "an isort switch",'
+replace = ""
+
+[[mutant]]
+name = "a_formatter_switch_allowed"
+why = "black leaves everything after `# fmt: off` unformatted, and `--check` passes."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = '    r"#\s*(fmt\s*:\s*(off|skip)|yapf\s*:\s*disable)": "a formatter switch",'
+replace = ""
+
+[[mutant]]
+name = "a_standalone_coded_type_ignore_allowed"
+why = "A coded type: ignore before the first statement still makes mypy ignore the whole module."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = "and token.start[0] not in code_lines:"
+replace = "and False:"
+
+[[mutant]]
+name = "no_type_check_allowed"
+why = "@typing.no_type_check makes mypy skip the decorated function's body."
+suites = ["tests.test_repo.DirectiveTest"]
+file = "tests/test_repo.py"
+find = 'if token.type == tokenize.NAME and token.string == "no_type_check":'
+replace = "if False:"

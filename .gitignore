@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+# Hypothesis's cache; the gate points HYPOTHESIS_STORAGE_DIRECTORY outside the checkout, this is the backstop.
+.hypothesis/

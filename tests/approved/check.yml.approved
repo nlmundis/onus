@@ -1,0 +1,46 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The release workflow runs this same gate on the tagged commit before publishing.
+  workflow_call:
+
+# The gate needs only to read the repository; without this its token takes the repository's default scope.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      # No token left in .git/config for the third-party code every later step runs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      # CI has no pyenv: hand uv this job's interpreter by path for every stage, the floor check included.
+      # uv still fetches the pinned tools; it never needs to download a Python, since it is given one.
+      # The reviewed copies first, outside make: one `.IGNORE:` line in the Makefile would let make carry on past
+      # every failing recipe, the check of the Makefile against its own copy included.
+      - run: python -B -m unittest tests.test_repo.ApprovedFilesTest
+      # -f Makefile: make would otherwise read a GNUmakefile or makefile instead, which could include the
+      # Makefile and switch its failures off, and the tests that refuse such a file run inside that same make.
+      - run: make -f Makefile check PY="$(command -v python)" COMPAT_PY="$(command -v python)"
+
+  # The one check branch protection requires. Requiring each matrix job by name
+  # would silently stop protecting main the day the matrix changes.
+  all-checks:
+    name: all checks passed
+    if: always()
+    needs: [check]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.check.result }}" = "success"
