@@ -4,7 +4,7 @@
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
-suites = ["tests.test_repo"]
+suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties"]
 timeout = 300
 
 # --- the environment every stage runs with ---
@@ -881,3 +881,171 @@ suites = ["tests.test_repo.DirectiveTest"]
 file = "tests/test_repo.py"
 find = 'if token.type == tokenize.NAME and token.string == "no_type_check":'
 replace = "if False:"
+
+# --- onus.stats: tails and tests ---
+
+[[mutant]]
+name = "tail_off_by_one"
+why = "An upper tail that starts one count too high reports P(X > k) as P(X >= k), so every p-value is too small."
+suites = ["tests.test_stats.OracleTest"]
+file = "onus/stats/binomial.py"
+find = "count = sums[n + 1] - sums[k] if tail"
+replace = "count = sums[n + 1] - sums[k + 1] if tail"
+
+[[mutant]]
+name = "sidedness_flipped"
+why = "Answering 'greater' with the lower tail reports strong evidence for the opposite direction."
+suites = ["tests.test_stats.OracleTest"]
+file = "onus/stats/binomial.py"
+find = """    if alternative == "greater":
+        return upper"""
+replace = """    if alternative == "greater":
+        return lower"""
+
+[[mutant]]
+name = "two_sided_not_doubled"
+why = "A two-sided p-value that is only the smaller tail halves the evidence needed to reject."
+suites = ["tests.test_stats.OracleTest"]
+file = "onus/stats/binomial.py"
+find = "return min(Fraction(1), 2 * min(upper, lower))"
+replace = "return min(Fraction(1), min(upper, lower))"
+
+[[mutant]]
+name = "two_sided_cap_removed"
+why = "Doubled without the cap, a p-value near the middle exceeds 1, which no probability can."
+suites = ["tests.test_stats.OracleTest"]
+file = "onus/stats/binomial.py"
+find = "return min(Fraction(1), 2 * min(upper, lower))"
+replace = "return 2 * min(upper, lower)"
+
+[[mutant]]
+name = "decide_rejects_only_below_alpha"
+why = "Reject iff p <= alpha: 4 wins and no losses give p = 1/16 exactly, which must reject at alpha = 1/16."
+suites = ["tests.test_stats.DecisionTest"]
+file = "onus/stats/_common.py"
+find = 'return p_of(result) <= probability(alpha, "alpha")'
+replace = 'return p_of(result) < probability(alpha, "alpha")'
+
+[[mutant]]
+name = "a_float_alpha_accepted"
+why = "0.05 as a float is 0.05000000000000000277, so a p-value of exactly 1/20 would be decided against a different alpha."
+suites = ["tests.test_stats.DecisionTest"]
+file = "onus/stats/_common.py"
+find = "not isinstance(value, Fraction | int | str)"
+replace = "not isinstance(value, Fraction | int | str | float)"
+
+[[mutant]]
+name = "missing_refuse_silently_drops"
+why = "missing='refuse' is the caller saying a gap in the data is an error; dropping the pair anyway hides it."
+suites = ["tests.test_stats.SignTestTest"]
+file = "onus/stats/binomial.py"
+find = 'if gaps and missing == "refuse":'
+replace = "if False:"
+
+# --- onus.stats: the calling convention ---
+
+[[mutant]]
+name = "alternative_gains_a_default"
+why = "With a default, a call that never states its sidedness gets one anyway, and the report cannot say it was chosen."
+suites = ["tests.test_stats.ApiRuleTest"]
+file = "onus/stats/binomial.py"
+find = "def sign_test(wins: int, losses: int, *, ties: int, alternative: str, method: str)"
+replace = 'def sign_test(wins: int, losses: int, *, ties: int, alternative: str = "two-sided", method: str)'
+
+[[mutant]]
+name = "method_gains_a_default"
+why = "A released function's fix ships as a new method value; a default would silently move callers to it."
+suites = ["tests.test_stats.ApiRuleTest"]
+file = "onus/stats/binomial.py"
+find = "p: Fraction | int | str, alternative: str, method: str) -> TestResult:"
+replace = 'p: Fraction | int | str, alternative: str, method: str = "exact") -> TestResult:'
+
+[[mutant]]
+name = "missing_gains_a_default"
+why = "Whether a missing value is an error or a drop is the caller's decision; a default makes it for them."
+suites = ["tests.test_stats.ApiRuleTest"]
+file = "onus/stats/binomial.py"
+find = "    missing: str,\n"
+replace = "    missing: str = \"drop\",\n"
+
+# --- onus.stats: intervals ---
+
+[[mutant]]
+name = "wilson_z_hardcoded"
+why = "A z fixed at 1.96 gives the 95% interval whatever confidence was asked for."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "crit = NormalDist().inv_cdf(1 - float(1 - level) / 2) if z is None else float(z)"
+replace = "crit = 1.959963984540054 if z is None else float(z)"
+
+[[mutant]]
+name = "an_empty_sample_gets_a_zero_interval"
+why = "With no trials there is no proportion; an interval of [0, 0] reads as certainty that it is zero."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = """    level = _checked(k, n, confidence)
+    crit ="""
+replace = """    if n == 0:
+        return Interval(0.0, 0.0, k, n, Fraction(19, 20), "wilson")
+    level = _checked(k, n, confidence)
+    crit ="""
+
+[[mutant]]
+name = "clopper_pearson_tail_not_halved"
+why = "Putting all of 1 - confidence in each tail makes the interval too narrow, so it covers less than promised."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "    tail = float(1 - level) / 2\n"
+replace = "    tail = float(1 - level)\n"
+
+# --- onus.stats: families ---
+
+[[mutant]]
+name = "holm_running_max_removed"
+why = "Without the running maximum a later, larger p-value can be adjusted below an earlier one, breaking the step-down."
+suites = ["tests.test_stats.MultiplicityTest"]
+file = "onus/stats/multiplicity.py"
+find = "running = max(running, min(Fraction(1), (m - rank) * ps[i]))"
+replace = "running = min(Fraction(1), (m - rank) * ps[i])"
+
+[[mutant]]
+name = "bh_running_min_removed"
+why = "Without the running minimum from the top a smaller p-value can be adjusted above a larger one."
+suites = ["tests.test_stats.MultiplicityTest"]
+file = "onus/stats/multiplicity.py"
+find = "running = min(running, ps[i] * m / (rank + 1))"
+replace = "running = min(Fraction(1), ps[i] * m / (rank + 1))"
+
+[[mutant]]
+name = "incomplete_family_allowed"
+why = "Adjusting only the members with results lets a family shrink to the tests that came out well."
+suites = ["tests.test_stats.MultiplicityTest"]
+file = "onus/stats/multiplicity.py"
+find = "        if pending:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "undeclared_family_member_accepted"
+why = "A member added after the results are in is exactly the post-hoc test the declaration exists to rule out."
+suites = ["tests.test_stats.MultiplicityTest"]
+file = "onus/stats/multiplicity.py"
+find = "        if member not in self.members:\n"
+replace = "        if False:\n"
+
+# --- onus.stats: power ---
+
+[[mutant]]
+name = "rejection_region_excludes_alpha"
+why = "A region that leaves out a p-value of exactly alpha disagrees with decide, so the power is not the test's."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "if _p_exact(k, n, null, alternative) <= level]"
+replace = "if _p_exact(k, n, null, alternative) < level]"
+
+[[mutant]]
+name = "peeking_counts_a_sequence_twice"
+why = "A sequence that rejects at one look must leave the running; counted again at the next, the size is overstated."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "        weights = {k: w for k, w in grown.items() if k not in region}\n"
+replace = "        weights = grown\n"

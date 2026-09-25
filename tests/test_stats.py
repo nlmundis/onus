@@ -1,0 +1,510 @@
+"""onus.stats against brute force, against scipy and statsmodels, and against simulation.
+
+The oracles enumerate every outcome sequence for small n, so an exact tail is checked against a count of
+sequences rather than against another formula. The reference fixture (``make reference``) is scipy's and
+statsmodels' answers for a fixed case list; the sims file (``make sims``) is simulated rejection rates. Both
+headers carry the sha256 of the script that wrote them, so a changed script with an unchanged file fails.
+"""
+
+import hashlib
+import inspect
+import io
+import json
+import math
+import sys
+import tempfile
+import types
+import unittest
+from contextlib import redirect_stderr
+from fractions import Fraction
+from itertools import product
+from pathlib import Path
+from statistics import NormalDist
+from typing import Any
+from unittest import mock
+
+import onus.stats
+from onus.stats import (
+    EmptySampleError,
+    Family,
+    IncompleteFamilyError,
+    MissingDataError,
+    UndeclaredMemberError,
+    benjamini_hochberg,
+    binom_tail,
+    binomial_mde,
+    binomial_power,
+    binomial_test,
+    clopper_pearson,
+    decide,
+    holm,
+    mcnemar_exact,
+    paired_sign_test,
+    rejection_region,
+    sequential_size,
+    sign_test,
+    sign_test_mde,
+    sign_test_power,
+    wilson,
+)
+from tools.reference import make_reference
+from tools.sims import ht_sims
+
+ROOT = Path(__file__).resolve().parent.parent
+REFERENCE = ROOT / "tests" / "reference"
+HALF = Fraction(1, 2)
+ALTERNATIVES = ("two-sided", "greater", "less")
+
+
+def sequences(n: int, p: Fraction) -> "list[tuple[int, Fraction]]":
+    """Every outcome sequence of n trials, as (successes, probability), by enumeration."""
+    return [(sum(seq), p ** sum(seq) * (1 - p) ** (n - sum(seq))) for seq in product((0, 1), repeat=n)]
+
+
+def sign(wins: int, n: int, alternative: str) -> Fraction:
+    return sign_test(wins, n - wins, ties=0, alternative=alternative, method="exact").p_exact
+
+
+class OracleTest(unittest.TestCase):
+    """Exact tails and p-values against a count over every outcome sequence."""
+
+    def test_tails_at_one_half_count_every_sequence_for_n_up_to_14(self):
+        for n in range(1, 15):
+            seqs = sequences(n, HALF)
+            for k in range(n + 1):
+                with self.subTest(n=n, k=k):
+                    self.assertEqual(binom_tail(k, n, p=HALF, tail="upper"), sum(w for s, w in seqs if s >= k))
+                    self.assertEqual(binom_tail(k, n, p=HALF, tail="lower"), sum(w for s, w in seqs if s <= k))
+
+    def test_tails_away_from_one_half_count_every_sequence(self):
+        for p in (Fraction(1, 3), Fraction(3, 10), Fraction(0), Fraction(1)):
+            for n in range(1, 11):
+                seqs = sequences(n, p)
+                for k in range(n + 1):
+                    with self.subTest(p=p, n=n, k=k):
+                        self.assertEqual(binom_tail(k, n, p=p, tail="upper"), sum(w for s, w in seqs if s >= k))
+                        self.assertEqual(binom_tail(k, n, p=p, tail="lower"), sum(w for s, w in seqs if s <= k))
+        self.assertEqual(binom_tail(5, 3, p="1/3", tail="upper"), 0)
+        self.assertEqual(binom_tail(5, 3, p="1/3", tail="lower"), 1)
+
+    def test_the_two_sided_p_value_is_every_outcome_no_likelier_than_the_one_observed(self):
+        # At 1/2 the distribution is symmetric, so doubling the smaller tail is the same as summing every
+        # outcome at most as likely as the observed one; the second definition is computed here by brute force.
+        for n in range(1, 15):
+            pmf = {k: Fraction(math.comb(n, k), 2**n) for k in range(n + 1)}
+            for k in range(n + 1):
+                with self.subTest(n=n, k=k):
+                    self.assertEqual(sign(k, n, "two-sided"), sum(v for v in pmf.values() if v <= pmf[k]))
+
+    def test_one_sided_p_values_are_the_matching_tail(self):
+        for n in range(1, 15):
+            seqs = sequences(n, HALF)
+            for k in range(n + 1):
+                with self.subTest(n=n, k=k):
+                    self.assertEqual(sign(k, n, "greater"), sum(w for s, w in seqs if s >= k))
+                    self.assertEqual(sign(k, n, "less"), sum(w for s, w in seqs if s <= k))
+
+
+class DecisionTest(unittest.TestCase):
+    def test_a_p_value_equal_to_alpha_rejects(self):
+        # 4 wins and no losses: P(X >= 4) = 1/16 exactly, so it rejects at 1/16 and not just below.
+        result = sign_test(4, 0, ties=0, alternative="greater", method="exact")
+        self.assertEqual(result.p_exact, Fraction(1, 16))
+        self.assertTrue(decide(result, "1/16"))
+        self.assertFalse(decide(result, "0.0624"))
+        self.assertTrue(decide(Fraction(1, 20), "0.05"))
+
+    def test_alpha_and_p_values_must_be_exact(self):
+        result = sign_test(4, 0, ties=0, alternative="greater", method="exact")
+        with self.assertRaisesRegex(TypeError, "string such as '0.05'"):
+            decide(result, 0.05)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(TypeError, "not True"):
+            decide(result, True)
+        with self.assertRaisesRegex(ValueError, r"alpha must lie in \[0, 1\]"):
+            decide(result, "3/2")
+        self.assertEqual(result.p_value, 0.0625)
+
+
+class ExactSizeTest(unittest.TestCase):
+    """The exact tests never reject a true null more often than alpha."""
+
+    def test_size_is_at_most_alpha_for_every_n_up_to_200(self):
+        for alpha in (Fraction(1, 100), Fraction(1, 20), Fraction(1, 10)):
+            for alternative in ALTERNATIVES:
+                for n in range(1, 201):
+                    size = sum(
+                        (
+                            Fraction(math.comb(n, k), 2**n)
+                            for k in range(n + 1)
+                            if decide(sign(k, n, alternative), alpha)
+                        ),
+                        Fraction(0),
+                    )
+                    if size > alpha:
+                        self.fail(f"size {size} > alpha {alpha} at n={n}, {alternative}")
+
+
+class BinomialTest(unittest.TestCase):
+    def test_a_result_carries_its_counts(self):
+        result = binomial_test(3, 10, p="1/3", alternative="less", method="exact")
+        self.assertEqual((result.test, result.method, result.successes, result.n), ("binomial", "exact", 3, 10))
+        self.assertEqual(result.null, Fraction(1, 3))
+        self.assertEqual(result.p_exact, binom_tail(3, 10, p="1/3", tail="lower"))
+
+    def test_refusals(self):
+        cases = {
+            "only at p = 1/2": lambda: binomial_test(3, 10, p="1/3", alternative="two-sided", method="exact"),
+            "at least one trial": lambda: binomial_test(0, 0, p="1/2", alternative="greater", method="exact"),
+            r"k \(11\) cannot exceed n \(10\)": lambda: binomial_test(
+                11, 10, p="1/2", alternative="less", method="exact"
+            ),
+            r"p must lie in \(0, 1\)": lambda: binomial_test(1, 2, p=1, alternative="less", method="exact"),
+            "alternative must be one of": lambda: binomial_test(1, 2, p="1/2", alternative="up", method="exact"),
+            "method must be one of": lambda: binomial_test(1, 2, p="1/2", alternative="less", method="normal"),
+            "tail must be one of": lambda: binom_tail(1, 2, p="1/2", tail="both"),
+            "n must not be negative": lambda: binom_tail(1, -2, p="1/2", tail="upper"),
+        }
+        for message, call in cases.items():
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    call()
+        self.assertTrue(issubclass(EmptySampleError, ValueError))
+        with self.assertRaisesRegex(TypeError, "k must be an int"):
+            binom_tail(1.0, 2, p="1/2", tail="upper")  # type: ignore[arg-type]
+        with self.assertRaisesRegex(TypeError, "k must be an int"):
+            binom_tail(True, 2, p="1/2", tail="upper")
+
+    def test_the_pmf_matches_the_tails(self):
+        from onus.stats import binom_pmf
+
+        self.assertEqual(
+            binom_pmf(2, 5, p="1/3"), binom_tail(2, 5, p="1/3", tail="upper") - binom_tail(3, 5, p="1/3", tail="upper")
+        )
+        self.assertEqual(binom_pmf(6, 5, p="1/3"), 0)
+
+
+class SignTestTest(unittest.TestCase):
+    def test_ties_are_recorded_and_left_out(self):
+        result = sign_test(7, 2, ties=3, alternative="two-sided", method="exact")
+        self.assertEqual((result.successes, result.n, result.ties), (7, 9, 3))
+        self.assertEqual(result.p_exact, sign(7, 9, "two-sided"))
+        with self.assertRaisesRegex(EmptySampleError, r"none \(4 ties\)"):
+            sign_test(0, 0, ties=4, alternative="greater", method="exact")
+
+    def test_paired_values_become_wins_losses_and_ties(self):
+        result = paired_sign_test(
+            [3, 5, 2, 4, 4], [1, 5, 3, 2, 1], alternative="greater", missing="refuse", method="exact"
+        )
+        self.assertEqual((result.successes, result.n, result.ties, result.missing), (3, 4, 1, 0))
+        self.assertEqual(result.p_exact, sign(3, 4, "greater"))
+        self.assertEqual(result.warnings, ())
+
+    def test_a_missing_value_is_refused_or_dropped_as_asked(self):
+        first = [3, None, 2, float("nan"), 4, 6]
+        second = [1, 5, 3, 2, None, 1]
+        with self.assertRaisesRegex(MissingDataError, r"3 pairs have a missing value \(the first at index 1\)"):
+            paired_sign_test(first, second, alternative="greater", missing="refuse", method="exact")
+        dropped = paired_sign_test(first, second, alternative="greater", missing="drop", method="exact")
+        self.assertEqual((dropped.successes, dropped.n, dropped.missing), (2, 3, 3))
+        self.assertEqual(dropped.warnings, ("3 pairs with a missing value were dropped",))
+        with self.assertRaisesRegex(ValueError, "missing must be 'refuse' or 'drop'"):
+            paired_sign_test(first, second, alternative="greater", missing="ignore", method="exact")
+        with self.assertRaisesRegex(ValueError, "3 values against 2"):
+            paired_sign_test([1, 2, 3], [1, 2], alternative="greater", missing="drop", method="exact")
+
+    def test_exact_mcnemar_is_the_sign_test_on_the_discordant_pairs(self):
+        result = mcnemar_exact(9, 2, alternative="two-sided", method="exact")
+        self.assertEqual((result.test, result.successes, result.n), ("mcnemar", 9, 11))
+        self.assertEqual(result.p_exact, sign(9, 11, "two-sided"))
+        with self.assertRaisesRegex(EmptySampleError, "at least one discordant pair"):
+            mcnemar_exact(0, 0, alternative="two-sided", method="exact")
+
+
+class IntervalTest(unittest.TestCase):
+    def test_an_empty_sample_has_no_interval(self):
+        for method in (wilson, clopper_pearson):
+            with self.subTest(method=method.__name__):
+                with self.assertRaisesRegex(EmptySampleError, "n is 0"):
+                    method(0, 0)
+                with self.assertRaisesRegex(ValueError, "cannot exceed"):
+                    method(5, 4)
+
+    def test_wilson_takes_its_quantile_from_the_confidence_unless_given_one(self):
+        for confidence in ("0.8", "0.9", "0.95", "0.99"):
+            with self.subTest(confidence=confidence):
+                z = NormalDist().inv_cdf(1 - (1 - float(Fraction(confidence))) / 2)
+                self.assertEqual(wilson(7, 20, confidence=confidence), wilson(7, 20, confidence=confidence, z=z))
+        self.assertNotEqual(wilson(7, 20).low, wilson(7, 20, z=1.0).low)
+
+    def test_the_bounds_are_closed_at_zero_and_n(self):
+        for n in range(1, 60):
+            for confidence in ("0.8", "0.9", "0.95", "0.99"):
+                for method in (wilson, clopper_pearson):
+                    with self.subTest(n=n, confidence=confidence, method=method.__name__):
+                        self.assertEqual(method(0, n, confidence=confidence).low, 0.0)
+                        self.assertEqual(method(n, n, confidence=confidence).high, 1.0)
+
+    def test_clopper_pearson_covers_at_least_the_nominal_level_on_a_1001_point_grid(self):
+        for confidence in ("0.9", "0.95"):
+            for n in (1, 2, 3, 5, 10, 25, 50):
+                bounds = [clopper_pearson(k, n, confidence=confidence) for k in range(n + 1)]
+                for i in range(1001):
+                    p = i / 1000
+                    coverage = math.fsum(
+                        math.comb(n, k) * p**k * (1 - p) ** (n - k)
+                        for k, b in enumerate(bounds)
+                        if b.low <= p <= b.high
+                    )
+                    if coverage < float(Fraction(confidence)) - 1e-12:
+                        self.fail(f"coverage {coverage} < {confidence} at n={n}, p={p}")
+
+
+class MultiplicityTest(unittest.TestCase):
+    def test_holm_takes_the_running_maximum(self):
+        # Sorted: 1/100 * 3, 3/100 * 2, 1/25 * 1 = 3/100, 6/100, 4/100; the last is raised to 6/100.
+        self.assertEqual(holm(["1/100", "1/25", "3/100"]), [Fraction(3, 100), Fraction(3, 50), Fraction(3, 50)])
+        self.assertEqual(holm(["1/2", "3/4"]), [1, 1])
+
+    def test_benjamini_hochberg_takes_the_running_minimum_from_the_top(self):
+        # Sorted: 1/100 * 3/1, 3/100 * 3/2, 1/25 * 3/3 = 3/100, 9/200, 4/100; the middle is lowered to 4/100.
+        self.assertEqual(
+            benjamini_hochberg(["1/100", "1/25", "3/100"]), [Fraction(3, 100), Fraction(1, 25), Fraction(1, 25)]
+        )
+        self.assertEqual(benjamini_hochberg(["9/10", "3/4"]), [Fraction(9, 10), Fraction(9, 10)])
+
+    def test_results_and_exact_values_can_be_mixed_but_floats_cannot(self):
+        result = sign_test(9, 1, ties=0, alternative="greater", method="exact")
+        self.assertEqual(holm([result, "1/2"])[0], min(Fraction(1), 2 * result.p_exact))
+        with self.assertRaises(TypeError):
+            holm([0.01, 0.2])  # type: ignore[list-item]
+        with self.assertRaisesRegex(ValueError, "no p-values"):
+            holm([])
+
+    def test_a_family_refuses_an_undeclared_member_and_an_incomplete_adjustment(self):
+        family = Family("primary", ["speed", "accuracy"], correction="holm")
+        family.add("speed", "1/100")
+        with self.assertRaisesRegex(UndeclaredMemberError, "does not declare 'cost'"):
+            family.add("cost", "1/1000")
+        with self.assertRaisesRegex(IncompleteFamilyError, r"no result yet for \['accuracy'\]"):
+            family.adjusted()
+        with self.assertRaisesRegex(ValueError, "already has a result"):
+            family.add("speed", "1/50")
+        family.add("accuracy", "3/100")
+        self.assertEqual(family.adjusted(), {"speed": Fraction(1, 50), "accuracy": Fraction(3, 100)})
+        self.assertEqual(family.decide("0.025"), {"speed": True, "accuracy": False})
+        bh = Family("secondary", ["a", "b"], correction="benjamini-hochberg")
+        bh.add("a", "1/100")
+        bh.add("b", "3/100")
+        self.assertEqual(bh.adjusted(), {"a": Fraction(1, 50), "b": Fraction(3, 100)})
+
+    def test_a_family_is_declared_whole(self):
+        cases = {
+            "declares no members": lambda: Family("f", [], correction="holm"),
+            "declares a member twice": lambda: Family("f", ["a", "a"], correction="holm"),
+            "correction must be one of": lambda: Family("f", ["a"], correction="bonferroni"),
+        }
+        for message, call in cases.items():
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    call()
+
+
+class PowerTest(unittest.TestCase):
+    def test_power_counts_every_sequence_the_test_rejects(self):
+        for n, p_alt, alternative in (
+            (10, Fraction(4, 5), "greater"),
+            (12, Fraction(1, 4), "less"),
+            (11, Fraction(2, 3), "two-sided"),
+        ):
+            with self.subTest(n=n, alternative=alternative):
+                rejected = sum(w for s, w in sequences(n, p_alt) if decide(sign(s, n, alternative), "0.05"))
+                self.assertEqual(sign_test_power(n, p_alt=p_alt, alpha="0.05", alternative=alternative), rejected)
+
+    def test_the_rejection_region_is_the_tests_own(self):
+        self.assertEqual(rejection_region(10, p0="1/2", alpha="0.05", alternative="greater"), [9, 10])
+        self.assertEqual(rejection_region(10, p0="1/2", alpha="0.05", alternative="two-sided"), [0, 1, 9, 10])
+        self.assertEqual(rejection_region(0, p0="1/2", alpha="0.05", alternative="less"), [])
+        # 4 of 4: the p-value is exactly 1/16, so at alpha = 1/16 the count is in the region, as decide says.
+        self.assertEqual(rejection_region(4, p0="1/2", alpha="1/16", alternative="greater"), [4])
+        self.assertEqual(sign_test_power(4, p_alt="1/2", alpha="1/16", alternative="greater"), Fraction(1, 16))
+        self.assertEqual(
+            rejection_region(20, p0="1/4", alpha="0.05", alternative="greater"),
+            [k for k in range(21) if binom_tail(k, 20, p="1/4", tail="upper") <= Fraction(1, 20)],
+        )
+        with self.assertRaisesRegex(ValueError, "only at p0 = 1/2"):
+            rejection_region(10, p0="1/4", alpha="0.05", alternative="two-sided")
+
+    def test_the_power_at_the_null_is_the_size(self):
+        self.assertEqual(
+            binomial_power(30, p0="1/4", p_alt="1/4", alpha="0.05", alternative="greater"),
+            sum(
+                binom_tail(k, 30, p="1/4", tail="upper") - binom_tail(k + 1, 30, p="1/4", tail="upper")
+                for k in rejection_region(30, p0="1/4", alpha="0.05", alternative="greater")
+            ),
+        )
+
+    def test_the_minimum_detectable_effect_is_the_nearest_probability_reaching_the_power(self):
+        for alternative, sign_of in (("greater", 1), ("two-sided", 1), ("less", -1)):
+            with self.subTest(alternative=alternative):
+                mde = sign_test_mde(30, alpha="0.05", power="0.8", alternative=alternative)
+                assert mde is not None
+                at = sign_test_power(30, p_alt=Fraction(mde), alpha="0.05", alternative=alternative)
+                nearer = sign_test_power(
+                    30, p_alt=Fraction(mde - sign_of * 1e-6), alpha="0.05", alternative=alternative
+                )
+                self.assertGreaterEqual(at, Fraction(4, 5))
+                self.assertLess(nearer, Fraction(4, 5))
+        self.assertIsNone(sign_test_mde(4, alpha="0.05", power="0.8", alternative="two-sided"))
+        self.assertIsNotNone(binomial_mde(40, p0="1/4", alpha="0.05", power="0.9", alternative="greater"))
+
+    def test_one_look_is_the_fixed_sample_size(self):
+        for n in (1, 5, 20, 37):
+            for alternative in ALTERNATIVES:
+                with self.subTest(n=n, alternative=alternative):
+                    self.assertEqual(
+                        sequential_size([n], alpha="0.05", alternative=alternative),
+                        sign_test_power(n, p_alt=HALF, alpha="0.05", alternative=alternative),
+                    )
+
+    def test_peeking_is_counted_once_per_sequence(self):
+        # Brute force over all 2^12 sequences, reading at 6, 9, and 12 pairs.
+        looks = [6, 9, 12]
+        for alternative in ALTERNATIVES:
+            regions = {n: set(rejection_region(n, p0="1/2", alpha="1/10", alternative=alternative)) for n in looks}
+            count = sum(any(sum(seq[:n]) in regions[n] for n in looks) for seq in product((0, 1), repeat=12))
+            with self.subTest(alternative=alternative):
+                self.assertEqual(sequential_size(looks, alpha="1/10", alternative=alternative), Fraction(count, 2**12))
+        for bad in ([], [5, 5], [5, 3], [0, 4]):
+            with self.subTest(looks=bad):
+                with self.assertRaisesRegex(ValueError, "strictly increasing positive"):
+                    sequential_size(bad, alpha="0.05", alternative="greater")
+
+
+class ApiRuleTest(unittest.TestCase):
+    """alternative, method, and missing are keyword-only with no default, on every public function."""
+
+    def test_every_call_states_its_sidedness_method_and_missing_policy(self):
+        checked = 0
+        for name in onus.stats.__all__:
+            target = getattr(onus.stats, name)
+            # Functions, and the one class a caller configures; result types only carry these as fields.
+            if not (inspect.isfunction(target) or target is Family):
+                continue
+            for parameter in inspect.signature(target).parameters.values():
+                if parameter.name in ("alternative", "method", "missing", "correction"):
+                    checked += 1
+                    with self.subTest(function=name, parameter=parameter.name):
+                        self.assertEqual(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+                        self.assertIs(parameter.default, inspect.Parameter.empty)
+        self.assertGreaterEqual(checked, 16, "the rule must not pass by finding nothing to check")
+
+
+def close(a: float, b: float, tolerance: float) -> bool:
+    return math.isclose(a, b, rel_tol=tolerance, abs_tol=tolerance * 1e-3)
+
+
+class ReferenceTest(unittest.TestCase):
+    """onus.stats against scipy's and statsmodels' answers, committed by `make reference`."""
+
+    fixture: dict[str, Any]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = json.loads((REFERENCE / "stats_reference.json").read_text(encoding="utf-8"))
+
+    def test_the_fixture_was_written_by_the_current_script(self):
+        script = (ROOT / "tools" / "reference" / "make_reference.py").read_bytes()
+        self.assertEqual(
+            self.fixture["header"]["script_sha256"], hashlib.sha256(script).hexdigest(), "run make reference"
+        )
+
+    def test_binomial_p_values_match(self):
+        self.assertEqual(len(self.fixture["binomial"]), len(make_reference.BINOMIAL))
+        for case in self.fixture["binomial"]:
+            with self.subTest(**case):
+                ours = binomial_test(case["k"], case["n"], p=case["p"], alternative=case["alternative"], method="exact")
+                self.assertTrue(close(ours.p_value, case["p_value"], 1e-12), (ours.p_value, case["p_value"]))
+
+    def test_intervals_match(self):
+        for case in self.fixture["intervals"]:
+            for method, function, tolerance in (("wilson", wilson, 1e-12), ("clopper-pearson", clopper_pearson, 1e-9)):
+                with self.subTest(k=case["k"], n=case["n"], confidence=case["confidence"], method=method):
+                    ours = function(case["k"], case["n"], confidence=case["confidence"])
+                    self.assertTrue(close(ours.low, case[method][0], tolerance), (ours.low, case[method][0]))
+                    self.assertTrue(close(ours.high, case[method][1], tolerance), (ours.high, case[method][1]))
+
+    def test_adjusted_p_values_match(self):
+        for case in self.fixture["families"]:
+            for name, function in (("holm", holm), ("benjamini-hochberg", benjamini_hochberg)):
+                with self.subTest(family=case["p_values"], method=name):
+                    ours = [float(v) for v in function(case["p_values"])]
+                    self.assertTrue(
+                        all(close(a, b, 1e-12) for a, b in zip(ours, case[name], strict=True)), (ours, case[name])
+                    )
+
+
+class SimulationTest(unittest.TestCase):
+    """The exact power and peeking size against simulated rejection rates, committed by `make sims`."""
+
+    def test_every_simulated_rate_lies_within_three_standard_errors_of_the_exact_one(self):
+        sims = json.loads((REFERENCE / "sims.json").read_text(encoding="utf-8"))
+        script = (ROOT / "tools" / "sims" / "ht_sims.py").read_bytes()
+        self.assertEqual(sims["header"]["script_sha256"], hashlib.sha256(script).hexdigest(), "run make sims")
+        self.assertEqual(len(sims["cases"]), len(ht_sims.CASES))
+        for case in sims["cases"]:
+            with self.subTest(case=case["name"]):
+                if len(case["looks"]) == 1:
+                    exact = sign_test_power(
+                        case["looks"][0], p_alt=case["p_win"], alpha=case["alpha"], alternative=case["alternative"]
+                    )
+                else:
+                    self.assertEqual(case["p_win"], "1/2", "a peeking case is simulated under the null")
+                    exact = sequential_size(case["looks"], alpha=case["alpha"], alternative=case["alternative"])
+                se = math.sqrt(float(exact) * (1 - float(exact)) / case["reps"])
+                self.assertLessEqual(abs(case["rate"] - float(exact)), 3 * se, (case["rate"], float(exact)))
+
+
+class ScriptTest(unittest.TestCase):
+    """The two scripts that write the committed files, run here with stand-ins so they stay covered."""
+
+    def test_the_reference_script_writes_a_header_and_every_case(self):
+        def module(name: str, **attributes: object) -> types.ModuleType:
+            fake = types.ModuleType(name)
+            fake.__dict__.update(attributes)
+            return fake
+
+        modules = {
+            "scipy": module("scipy", __version__="0.0-fake"),
+            "scipy.stats": module(
+                "scipy.stats", binomtest=lambda k, n, p, alternative: types.SimpleNamespace(pvalue=0.5)
+            ),
+            "statsmodels": module("statsmodels", __version__="0.0-fake"),
+            "statsmodels.stats.proportion": module(
+                "statsmodels.stats.proportion", proportion_confint=lambda k, n, alpha, method: (0.25, 0.75)
+            ),
+            "statsmodels.stats.multitest": module(
+                "statsmodels.stats.multitest", multipletests=lambda ps, method: (None, [0.5] * len(ps))
+            ),
+        }
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(sys.modules, modules):
+            out = Path(tmp) / "reference.json"
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(make_reference.main([str(out)]), 0)
+            written = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(written["header"]["scipy"], "0.0-fake")
+        self.assertEqual(len(written["binomial"]), len(make_reference.BINOMIAL))
+        self.assertEqual(written["intervals"][0]["clopper-pearson"], [0.25, 0.75])
+        self.assertEqual(len(written["families"]), len(make_reference.FAMILIES))
+
+    def test_the_simulation_script_writes_a_rate_for_every_case(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "sims.json"
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(ht_sims.main([str(out), "--reps", "20"]), 0)
+            written = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual([case["name"] for case in written["cases"]], [case[0] for case in ht_sims.CASES])
+        self.assertTrue(all(0 <= case["rate"] <= 1 and case["reps"] == 20 for case in written["cases"]))
+
+
+if __name__ == "__main__":
+    unittest.main()
