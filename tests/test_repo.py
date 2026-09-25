@@ -924,6 +924,42 @@ class CheckWorkflowTest(unittest.TestCase):
         self.assertEqual(job_block(workflow, "first"), "    steps: []\n  # a comment at the job's indent\n    x: 1\n")
 
 
+class WorkflowTokenTest(unittest.TestCase):
+    """What the workflows let third-party code do with their token.
+
+    Every step after checkout runs code the project does not write (the actions, uv, the tools, the newest
+    setuptools). A token checkout leaves in .git/config is readable by all of it, and one with write scope can
+    create v* tags, which the ruleset makes permanent, or replace a release's files.
+    """
+
+    def test_every_action_is_pinned_by_commit(self):
+        for name, workflow in (
+            (".github/workflows/check.yml", CHECK_YML),
+            (".github/workflows/release.yml", RELEASE_YML),
+        ):
+            for action in re.findall(r"(?m)^\s*(?:- )?uses: (\S+)", workflow):
+                if action.startswith("./"):
+                    continue
+                with self.subTest(file=name, action=action):
+                    self.assertRegex(action, r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$", "a tag can be moved to other code")
+
+    def test_no_checkout_leaves_its_token_behind(self):
+        for name, workflow in (
+            (".github/workflows/check.yml", CHECK_YML),
+            (".github/workflows/release.yml", RELEASE_YML),
+        ):
+            checkouts = list(re.finditer(r"(?m)^(\s*)- uses: actions/checkout@.*\n((?:\1  .*\n)*)", workflow))
+            self.assertEqual(len(checkouts), workflow.count("actions/checkout@"), name)
+            for match in checkouts:
+                with self.subTest(file=name):
+                    self.assertIn("persist-credentials: false", match.group(2))
+
+    def test_the_gate_reads_the_repository_and_nothing_more(self):
+        # Without its own permissions block the gate's token takes the repository default, recorded nowhere.
+        self.assertIn("\npermissions:\n  contents: read\n\njobs:\n", CHECK_YML)
+        self.assertEqual(len(re.findall(r"(?m)^\s*permissions:", CHECK_YML)), 1)
+
+
 class ReleaseWorkflowTest(unittest.TestCase):
     """Nothing is released that did not pass the gate, is not on main, does not match its version, or fails checks.
 

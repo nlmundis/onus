@@ -348,6 +348,30 @@ replace = "    name: all checks"
 # --- release ---
 
 [[mutant]]
+name = "an_action_pinned_by_a_movable_tag"
+why = "A tag can be moved to other code, which then runs in the release job beside its write token."
+suites = ["tests.test_repo.WorkflowTokenTest"]
+file = ".github/workflows/release.yml"
+find = "uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6"
+replace = "uses: astral-sh/setup-uv@v6"
+
+[[mutant]]
+name = "release_checkout_leaves_its_write_token"
+why = "checkout persists its token in .git/config by default, where every later step's third-party code can read it and create permanent tags or replace release files."
+suites = ["tests.test_repo.WorkflowTokenTest"]
+file = ".github/workflows/release.yml"
+find = "          persist-credentials: false\n"
+replace = ""
+
+[[mutant]]
+name = "gate_token_takes_the_repository_default"
+why = "Without its own permissions block the gate's token has whatever scope the repository default grants, which no file records."
+suites = ["tests.test_repo.WorkflowTokenTest"]
+file = ".github/workflows/check.yml"
+find = "permissions:\n  contents: read\n"
+replace = ""
+
+[[mutant]]
 name = "release_skips_the_gate"
 why = "Without needs: checks a tag publishes a release from a commit whose gate never ran."
 suites = ["tests.test_repo.ReleaseWorkflowTest"]

@@ -46,6 +46,9 @@ through uvx or `uv run --no-project` at the versions pinned in the Makefile.
   tool is handed pyproject.toml explicitly, so a config file in a subfolder is not read either.
   pyproject.toml also stops black and ruff from skipping what a `.gitignore`, `.ignore`, or
   `.git/info/exclude` lists, so no ignore file can take a module out of the format or lint stage.
+- **Workflows hand third-party code no token.** Every action is pinned by commit (with its tag in a comment),
+  every checkout sets `persist-credentials: false`, and the gate's token can only read; `WorkflowTokenTest`
+  checks all three. Only the release's Create step holds a write token, through `GH_TOKEN`.
 - **Branch, then PR.** Never commit to `main`; the ruleset refuses it anyway. Stage by path.
 
 ## Releasing
