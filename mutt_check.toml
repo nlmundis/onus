@@ -434,6 +434,40 @@ find = "MANIFEST.in must prune tests, and no line after it may add them back"
 replace = "MANIFEST.in must prune tests"
 
 [[mutant]]
+name = "artifact_names_unchecked"
+why = "gh release create uploads whatever the files are named; an onus-0.0.0.dev7 wheel would be attached to the permanent tag v0.0.0."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "        if name != expected:"
+replace = "        if False:"
+
+[[mutant]]
+name = "wheel_metadata_version_unchecked"
+why = "pip installs by METADATA's Version; a wheel whose METADATA disagrees with the tag installs as another version."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'elif (said := metadata_version(wheel.read(metadata[0]).decode("utf-8"))) != version:'
+replace = 'elif (said := metadata_version(wheel.read(metadata[0]).decode("utf-8"))) is None:'
+
+[[mutant]]
+name = "sdist_pkg_info_version_unchecked"
+why = "An install from the sdist builds with PKG-INFO's Version; one that disagrees with the tag ships another version."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = 'elif (said := metadata_version(extracted.read().decode("utf-8"))) != version:'
+replace = 'elif (said := metadata_version(extracted.read().decode("utf-8"))) is None:'
+
+[[mutant]]
+name = "metadata_version_read_from_the_description"
+why = "The headers end at the first blank line; reading past it takes a 'Version:' line from the package's description for its version."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = """        if not line.strip():
+            break
+"""
+replace = ""
+
+[[mutant]]
 name = "wheel_import_unchecked"
 why = "A wheel whose core imports a third-party package fails for every caller without the extra."
 suites = ["tests.test_repo.DistCheckTest"]

@@ -166,7 +166,8 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(PYPROJECT["project"]["dynamic"], ["version"])
         self.assertNotIn("version", PYPROJECT["project"])
         self.assertEqual(PYPROJECT["tool"]["setuptools"]["dynamic"]["version"], {"attr": "onus.__version__"})
-        self.assertRegex(onus.__version__, r"^\d+\.\d+\.\d+$")
+        # Normal form, which setuptools leaves as it is: 0.01.0 would ship as 0.1.0 under a v0.01.0 tag.
+        self.assertRegex(onus.__version__, r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
         self.assertEqual(check_dist.source_version(), onus.__version__)
 
 
@@ -242,15 +243,26 @@ class DistCheckTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.dist = Path(self.tmp.name)
 
-    def artifacts(self, wheel_files=None, sdist_files=None):
-        wheel_files = {"onus/__init__.py": '__version__ = "1.2.3"\n', "onus/py.typed": ""} | (wheel_files or {})
-        sdist_files = {"onus-1.2.3/onus/__init__.py": "", "onus-1.2.3/pyproject.toml": ""} | (sdist_files or {})
-        with zipfile.ZipFile(self.dist / "onus-1.2.3-py3-none-any.whl", "w") as wheel:
+    def artifacts(self, wheel_files=None, sdist_files=None, named="1.2.3"):
+        metadata = "Metadata-Version: 2.4\nName: onus\nVersion: 1.2.3\n\nVersion: 9.9.9 in the description\n"
+        wheel_files = {
+            "onus/__init__.py": '__version__ = "1.2.3"\n',
+            "onus/py.typed": "",
+            "onus-1.2.3.dist-info/METADATA": metadata,
+        } | (wheel_files or {})
+        sdist_files = {
+            "onus-1.2.3/onus/__init__.py": "",
+            "onus-1.2.3/pyproject.toml": "",
+            "onus-1.2.3/PKG-INFO": metadata,
+        } | (sdist_files or {})
+        with zipfile.ZipFile(self.dist / f"onus-{named}-py3-none-any.whl", "w") as wheel:
             for name, text in wheel_files.items():
                 if text is not None:
                     wheel.writestr(name, text)
-        with tarfile.open(self.dist / "onus-1.2.3.tar.gz", "w:gz") as sdist:
+        with tarfile.open(self.dist / f"onus-{named}.tar.gz", "w:gz") as sdist:
             for name, text in sdist_files.items():
+                if text is None:
+                    continue
                 data = text.encode()
                 info = tarfile.TarInfo(name)
                 info.size = len(data)
@@ -289,6 +301,40 @@ class DistCheckTest(unittest.TestCase):
                 "is built from the sdist)"
             ],
         )
+
+    def test_the_artifacts_carry_the_version_in_their_names_and_metadata(self):
+        # A setup.py `tag_build`, or a __version__ setuptools normalises, changes these while the wheel still
+        # prints the right __version__ on import.
+        drifted = "Metadata-Version: 2.4\nName: onus\nVersion: 1.2.3.dev7\n"
+        cases = {
+            "the wheel's METADATA says Version 1.2.3.dev7, not 1.2.3": (
+                {"onus-1.2.3.dist-info/METADATA": drifted},
+                None,
+            ),
+            "the sdist's PKG-INFO says Version 1.2.3.dev7, not 1.2.3": (None, {"onus-1.2.3/PKG-INFO": drifted}),
+            "the wheel has no .dist-info/METADATA": ({"onus-1.2.3.dist-info/METADATA": None}, None),
+            "the sdist has no PKG-INFO": (None, {"onus-1.2.3/PKG-INFO": None}),
+        }
+        for message, (wheel_files, sdist_files) in cases.items():
+            with self.subTest(message=message):
+                for path in self.dist.iterdir():
+                    path.unlink()
+                self.artifacts(wheel_files, sdist_files)
+                self.assertEqual(check_dist.problems(self.dist, "1.2.3"), [message])
+        for path in self.dist.iterdir():
+            path.unlink()
+        self.artifacts(named="1.2.3.dev7")
+        self.assertEqual(
+            check_dist.problems(self.dist, "1.2.3"),
+            [
+                "the wheel is named onus-1.2.3.dev7-py3-none-any.whl, not onus-1.2.3-py3-none-any.whl",
+                "the sdist is named onus-1.2.3.dev7.tar.gz, not onus-1.2.3.tar.gz",
+            ],
+        )
+
+    def test_a_version_is_read_from_the_headers_only(self):
+        self.assertEqual(check_dist.metadata_version("Name: onus\nVersion: 1.2.3\n\nbody"), "1.2.3")
+        self.assertIsNone(check_dist.metadata_version("Name: onus\n\nVersion: 1.2.3 in the description\n"))
 
     def test_the_sdist_defect_names_its_remedy_whole(self):
         self.artifacts(sdist_files={"onus-1.2.3/tests/test_repo.py": ""})

@@ -20,6 +20,7 @@ error.
 
 import argparse
 import ast
+import re
 import shutil
 import subprocess
 import sys
@@ -54,13 +55,48 @@ def source_version(root: Path = ROOT) -> str:
     raise ValueError("onus/__init__.py assigns no string __version__")
 
 
+def metadata_version(text: str) -> str | None:
+    """Return the ``Version:`` header of a METADATA or PKG-INFO text; the headers end at the first blank line."""
+    for line in text.splitlines():
+        if not line.strip():
+            break
+        if line.startswith("Version:"):
+            return line.removeprefix("Version:").strip()
+    return None
+
+
+def version_problems(wheel: zipfile.ZipFile, sdist: tarfile.TarFile, names: tuple[str, str], version: str) -> list[str]:
+    """Return how the artifacts' own names and metadata disagree with ``version``.
+
+    The wheel prints ``onus.__version__`` on import, but a setup.py ``tag_build``, or a ``__version__`` that
+    setuptools normalises, changes the version the files are named and described by without changing that.
+    """
+    found = []
+    for name, expected in zip(names, (f"onus-{version}-py3-none-any.whl", f"onus-{version}.tar.gz"), strict=True):
+        if name != expected:
+            kind = "wheel" if name.endswith(".whl") else "sdist"
+            found.append(f"the {kind} is named {name}, not {expected}")
+    metadata = [name for name in wheel.namelist() if re.fullmatch(r"[^/]+\.dist-info/METADATA", name)]
+    if len(metadata) != 1:
+        found.append("the wheel has no .dist-info/METADATA")
+    elif (said := metadata_version(wheel.read(metadata[0]).decode("utf-8"))) != version:
+        found.append(f"the wheel's METADATA says Version {said}, not {version}")
+    pkg_info = [member for member in sdist.getmembers() if re.fullmatch(r"[^/]+/PKG-INFO", member.name)]
+    extracted = sdist.extractfile(pkg_info[0]) if len(pkg_info) == 1 else None
+    if extracted is None:
+        found.append("the sdist has no PKG-INFO")
+    elif (said := metadata_version(extracted.read().decode("utf-8"))) != version:
+        found.append(f"the sdist's PKG-INFO says Version {said}, not {version}")
+    return found
+
+
 def problems(dist: Path, version: str) -> list[str]:
     """Return what stops the artifacts in ``dist`` from being released as ``version``; empty when nothing does.
 
-    Checks that there is exactly one wheel and one sdist, that the wheel carries the ``py.typed`` marker, that
-    the sdist leaves out the repository's own tests, and that the wheel imports with the standard library
-    alone (``-I -S``, straight from the zip, from outside any checkout) and reports ``version``. ``dist`` may
-    be relative to the current directory.
+    Checks that there is exactly one wheel and one sdist, named and described (METADATA, PKG-INFO) as
+    ``version``; that the wheel carries the ``py.typed`` marker; that the sdist leaves out the repository's own
+    tests; and that the wheel imports with the standard library alone (``-I -S``, straight from the zip, from
+    outside any checkout) and reports ``version``. ``dist`` may be relative to the current directory.
     """
     dist = dist.resolve()
     wheels, sdists = sorted(dist.glob("*.whl")), sorted(dist.glob("*.tar.gz"))
@@ -80,6 +116,8 @@ def problems(dist: Path, version: str) -> list[str]:
             found_problems.append(
                 "the sdist carries tests/: MANIFEST.in must prune tests, and no line after it may add them back"
             )
+        with zipfile.ZipFile(wheels[0]) as wheel:
+            found_problems += version_problems(wheel, sdist, (wheels[0].name, sdists[0].name), version)
     probe = "import sys; sys.path.insert(0, sys.argv[1]); import onus; print(onus.__version__)"
     result = subprocess.run(
         [sys.executable, "-I", "-S", "-B", "-c", probe, str(wheels[0])],
