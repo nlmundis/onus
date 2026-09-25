@@ -13,8 +13,8 @@ from onus.stats._common import check_alternative, check_count, probability
 from onus.stats.binomial import HALF, _p_exact, binom_tail
 from onus.stats.intervals import _log_pmf
 
-# How far the minimum detectable effect is moved outward from the float search's answer.
-MARGIN = 1e-9
+# The minimum detectable effect is a multiple of 1/GRID (about 9.3e-10), where its exact power is cheap to check.
+GRID = 2**30
 
 
 def rejection_region(n: int, *, p0: Fraction | int | str, alpha: Fraction | int | str, alternative: str) -> list[int]:
@@ -60,13 +60,21 @@ def _first(predicate: Callable[[int], bool], lo: int, hi: int) -> int:
 
 
 def _region_power(region: list[int], n: int, p: Fraction) -> Fraction:
-    """Return P(X in region) for X ~ Binomial(n, p), from the exact tails of each contiguous run of counts."""
+    """Return P(X in region) for X ~ Binomial(n, p), from the exact tails of each contiguous run of counts.
+
+    A run that starts at 0 or ends at n, as every run of a test's region does, costs one tail, not two.
+    """
     total, start = Fraction(0), 0
     for i, k in enumerate(region):
         if i == 0 or k != region[i - 1] + 1:
             start = k
         if i == len(region) - 1 or region[i + 1] != k + 1:
-            total += binom_tail(start, n, p=p, tail="upper") - binom_tail(k + 1, n, p=p, tail="upper")
+            if start == 0:
+                total += binom_tail(k, n, p=p, tail="lower")
+            elif k == n:
+                total += binom_tail(start, n, p=p, tail="upper")
+            else:
+                total += binom_tail(start, n, p=p, tail="upper") - binom_tail(k + 1, n, p=p, tail="upper")
     return total
 
 
@@ -99,8 +107,9 @@ def binomial_mde(
     """Return the success probability nearest ``p0`` at which the test reaches ``power``, or None if none does.
 
     For "greater" and "two-sided" it is the smallest probability above ``p0``; for "less", the largest below.
-    It depends on the design (n, p0, alpha, power) only, never on an observed result. It is found to within
-    about 1e-9 and rounded outward, so the exact power at the returned probability is at least ``power``.
+    It depends on the design (n, p0, alpha, power) only, never on an observed result. The answer is a multiple
+    of 2^-30: the one nearest ``p0`` whose exact power is at least ``power``, checked exactly, so the next
+    multiple toward ``p0`` falls short of it.
     """
     null = probability(p0, "p0", open_interval=True)
     target = probability(power, "power", open_interval=True)
@@ -112,21 +121,59 @@ def binomial_mde(
             f"the test reaches power {target} with no effect at all (alpha is that large), so no effect is minimal"
         )
     upward = alternative != "less"
+    inside = set(region)
+    outside = [k for k in range(n + 1) if k not in inside]
+    miss = float(1 - target)
 
-    def float_power(p: float) -> float:
-        return math.fsum(math.exp(_log_pmf(k, n, p)) for k in region)
+    def float_reaches(p: float) -> bool:
+        # Near power 1 the power's rounding error would swamp the gap to the target, so the missed mass is
+        # summed instead; each sum is then accurate relative to its own size.
+        if target > HALF:
+            return math.fsum(math.exp(_log_pmf(k, n, p)) for k in outside) <= miss
+        return math.fsum(math.exp(_log_pmf(k, n, p)) for k in region) >= target
 
     # A non-empty region holds the extreme count (n, or 0 for "less"), so the power there is 1 and a crossing
-    # exists. The search runs in floats, whose power is good to about 1e-11 even at n in the tens of thousands;
-    # the answer is then moved outward by MARGIN, so the exact power there is at least the target.
+    # exists. A float search finds it closely; the exact check then settles it on the grid.
     far = 1.0 if upward else 0.0
     near = float(null)
     while (mid := (near + far) / 2) not in (near, far):
-        if float_power(mid) >= target:
+        if float_reaches(mid):
             far = mid
         else:
             near = mid
-    return min(1.0, far + MARGIN) if upward else max(0.0, far - MARGIN)
+    # Grid points are indexed outward from p0, so a larger index is a larger effect in either direction.
+    base = math.floor(null * GRID) if upward else math.ceil(null * GRID)
+    top = GRID - base if upward else base
+
+    def reaches(i: int) -> bool:
+        return _region_power(region, n, Fraction(base + i if upward else base - i, GRID)) >= target
+
+    # Index 0 is p0 or just short of it, so it fails; index top is probability 1 (0 for "less"), so it reaches.
+    index = _settle(reaches, math.ceil(abs(far * GRID - base)), top)
+    return (base + index if upward else base - index) / GRID
+
+
+def _settle(reaches: Callable[[int], bool], guess: int, top: int) -> int:
+    """Return the smallest index in 1..top where the monotone ``reaches`` holds, searching out from ``guess``.
+
+    Index 0 is taken to fail, and 1 <= guess <= top. It gallops outward to a reaching index and inward to a
+    failing one, then bisects between them.
+
+    Raises:
+        ValueError: ``reaches`` fails even at ``top``.
+    """
+    low, high, step = guess - 1, guess, 1
+    while not reaches(high):
+        if high == top:
+            raise ValueError(f"no index up to {top} reaches the target")
+        low, high, step = high, min(top, high + step), 2 * step
+    step = 1
+    while low > 0 and reaches(low):
+        high, low, step = low, max(0, low - step), 2 * step
+    while high - low > 1:
+        mid = (low + high) // 2
+        low, high = (low, mid) if reaches(mid) else (mid, high)
+    return high
 
 
 def sign_test_mde(

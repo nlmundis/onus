@@ -67,16 +67,14 @@ def binom_tail(k: int, n: int, *, p: Fraction | int | str, tail: str) -> Fractio
         return Fraction(count, 2**n)
     first, last = (k, n) if tail == "upper" else (0, k)
     num, den = prob.numerator, prob.denominator
-    # Sum C(n, j) num^j (den - num)^(n - j) over the tail, each factor stepped from the last rather than recomputed.
-    rest = [1]
-    for _ in range(n - first):
-        rest.append(rest[-1] * (den - num))
-    coefficient, power, total = math.comb(n, first), num**first, 0
+    # Sum C(n, j) num^j q^(n - j), q = den - num, over the tail by Horner's rule: each step multiplies the running
+    # sum by q and adds the next term, stepped from the last by small factors, so no power of q is ever kept.
+    q = den - num
+    term, total = math.comb(n, first) * num**first, 0
     for j in range(first, last + 1):
-        total += coefficient * power * rest[n - j]
-        coefficient = coefficient * (n - j) // (j + 1)
-        power *= num
-    return Fraction(total, den**n)
+        total = total * q + term
+        term = term * (n - j) // (j + 1) * num  # C(n, j + 1) num^(j + 1), from C(n, j) num^j
+    return Fraction(total * q ** (n - last), den**n)
 
 
 def _p_exact(k: int, n: int, null: Fraction, alternative: str) -> Fraction:

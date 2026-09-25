@@ -928,7 +928,7 @@ replace = "missing = isinstance(value, Decimal) and value.is_nan()"
 
 [[mutant]]
 name = "a_non_number_compared_as_it_is"
-why = "Strings compare as text, so '10' against '9' would be scored a loss; a value that is not a real number must be refused."
+why = "Without the check a non-number reaches math.isnan, whose TypeError names neither the argument nor the position of the value."
 suites = ["tests.test_stats.SignTestTest"]
 file = "onus/stats/binomial.py"
 find = "if isinstance(value, bool) or not isinstance(value, numbers.Real | Decimal):"
@@ -1197,11 +1197,11 @@ replace = "coefficient = math.comb(n, k + 1)"
 
 [[mutant]]
 name = "the_general_tail_recomputes_each_coefficient"
-why = "Away from 1/2 the same recomputation made a one-sided test on 5000 trials take over a second."
+why = "Away from 1/2 the same recomputation made a one-sided test on 20000 trials take 44 seconds."
 suites = ["tests.test_stats.ScaleTest"]
 file = "onus/stats/binomial.py"
-find = "        coefficient = coefficient * (n - j) // (j + 1)\n"
-replace = "        coefficient = math.comb(n, j + 1)\n"
+find = "        term = term * (n - j) // (j + 1) * num  # C(n, j + 1) num^(j + 1), from C(n, j) num^j\n"
+replace = "        term = math.comb(n, j + 1) * num ** (j + 1)\n"
 
 [[mutant]]
 name = "an_mde_of_no_effect_returned"
@@ -1224,6 +1224,85 @@ name = "the_mde_search_runs_in_exact_arithmetic"
 why = "Each exact power at a float probability carries a 2^52 denominator into n powers; the search took 126 seconds at n = 1000."
 suites = ["tests.test_stats.ScaleTest"]
 file = "onus/stats/power.py"
-find = "return math.fsum(math.exp(_log_pmf(k, n, p)) for k in region)"
-replace = "return float(_region_power(region, n, Fraction(p)))"
+find = "        if target > HALF:\n"
+replace = "        return _region_power(region, n, Fraction(p)) >= target\n        if target > HALF:\n"
 
+[[mutant]]
+name = "the_mde_trusts_the_float_search"
+why = "Near power 1 a float power is off by more than the gap to the target, so the returned effect's exact power fell short of it."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "        return _region_power(region, n, Fraction(base + i if upward else base - i, GRID)) >= target\n"
+replace = "        return float_reaches((base + i if upward else base - i) / GRID)\n"
+
+[[mutant]]
+name = "the_mde_never_steps_outward"
+why = "When the float search's guess falls short of the exact crossing, the guess would be returned with too little power."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "    while not reaches(high):\n"
+replace = "    while False:\n"
+
+[[mutant]]
+name = "the_mde_never_steps_toward_p0"
+why = "When the float search's guess overshoots, a grid point nearer p0 also reaches the power, so the effect returned is not the minimum."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "    while low > 0 and reaches(low):\n"
+replace = "    while False:\n"
+
+[[mutant]]
+name = "the_mde_gallops_past_certainty"
+why = "Stepping outward without stopping at probability 1 (0 for less) asks for the power at a probability outside [0, 1]."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "min(top, high + step)"
+replace = "high + step"
+
+[[mutant]]
+name = "a_middle_run_loses_its_last_count"
+why = "A run of counts inside 0..n is the difference of two upper tails; starting the second one count early drops the run's last count."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "- binom_tail(k + 1, n, p=p, tail=\"upper\")"
+replace = "- binom_tail(k, n, p=p, tail=\"upper\")"
+
+[[mutant]]
+name = "a_one_sided_test_computes_both_tails"
+why = "A one-sided p-value needs one tail; computing the other too doubles the work for nothing."
+suites = ["tests.test_stats.BinomialTest"]
+file = "onus/stats/binomial.py"
+find = "def _p_exact(k: int, n: int, null: Fraction, alternative: str) -> Fraction:\n"
+replace = "def _p_exact(k: int, n: int, null: Fraction, alternative: str) -> Fraction:\n    binom_tail(k, n, p=null, tail=\"lower\" if alternative == \"greater\" else \"upper\")\n"
+
+[[mutant]]
+name = "every_power_of_the_complement_kept"
+why = "Keeping every power of 1 - p holds n numbers of up to n times the denominator's bits: 14 MB at n = 2000 from a float p."
+suites = ["tests.test_stats.ScaleTest"]
+file = "onus/stats/binomial.py"
+find = "    q = den - num\n"
+replace = "    q = den - num\n    _kept = [q**i for i in range(n - first + 1)]\n"
+
+[[mutant]]
+name = "a_wilson_quantile_of_any_type_accepted"
+why = "wilson(z=True) was an interval at z = 1; a bool, a string, or an exact number is not a normal quantile."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if isinstance(z, bool) or not isinstance(z, int | float):\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_wilson_quantile_of_true_accepted"
+why = "True is an int, so without its own check wilson(z=True) is an interval at z = 1."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if isinstance(z, bool) or not isinstance(z, int | float):\n"
+replace = "        if not isinstance(z, int | float):\n"
+
+[[mutant]]
+name = "a_crossing_past_certainty_searched_forever"
+why = "If even probability 1 (0 for less) misses the target, as when a region loses its extreme count, the search would never end."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "        if high == top:\n"
+replace = "        if False:\n"

@@ -53,6 +53,7 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
     Raises:
         EmptySampleError: ``n`` is 0.
         ValueError: both ``confidence`` and ``z`` are given, or ``z`` is not a positive finite quantile.
+        TypeError: ``z`` is not an int or a float (a bool, a string, or an exact number).
     """
     if z is None:
         level = _checked(k, n, "0.95" if confidence is None else confidence)
@@ -60,6 +61,8 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
     else:
         if confidence is not None:
             raise ValueError("wilson takes confidence or z, not both")
+        if isinstance(z, bool) or not isinstance(z, int | float):
+            raise TypeError(f"z must be a float such as 1.96, not {z!r}")
         crit = float(z)
         implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan
         if not 0 < implied < 1:

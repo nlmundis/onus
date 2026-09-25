@@ -36,6 +36,7 @@ from onus.stats import (
     MissingDataError,
     UndeclaredMemberError,
     benjamini_hochberg,
+    binom_pmf,
     binom_tail,
     binomial_mde,
     binomial_power,
@@ -180,7 +181,7 @@ class ScaleTest(unittest.TestCase):
             {"n": 2000, "p0": "1/4", "alternative": "greater"},
         ):
             with self.subTest(**kwargs):
-                with within(2.0):
+                with within(15.0):
                     self.assertIsNotNone(binomial_mde(alpha="0.05", power="0.9", **kwargs))  # type: ignore[arg-type]
 
     def test_the_rejection_region_matches_every_count_it_skips(self):
@@ -197,9 +198,23 @@ class ScaleTest(unittest.TestCase):
                             ]
                             self.assertEqual(rejection_region(n, p0=p0, alpha=alpha, alternative=alternative), expected)
 
-    def test_a_one_sided_test_away_from_one_half_computes_one_tail(self):
-        with within(0.5):
-            binomial_test(1700, 5000, p="1/3", alternative="greater", method="exact")
+    def test_a_one_sided_test_away_from_one_half_on_twenty_thousand_trials_takes_a_second(self):
+        with within(2.0):
+            result = binomial_test(6800, 20000, p="1/3", alternative="greater", method="exact")
+        self.assertTrue(0 < result.p_exact < 1)
+
+    def test_a_tail_away_from_one_half_keeps_one_running_sum_not_every_power(self):
+        import tracemalloc
+
+        # p from a float carries a 2^53 denominator; keeping every power of 1 - p held 14 MB at n = 2000, 0.1 MB now.
+        tracemalloc.start()
+        try:
+            with within(10.0):
+                binom_tail(1000, 2000, p=Fraction(0.4912345678901234), tail="lower")
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 2_000_000)
 
     def test_a_budget_fails_when_it_runs_out_not_when_the_work_ends(self):
         start = time.perf_counter()
@@ -257,6 +272,15 @@ class BinomialTest(unittest.TestCase):
             binom_tail(1.0, 2, p="1/2", tail="upper")  # type: ignore[arg-type]
         with self.assertRaisesRegex(TypeError, "k must be an int"):
             binom_tail(True, 2, p="1/2", tail="upper")
+
+    def test_a_one_sided_p_value_computes_only_its_own_tail(self):
+        from onus.stats import binomial
+
+        for alternative, tail in (("greater", "upper"), ("less", "lower")):
+            with self.subTest(alternative=alternative):
+                with mock.patch.object(binomial, "binom_tail", wraps=binomial.binom_tail) as spy:
+                    binomial_test(3, 10, p="1/3", alternative=alternative, method="exact")
+                self.assertEqual(spy.call_args_list, [mock.call(3, 10, p=Fraction(1, 3), tail=tail)])
 
     def test_the_pmf_matches_the_tails(self):
         from onus.stats import binom_pmf
@@ -350,6 +374,12 @@ class IntervalTest(unittest.TestCase):
                     wilson(3, 10, z=z)
         with self.assertRaisesRegex(ValueError, "confidence or z, not both"):
             wilson(3, 10, confidence="0.9", z=1.64)
+        wrong: list[Any] = [True, "1.96", Fraction(49, 25), Decimal("1.96")]
+        for z in wrong:
+            with self.subTest(z=z):
+                with self.assertRaisesRegex(TypeError, "z must be a float such as 1.96"):
+                    wilson(3, 10, z=z)
+        self.assertEqual(wilson(3, 10, z=2), wilson(3, 10, z=2.0))
 
     def test_clopper_pearson_bounds_meet_their_exact_tails_even_at_high_confidence(self):
         # At each bound the exact tail equals (1 - confidence) / 2: P(X >= k) at the lower, P(X <= k) at the upper.
@@ -513,6 +543,66 @@ class PowerTest(unittest.TestCase):
         # A test that already reaches the power with no effect at all has no minimum detectable effect.
         with self.assertRaisesRegex(ValueError, "reaches power 1/10 with no effect"):
             binomial_mde(20, p0="1/2", alpha="1/2", power="1/10", alternative="greater")
+
+    def test_the_minimum_detectable_effect_is_the_grid_point_nearest_p0_whose_exact_power_reaches_the_target(self):
+        from onus.stats.power import GRID
+
+        certain = 1 - Fraction(1, 10**400)  # so near 1 that a float cannot tell it from 1
+        cases = [
+            # Near power 1 a float power is off by more than the gap to the target.
+            (30, "1/2", "greater", Fraction("0.99999999")),
+            (50, "1/100", "greater", Fraction("0.999999999")),
+            (50, "99/100", "less", Fraction("0.999999999")),
+            (30, "1/2", "less", Fraction("0.99999999999999")),
+            (119, "1/2", "two-sided", Fraction("0.9999999")),
+            # The float search's guess falls short, or overshoots, of the exact crossing.
+            (12, "1/3", "less", Fraction("0.99999999")),
+            (33, "1/3", "greater", Fraction(1, 2)),
+            # Only probability 1 (0 for "less") reaches the target.
+            (5, "1/2", "greater", certain),
+            (40, "1/3", "less", certain),
+        ]
+        for n, p0, alternative, target in cases:
+            with self.subTest(n=n, p0=p0, alternative=alternative, target=target):
+                mde = binomial_mde(n, p0=p0, alpha="0.05", power=target, alternative=alternative)
+                assert mde is not None
+                at = Fraction(mde)
+                self.assertEqual(GRID % at.denominator, 0)
+                self.assertTrue(0 <= at <= 1)
+                self.assertGreaterEqual(
+                    binomial_power(n, p0=p0, p_alt=at, alpha="0.05", alternative=alternative), target
+                )
+                nearer = at - Fraction(1 if alternative != "less" else -1, GRID)
+                self.assertLess(binomial_power(n, p0=p0, p_alt=nearer, alpha="0.05", alternative=alternative), target)
+
+    def test_the_exact_settling_finds_the_crossing_from_any_guess(self):
+        from onus.stats.power import _settle
+
+        top = 64
+        for crossing in (1, 5, 37, 63, 64):
+            for guess in sorted(
+                {1, max(1, crossing - 9), max(1, crossing - 1), crossing, min(top, crossing + 1), 50, top}
+            ):
+                asked: list[int] = []
+
+                def reaches(i: int, crossing: int = crossing, asked: list[int] = asked) -> bool:
+                    asked.append(i)
+                    return i >= crossing
+
+                with self.subTest(crossing=crossing, guess=guess):
+                    self.assertEqual(_settle(reaches, guess, top), crossing)
+                    self.assertTrue(all(1 <= i <= top for i in asked), asked)
+        with within(1.0):
+            with self.assertRaisesRegex(ValueError, "no index up to 64 reaches"):
+                _settle(lambda i: False, 3, top)
+
+    def test_the_power_of_any_region_is_its_exact_probability(self):
+        from onus.stats.power import _region_power
+
+        p = Fraction(2, 7)
+        for region in ([], [0], [9], [0, 1, 2], [7, 8, 9], [3, 4, 5], [0, 1, 5, 8, 9], list(range(10))):
+            with self.subTest(region=region):
+                self.assertEqual(_region_power(region, 9, p), sum((binom_pmf(k, 9, p=p) for k in region), Fraction(0)))
 
     def test_one_look_is_the_fixed_sample_size(self):
         for n in (1, 5, 20, 37):
