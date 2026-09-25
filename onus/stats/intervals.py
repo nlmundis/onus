@@ -110,5 +110,7 @@ def clopper_pearson(k: int, n: int, *, confidence: Fraction | int | str = "0.95"
     level = _checked(k, n, confidence)
     tail = float(1 - level) / 2
     low = 0.0 if k == 0 else _root(lambda p: _upper(k, n, p), tail)
-    high = 1.0 if k == n else _root(lambda p: _upper(k + 1, n, p), 1 - tail)
+    # By symmetry, the upper bound for k is one minus the lower bound for n - k. Solving P(X >= k + 1) = 1 - tail
+    # directly would lose everything to cancellation once 1 - tail rounds to 1 at high confidence.
+    high = 1.0 if k == n else 1 - _root(lambda p: _upper(n - k, n, p), tail)
     return Interval(low, high, k, n, level, "clopper-pearson")

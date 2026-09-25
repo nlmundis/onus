@@ -255,6 +255,31 @@ class IntervalTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "confidence or z, not both"):
             wilson(3, 10, confidence="0.9", z=1.64)
 
+    def test_clopper_pearson_bounds_meet_their_exact_tails_even_at_high_confidence(self):
+        # At each bound the exact tail equals (1 - confidence) / 2: P(X >= k) at the lower, P(X <= k) at the upper.
+        # Near 0 or 1 the exact bound may fall between two floats, so the crossing must lie within two floats of it.
+        def steps(x: float, count: int, toward: float) -> float:
+            for _ in range(count):
+                x = math.nextafter(x, toward)
+            return x
+
+        for confidence in ("0.95", "0.999999", "0.9999999999", "0.99999999999999", "0.99999999999999999999"):
+            tail = (1 - Fraction(confidence)) / 2
+            slack = Fraction(1, 10**6)
+            for k, n in ((1, 300), (5, 20), (0, 7), (13, 40), (299, 300)):
+                with self.subTest(confidence=confidence, k=k, n=n):
+                    interval = clopper_pearson(k, n, confidence=confidence)
+                    if k > 0:
+                        # P(X >= k | p) rises with p: below the bound it is under the tail, above it over.
+                        below, above = steps(interval.low, 2, 0.0), steps(interval.low, 2, 1.0)
+                        self.assertLessEqual(binom_tail(k, n, p=Fraction(below), tail="upper"), tail * (1 + slack))
+                        self.assertGreaterEqual(binom_tail(k, n, p=Fraction(above), tail="upper"), tail * (1 - slack))
+                    if k < n:
+                        # P(X <= k | p) falls with p: below the bound it is over the tail, above it under.
+                        below, above = steps(interval.high, 2, 0.0), steps(interval.high, 2, 1.0)
+                        self.assertGreaterEqual(binom_tail(k, n, p=Fraction(below), tail="lower"), tail * (1 - slack))
+                        self.assertLessEqual(binom_tail(k, n, p=Fraction(above), tail="lower"), tail * (1 + slack))
+
     def test_a_confidence_of_zero_or_one_is_refused(self):
         for confidence in ("0", "1"):
             for method in (wilson, clopper_pearson):

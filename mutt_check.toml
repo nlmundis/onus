@@ -1130,3 +1130,11 @@ suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
 find = "        if confidence is not None:\n            raise"
 replace = "        if False:\n            raise"
+
+[[mutant]]
+name = "clopper_pearson_upper_bound_solved_directly"
+why = "Solving P(X >= k + 1) = 1 - tail loses everything to cancellation at high confidence: at 0.99999999999999 the upper bound for 1 of 1000 came out 0.9998 instead of 0.036."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "high = 1.0 if k == n else 1 - _root(lambda p: _upper(n - k, n, p), tail)"
+replace = "high = 1.0 if k == n else _root(lambda p: _upper(k + 1, n, p), 1 - tail)"
