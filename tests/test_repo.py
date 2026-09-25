@@ -955,7 +955,7 @@ class DocumentedClaimsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "Makefile").write_text(MAKEFILE, encoding="utf-8")
             (Path(tmp) / "GNUmakefile").write_text(
-                "gate-env:\n\t@echo MAKEFILE_LIST=$(MAKEFILE_LIST)\n", encoding="utf-8"
+                "gate-env:\n\t@echo MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))\n", encoding="utf-8"
             )
             result = run_make("-s", "gate-env", cwd=Path(tmp))
         self.assertEqual(result.returncode, 0, result.stderr)
