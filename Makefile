@@ -78,8 +78,9 @@ interpreters:
 # file before pyproject.toml's tables; any of them could switch a stage off with this file unchanged. Each is
 # refused by name, as `ls` spells it and in any case, since on a case-insensitive disk make's probe for
 # GNUmakefile opens a GNUMakefile; only this Makefile itself is let through.
+# setup.py is refused too: setuptools runs it in every build, and it can add modules or re-version the artifacts.
 # Every tool is also handed pyproject.toml, since ruff reads a ruff.toml in any folder for the files below it.
-SIBLINGS := GNUmakefile makefile ruff.toml .ruff.toml mypy.ini .mypy.ini .coveragerc setup.cfg tox.ini uv.toml
+SIBLINGS := GNUmakefile makefile ruff.toml .ruff.toml mypy.ini .mypy.ini .coveragerc setup.cfg tox.ini uv.toml setup.py
 
 siblings:
 	@found="$$(ls -A | grep -vx Makefile | grep -Fxi $(foreach name,$(SIBLINGS),-e $(name)))"; test -z "$$found" || { \

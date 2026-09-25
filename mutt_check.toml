@@ -142,6 +142,14 @@ find = '@echo "MAKEFILE_LIST=$(strip $(MAKEFILE_LIST))"'
 replace = '@echo "MAKEFILE_LIST=Makefile"'
 
 [[mutant]]
+name = "a_root_setup_py_left_unrefused"
+why = "setuptools runs a root setup.py in the gate's dist stage and in the release, where it can add modules to the wheel or re-version the artifacts."
+suites = ["tests.test_repo.GateSiblingsTest"]
+file = "Makefile"
+find = "tox.ini uv.toml setup.py"
+replace = "tox.ini uv.toml"
+
+[[mutant]]
 name = "sibling_configs_left_unrefused"
 why = "Without the siblings prerequisite a setup.cfg or .coveragerc beside the Makefile is read before pyproject.toml, and nothing in the gate says so."
 suites = ["tests.test_repo.GateStagesTest"]

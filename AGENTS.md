@@ -41,11 +41,12 @@ through uvx or `uv run --no-project` at the versions pinned in the Makefile.
   with its failures switched off. `make siblings` refuses both, and CI runs `make -f Makefile check`, which
   reads the Makefile whatever else is there.
 - **pyproject.toml holds every tool's settings.** `make siblings`, which the gate runs before its first stage,
-  refuses a `ruff.toml`, `.ruff.toml`, `mypy.ini`, `.mypy.ini`, `.coveragerc`, `setup.cfg`, `tox.ini`, or
-  `uv.toml` at the root (and the gate sets `UV_NO_CONFIG=1`, so uv reads no config file anywhere), and every
-  tool is handed pyproject.toml explicitly, so a config file in a subfolder is not read either.
-  pyproject.toml also stops black and ruff from skipping what a `.gitignore`, `.ignore`, or
-  `.git/info/exclude` lists, so no ignore file can take a module out of the format or lint stage.
+  refuses a `ruff.toml`, `.ruff.toml`, `mypy.ini`, `.mypy.ini`, `.coveragerc`, `setup.cfg`, `tox.ini`,
+  `uv.toml`, or `setup.py` (which setuptools would run in every build) at the root (and the gate sets
+  `UV_NO_CONFIG=1`, so uv reads no config file anywhere), and every tool is handed pyproject.toml explicitly,
+  so a config file in a subfolder is not read either. pyproject.toml also stops black and ruff from skipping
+  what a `.gitignore`, `.ignore`, or `.git/info/exclude` lists, so no ignore file can take a module out of the
+  format or lint stage.
 - **Workflows hand third-party code no token.** Every action is pinned by commit (with its tag in a comment),
   every checkout sets `persist-credentials: false`, and the gate's token can only read; `WorkflowTokenTest`
   checks all three. Only the release's Create step holds a write token, through `GH_TOKEN`.

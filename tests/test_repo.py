@@ -60,7 +60,7 @@ LEAKY |= {"PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
 LEAKY |= {"UV_PYTHON_DOWNLOADS", "UV_NO_CONFIG", "HYPOTHESIS_STORAGE_DIRECTORY", "PYTHONDONTWRITEBYTECODE"}
 # Files read instead of the Makefile (by make) or of pyproject.toml's tool tables (by ruff, mypy, coverage, uv).
 SIBLINGS = ["GNUmakefile", "makefile", "ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini", ".coveragerc"]
-SIBLINGS += ["setup.cfg", "tox.ini", "uv.toml"]
+SIBLINGS += ["setup.cfg", "tox.ini", "uv.toml", "setup.py"]
 
 
 # CI's first step: the byte-for-byte pins, run outside make, so no line in a pinned file can switch them off.
