@@ -975,20 +975,20 @@ name = "wilson_z_hardcoded"
 why = "A z fixed at 1.96 gives the 95% interval whatever confidence was asked for."
 suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
-find = "crit = NormalDist().inv_cdf(1 - float(1 - level) / 2) if z is None else float(z)"
-replace = "crit = 1.959963984540054 if z is None else float(z)"
+find = "crit = NormalDist().inv_cdf(1 - float(1 - level) / 2)"
+replace = "crit = 1.959963984540054"
 
 [[mutant]]
 name = "an_empty_sample_gets_a_zero_interval"
 why = "With no trials there is no proportion; an interval of [0, 0] reads as certainty that it is zero."
 suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
-find = """    level = _checked(k, n, confidence)
-    crit ="""
+find = """    if z is None:
+        level = _checked(k, n, "0.95" if confidence is None else confidence)"""
 replace = """    if n == 0:
         return Interval(0.0, 0.0, k, n, Fraction(19, 20), "wilson")
-    level = _checked(k, n, confidence)
-    crit ="""
+    if z is None:
+        level = _checked(k, n, "0.95" if confidence is None else confidence)"""
 
 [[mutant]]
 name = "clopper_pearson_tail_not_halved"
@@ -1089,3 +1089,44 @@ suites = ["tests.test_stats.ReferenceTest"]
 file = "Makefile"
 find = "SCIPY := scipy==1.18.1"
 replace = "SCIPY := scipy==1.17.0"
+
+[[mutant]]
+name = "a_wilson_quantile_left_unchecked"
+why = "A negative z inverts the interval (low above high) and a NaN one returns [0, 1]; both come back as if they were intervals."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if not 0 < implied < 1:"
+replace = "        if False:"
+
+[[mutant]]
+name = "a_wilson_quantile_labelled_with_the_default_confidence"
+why = "An interval drawn at z = 1 is about 68%; labelled 95%, every report quoting it overstates its confidence."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        level = _checked(k, n, Fraction(implied))"
+replace = '        level = _checked(k, n, "0.95")'
+
+[[mutant]]
+name = "a_confidence_of_zero_or_one_accepted"
+why = "A confidence of 1 has no finite interval and 0 has no interval at all; accepting either returns bounds that mean nothing."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = 'return probability(confidence, "confidence", open_interval=True)'
+replace = 'return probability(confidence, "confidence")'
+
+[[mutant]]
+name = "a_power_target_of_zero_or_one_accepted"
+why = "No test has power 1 short of certainty, and power 0 is met by no effect at all; an MDE for either is meaningless."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = 'target = probability(power, "power", open_interval=True)'
+replace = 'target = probability(power, "power")'
+
+
+[[mutant]]
+name = "a_confidence_beside_z_accepted"
+why = "Given both, the interval is drawn at z but labelled with the confidence, so the label can be anything the caller typed."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if confidence is not None:\n            raise"
+replace = "        if False:\n            raise"

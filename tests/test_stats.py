@@ -240,8 +240,27 @@ class IntervalTest(unittest.TestCase):
         for confidence in ("0.8", "0.9", "0.95", "0.99"):
             with self.subTest(confidence=confidence):
                 z = NormalDist().inv_cdf(1 - (1 - float(Fraction(confidence))) / 2)
-                self.assertEqual(wilson(7, 20, confidence=confidence), wilson(7, 20, confidence=confidence, z=z))
+                by_level, by_z = wilson(7, 20, confidence=confidence), wilson(7, 20, z=z)
+                self.assertEqual((by_level.low, by_level.high), (by_z.low, by_z.high))
+                # The interval records the confidence its z implies, not the unrelated default.
+                self.assertAlmostEqual(float(by_z.confidence), float(Fraction(confidence)), places=12)
+        self.assertEqual(wilson(7, 20).confidence, Fraction(19, 20))
         self.assertNotEqual(wilson(7, 20).low, wilson(7, 20, z=1.0).low)
+
+    def test_wilson_refuses_a_quantile_that_cannot_be_one_and_a_confidence_beside_it(self):
+        for z in (-1.96, 0.0, float("nan"), float("inf"), 40.0):
+            with self.subTest(z=z):
+                with self.assertRaisesRegex(ValueError, "z must be a positive"):
+                    wilson(3, 10, z=z)
+        with self.assertRaisesRegex(ValueError, "confidence or z, not both"):
+            wilson(3, 10, confidence="0.9", z=1.64)
+
+    def test_a_confidence_of_zero_or_one_is_refused(self):
+        for confidence in ("0", "1"):
+            for method in (wilson, clopper_pearson):
+                with self.subTest(confidence=confidence, method=method.__name__):
+                    with self.assertRaisesRegex(ValueError, r"confidence must lie in \(0, 1\)"):
+                        method(3, 10, confidence=confidence)
 
     def test_the_bounds_are_closed_at_zero_and_n(self):
         for n in range(1, 60):
@@ -365,6 +384,10 @@ class PowerTest(unittest.TestCase):
                 self.assertGreaterEqual(at, Fraction(4, 5))
                 self.assertLess(nearer, Fraction(4, 5))
         self.assertIsNone(sign_test_mde(4, alpha="0.05", power="0.8", alternative="two-sided"))
+        for power in ("0", "1"):
+            with self.subTest(power=power):
+                with self.assertRaisesRegex(ValueError, r"power must lie in \(0, 1\)"):
+                    sign_test_mde(30, alpha="0.05", power=power, alternative="greater")
         self.assertIsNotNone(binomial_mde(40, p0="1/4", alpha="0.05", power="0.9", alternative="greater"))
 
     def test_one_look_is_the_fixed_sample_size(self):

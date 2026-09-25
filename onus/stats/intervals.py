@@ -44,17 +44,29 @@ def _checked(k: int, n: int, confidence: Fraction | int | str) -> Fraction:
     return probability(confidence, "confidence", open_interval=True)
 
 
-def wilson(k: int, n: int, *, confidence: Fraction | int | str = "0.95", z: float | None = None) -> Interval:
+def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z: float | None = None) -> Interval:
     """Return the Wilson score interval for ``k`` successes in ``n`` trials.
 
-    ``z`` overrides the normal quantile that ``confidence`` implies; by default it is the two-sided quantile,
-    about 1.96 at 0.95.
+    Give ``confidence`` (default 0.95), or ``z``, the normal quantile to use directly; not both. With ``z``, the
+    interval records the two-sided confidence that ``z`` implies.
 
     Raises:
         EmptySampleError: ``n`` is 0.
+        ValueError: both ``confidence`` and ``z`` are given, or ``z`` is not a positive finite quantile.
     """
-    level = _checked(k, n, confidence)
-    crit = NormalDist().inv_cdf(1 - float(1 - level) / 2) if z is None else float(z)
+    if z is None:
+        level = _checked(k, n, "0.95" if confidence is None else confidence)
+        crit = NormalDist().inv_cdf(1 - float(1 - level) / 2)
+    else:
+        if confidence is not None:
+            raise ValueError("wilson takes confidence or z, not both")
+        crit = float(z)
+        implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan
+        if not 0 < implied < 1:
+            raise ValueError(
+                f"z must be a positive finite quantile below about 8 (where float confidence is 1), not {z!r}"
+            )
+        level = _checked(k, n, Fraction(implied))
     phat = k / n
     denom = 1 + crit**2 / n
     center = (phat + crit**2 / (2 * n)) / denom
