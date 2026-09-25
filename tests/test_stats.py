@@ -12,12 +12,14 @@ import io
 import json
 import math
 import re
+import signal
 import sys
 import tempfile
 import time
 import types
 import unittest
-from contextlib import redirect_stderr
+from collections.abc import Iterator
+from contextlib import contextmanager, redirect_stderr
 from fractions import Fraction
 from itertools import product
 from pathlib import Path
@@ -127,6 +129,22 @@ class DecisionTest(unittest.TestCase):
         self.assertEqual(result.p_value, 0.0625)
 
 
+@contextmanager
+def within(seconds: float) -> Iterator[None]:
+    """Fail when the budget runs out rather than when the work ends, so a slow regression fails in seconds."""
+
+    def expire(signum: int, frame: object) -> None:
+        raise AssertionError(f"took longer than {seconds} seconds")
+
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 class ScaleTest(unittest.TestCase):
     """Exact tails stay fast at sample sizes a real experiment reaches; budgets are generous, failures are not."""
 
@@ -134,15 +152,51 @@ class ScaleTest(unittest.TestCase):
         from onus.stats import binomial
 
         binomial._half_prefix.cache_clear()
-        start = time.perf_counter()
-        result = sign_test(10100, 9900, ties=0, alternative="two-sided", method="exact")
-        self.assertLess(time.perf_counter() - start, 5.0)
+        with within(5.0):
+            result = sign_test(10100, 9900, ties=0, alternative="two-sided", method="exact")
         self.assertTrue(0 < result.p_exact < 1)
 
+    def test_the_minimum_detectable_effect_of_a_thousand_pairs_takes_seconds(self):
+        with within(5.0):
+            mde = sign_test_mde(1000, alpha="0.05", power="0.8", alternative="two-sided")
+        assert mde is not None
+        self.assertGreaterEqual(
+            sign_test_power(1000, p_alt=Fraction(mde), alpha="0.05", alternative="two-sided"), Fraction(4, 5)
+        )
+
+    def test_the_minimum_detectable_effect_at_scale_takes_seconds(self):
+        for kwargs in (
+            {"n": 20000, "p0": "1/2", "alternative": "less"},
+            {"n": 2000, "p0": "1/4", "alternative": "greater"},
+        ):
+            with self.subTest(**kwargs):
+                with within(2.0):
+                    self.assertIsNotNone(binomial_mde(alpha="0.05", power="0.9", **kwargs))  # type: ignore[arg-type]
+
+    def test_the_rejection_region_matches_every_count_it_skips(self):
+        # The region is found by bisection on the p-value's monotone edges; every count must agree with decide.
+        for n in (1, 2, 7, 30, 101):
+            for p0, sides in (("1/2", ALTERNATIVES), ("1/5", ("greater", "less")), ("9/10", ("greater", "less"))):
+                for alternative in sides:
+                    for alpha in ("1/1000", "1/20", "1/3", "1"):
+                        with self.subTest(n=n, p0=p0, alternative=alternative, alpha=alpha):
+                            expected = [
+                                k
+                                for k in range(n + 1)
+                                if decide(binomial_test(k, n, p=p0, alternative=alternative, method="exact"), alpha)
+                            ]
+                            self.assertEqual(rejection_region(n, p0=p0, alpha=alpha, alternative=alternative), expected)
+
     def test_a_one_sided_test_away_from_one_half_computes_one_tail(self):
+        with within(0.5):
+            binomial_test(1700, 5000, p="1/3", alternative="greater", method="exact")
+
+    def test_a_budget_fails_when_it_runs_out_not_when_the_work_ends(self):
         start = time.perf_counter()
-        binomial_test(1700, 5000, p="1/3", alternative="greater", method="exact")
-        self.assertLess(time.perf_counter() - start, 0.5)
+        with self.assertRaisesRegex(AssertionError, "longer than 0.05 seconds"):
+            with within(0.05):
+                time.sleep(10)
+        self.assertLess(time.perf_counter() - start, 5.0)
 
 
 class ExactSizeTest(unittest.TestCase):
@@ -433,6 +487,9 @@ class PowerTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, r"power must lie in \(0, 1\)"):
                     sign_test_mde(30, alpha="0.05", power=power, alternative="greater")
         self.assertIsNotNone(binomial_mde(40, p0="1/4", alpha="0.05", power="0.9", alternative="greater"))
+        # A test that already reaches the power with no effect at all has no minimum detectable effect.
+        with self.assertRaisesRegex(ValueError, "reaches power 1/10 with no effect"):
+            binomial_mde(20, p0="1/2", alpha="1/2", power="1/10", alternative="greater")
 
     def test_one_look_is_the_fixed_sample_size(self):
         for n in (1, 5, 20, 37):

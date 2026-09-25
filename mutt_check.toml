@@ -1039,8 +1039,8 @@ name = "rejection_region_excludes_alpha"
 why = "A region that leaves out a p-value of exactly alpha disagrees with decide, so the power is not the test's."
 suites = ["tests.test_stats.PowerTest"]
 file = "onus/stats/power.py"
-find = "if _p_exact(k, n, null, alternative) <= level]"
-replace = "if _p_exact(k, n, null, alternative) < level]"
+find = "return _p_exact(k, n, null, alternative) <= level"
+replace = "return _p_exact(k, n, null, alternative) < level"
 
 [[mutant]]
 name = "peeking_counts_a_sequence_twice"
@@ -1154,3 +1154,28 @@ suites = ["tests.test_stats.ScaleTest"]
 file = "onus/stats/binomial.py"
 find = "        coefficient = coefficient * (n - j) // (j + 1)\n"
 replace = "        coefficient = math.comb(n, j + 1)\n"
+
+[[mutant]]
+name = "an_mde_of_no_effect_returned"
+why = "When alpha alone already reaches the target power, the search returns p0 itself, reporting a zero effect as the minimum detectable one."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "    if _region_power(region, n, null) >= target:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "the_two_sided_region_not_mirrored"
+why = "The two-sided region at 1/2 is two mirrored tails; found by bisection on the lower half, it must be reflected to include the upper tail."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "return sorted(lower | {n - k for k in lower})"
+replace = "return sorted(lower)"
+
+[[mutant]]
+name = "the_mde_search_runs_in_exact_arithmetic"
+why = "Each exact power at a float probability carries a 2^52 denominator into n powers; the search took 126 seconds at n = 1000."
+suites = ["tests.test_stats.ScaleTest"]
+file = "onus/stats/power.py"
+find = "return math.fsum(math.exp(_log_pmf(k, n, p)) for k in region)"
+replace = "return float(_region_power(region, n, Fraction(p)))"
+
