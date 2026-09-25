@@ -63,7 +63,10 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
             raise ValueError("wilson takes confidence or z, not both")
         if isinstance(z, bool) or not isinstance(z, int | float):
             raise TypeError(f"z must be a float such as 1.96, not {z!r}")
-        crit = float(z)
+        try:
+            crit = float(z)
+        except OverflowError:  # an int beyond any float is no finite quantile; refuse it as one below
+            crit = math.inf
         implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan
         if not 0 < implied < 1:
             raise ValueError(

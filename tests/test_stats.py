@@ -368,7 +368,7 @@ class IntervalTest(unittest.TestCase):
         self.assertNotEqual(wilson(7, 20).low, wilson(7, 20, z=1.0).low)
 
     def test_wilson_refuses_a_quantile_that_cannot_be_one_and_a_confidence_beside_it(self):
-        for z in (-1.96, 0.0, float("nan"), float("inf"), 40.0):
+        for z in (-1.96, 0.0, float("nan"), float("inf"), 40.0, 10**400, -(10**400)):
             with self.subTest(z=z):
                 with self.assertRaisesRegex(ValueError, "z must be a positive"):
                     wilson(3, 10, z=z)

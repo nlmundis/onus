@@ -1322,3 +1322,11 @@ suites = ["tests.test_stats.PowerTest"]
 file = "onus/stats/power.py"
 find = "            if start == 0:\n"
 replace = "            if False:\n"
+
+[[mutant]]
+name = "a_huge_int_quantile_escapes_as_overflow"
+why = "float() of an int beyond any float raises OverflowError, which names no argument and is not the documented ValueError."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "            crit = math.inf\n"
+replace = "            raise\n"
