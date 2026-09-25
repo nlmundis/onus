@@ -657,3 +657,13 @@ still cannot run on the re-run has its cause in the commit, such as a build requ
 tag is spent."""
 replace = "clears by re-running the job."
 
+# --- the suite's own hygiene ---
+
+[[mutant]]
+name = "scratch_git_inherits_the_callers_git_environment"
+why = "git hands GIT_DIR and GIT_INDEX_FILE to hooks; inherited, a hook running the suite stages the tests' stub files into the developer's own repository."
+suites = ["tests.test_repo.GitEnvironmentTest"]
+file = "tests/test_repo.py"
+find = ' and not key.startswith("GIT_")}'
+replace = "}"
+

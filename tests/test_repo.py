@@ -54,7 +54,8 @@ GUARDED = {
 }
 # Settings a parent make or the caller's shell would otherwise leak into the make runs below: a parent
 # `make check PY=...` passes its command-line variables down through MAKEFLAGS.
-LEAKY = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MAKEFILES", "PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
+LEAKY = {"MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MAKEFILES"}
+LEAKY |= {"PY", "COMPAT_PY", "PIN", "COMPAT_PIN"}
 LEAKY |= {"UV_PYTHON_DOWNLOADS", "UV_NO_CONFIG", "HYPOTHESIS_STORAGE_DIRECTORY", "PYTHONDONTWRITEBYTECODE"}
 # Files read instead of the Makefile (by make) or of pyproject.toml's tool tables (by ruff, mypy, coverage, uv).
 SIBLINGS = ["GNUmakefile", "makefile", "ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini", ".coveragerc"]
@@ -77,9 +78,14 @@ def classifier_pythons() -> list[str]:
     ]
 
 
+def clean_env() -> dict[str, str]:
+    """Return the environment without the caller's make variables, gate settings, or git settings."""
+    return {key: value for key, value in os.environ.items() if key not in LEAKY and not key.startswith("GIT_")}
+
+
 def run_make(*args: str, path_prefix: Path | None = None, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
     """Run make in the repository, or ``cwd``, with none of the caller's make variables or gate settings inherited."""
-    env = {key: value for key, value in os.environ.items() if key not in LEAKY}
+    env = clean_env()
     if path_prefix is not None:
         env["PATH"] = f"{path_prefix}{os.pathsep}{env.get('PATH', '')}"
     return subprocess.run(["make", *args], cwd=cwd, env=env, capture_output=True, text=True)
@@ -407,11 +413,11 @@ class DistCheckTest(unittest.TestCase):
         for name in ("__init__.py", "new.py", "._new.py", ".#new.py", "generated.py", "not-a-package/x.py"):
             (source / "onus" / name).write_text("", encoding="utf-8")
         for command in (["git", "init", "-q"], ["git", "add", ".gitignore", "pyproject.toml", "onus/__init__.py"]):
-            subprocess.run(command, cwd=source, check=True, capture_output=True)
+            subprocess.run(command, cwd=source, env=clean_env(), check=True, capture_output=True)
 
         def runner(command, **kwargs):
             if command[0] == "git":
-                return subprocess.run(command, **kwargs)
+                return subprocess.run(command, env=clean_env(), **kwargs)
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with self.assertRaisesRegex(check_dist.BuildError, r"^not tracked by git.*\['onus/new\.py'\]; `git add`"):
@@ -623,7 +629,7 @@ class GateFileSelectionTest(unittest.TestCase):
             repo = Path(tmp)
             for name in ("Makefile", "pyproject.toml", ".python-version"):
                 (repo / name).write_bytes((ROOT / name).read_bytes())
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "init", "-q"], cwd=repo, env=clean_env(), check=True, capture_output=True)
             (repo / "onus").mkdir()
             (repo / "onus" / "__init__.py").write_text('"""A package."""\n', encoding="utf-8")
             for ignore, entry in hidden.items():
@@ -635,6 +641,38 @@ class GateFileSelectionTest(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                     for entry in hidden.values():
                         self.assertIn(Path(entry.strip()).name, result.stdout + result.stderr, entry)
+
+
+class GitEnvironmentTest(unittest.TestCase):
+    """The tests that build scratch git repositories touch only those repositories.
+
+    git hands GIT_DIR and GIT_INDEX_FILE to hooks, so a hook that runs the suite would otherwise point every `git
+    init` and `git add` in a scratch folder at the developer's own repository: re-initialising it as bare and
+    staging the tests' stub files into its index.
+    """
+
+    def test_a_callers_git_environment_does_not_reach_the_scratch_repositories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            decoy = Path(tmp)
+            for command in (["git", "init", "-q"], ["git", "config", "core.bare"]):
+                subprocess.run(command, cwd=decoy, env=clean_env(), check=True, capture_output=True)
+            poison = {"GIT_DIR": str(decoy / ".git"), "GIT_INDEX_FILE": str(decoy / ".git" / "index")}
+            result = unittest.TestResult()
+            tests = [
+                DistCheckTest("test_only_an_importable_module_git_neither_tracks_nor_ignores_is_stray"),
+                GateFileSelectionTest("test_no_ignore_file_hides_a_module_from_format_or_lint"),
+            ]
+            with mock.patch.dict(os.environ, poison):
+                unittest.TestSuite(tests).run(result)
+            bare = subprocess.run(
+                ["git", "config", "core.bare"], cwd=decoy, env=clean_env(), capture_output=True, text=True
+            )
+            staged = subprocess.run(
+                ["git", "ls-files"], cwd=decoy, env=clean_env(), capture_output=True, text=True, check=True
+            )
+        self.assertEqual(bare.stdout.strip(), "false")
+        self.assertEqual(staged.stdout, "")
+        self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
 
 
 class ToolConfigTest(unittest.TestCase):
