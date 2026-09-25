@@ -31,10 +31,14 @@ def exact(value: Fraction | int | str, name: str) -> Fraction:
 
     Raises:
         TypeError: ``value`` is a float, or not a number at all.
+        ValueError: ``value`` is a string that is not an exact number, such as "nan", "inf", or "1/0".
     """
     if isinstance(value, bool) or not isinstance(value, Fraction | int | str):
         raise TypeError(f"{name} must be a Fraction, an int, or a string such as '0.05', not {value!r}")
-    return Fraction(value)
+    try:
+        return Fraction(value)
+    except (ValueError, ZeroDivisionError):
+        raise ValueError(f"{name} must be an exact number such as '0.05', not {value!r}") from None
 
 
 def probability(value: Fraction | int | str, name: str, *, open_interval: bool = False) -> Fraction:

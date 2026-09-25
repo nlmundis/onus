@@ -129,6 +129,15 @@ class DecisionTest(unittest.TestCase):
             decide(result, "3/2")
         self.assertEqual(result.p_value, 0.0625)
 
+    def test_a_string_that_is_not_a_number_is_refused_by_name(self):
+        result = sign_test(4, 0, ties=0, alternative="greater", method="exact")
+        for text in ("nan", "inf", "abc", "1/0", ""):
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(ValueError, rf"alpha must be an exact number such as '0.05', not {text!r}"):
+                    decide(result, text)
+                with self.assertRaisesRegex(ValueError, rf"power must be an exact number such as '0.05', not {text!r}"):
+                    sign_test_mde(20, alpha="0.05", power=text, alternative="greater")
+
 
 @contextmanager
 def within(seconds: float) -> Iterator[None]:

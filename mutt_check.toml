@@ -967,6 +967,22 @@ find = "not isinstance(value, Fraction | int | str)"
 replace = "not isinstance(value, Fraction | int | str | float)"
 
 [[mutant]]
+name = "a_string_that_is_not_a_number_unnamed"
+why = "Fraction's own error says 'Invalid literal for Fraction: nan' and never which argument held it."
+suites = ["tests.test_stats.DecisionTest"]
+file = "onus/stats/_common.py"
+find = "except (ValueError, ZeroDivisionError):"
+replace = "except ZeroDivisionError:"
+
+[[mutant]]
+name = "a_zero_denominator_escapes_as_division"
+why = "An alpha of '1/0' would surface as a ZeroDivisionError from inside Fraction rather than as a refused argument."
+suites = ["tests.test_stats.DecisionTest"]
+file = "onus/stats/_common.py"
+find = "except (ValueError, ZeroDivisionError):"
+replace = "except ValueError:"
+
+[[mutant]]
 name = "missing_refuse_silently_drops"
 why = "missing='refuse' is the caller saying a gap in the data is an error; dropping the pair anyway hides it."
 suites = ["tests.test_stats.SignTestTest"]

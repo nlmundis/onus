@@ -1,6 +1,8 @@
 """Properties onus.stats must have for every input, checked with Hypothesis under a deterministic profile.
 
 The profile is the library's gate profile: derandomized, no example database, no deadline, 200 examples.
+Hypothesis still writes a ``.hypothesis/constants`` cache; make points it at a scratch folder with
+HYPOTHESIS_STORAGE_DIRECTORY, so a run outside make leaves a git-ignored ``.hypothesis/`` in the working folder instead.
 """
 
 import unittest
