@@ -322,6 +322,14 @@ find = "run: make -f Makefile check"
 replace = "run: make check"
 
 [[mutant]]
+name = "ci_checks_the_pins_only_inside_make"
+why = "Inside make, one `.IGNORE:` line in the Makefile lets make carry on past ApprovedFilesTest's own failure, so the job goes green with the pinned file changed."
+suites = ["tests.test_repo.CheckWorkflowTest"]
+file = ".github/workflows/check.yml"
+find = "      - run: python -B -m unittest tests.test_repo.ApprovedFilesTest\n"
+replace = ""
+
+[[mutant]]
 name = "required_check_skipped_when_a_job_fails"
 why = "Without always(), a failed matrix job skips the required check, a skip counts as passing, and a red PR merges."
 suites = ["tests.test_repo.CheckWorkflowTest"]

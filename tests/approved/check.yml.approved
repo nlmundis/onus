@@ -21,6 +21,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       # CI has no pyenv: hand uv this job's interpreter by path for every stage, the floor check included.
       # uv still fetches the pinned tools; it never needs to download a Python, since it is given one.
+      # The reviewed copies first, outside make: one `.IGNORE:` line in the Makefile would let make carry on past
+      # every failing recipe, the check of the Makefile against its own copy included.
+      - run: python -B -m unittest tests.test_repo.ApprovedFilesTest
       # -f Makefile: make would otherwise read a GNUmakefile or makefile instead, which could include the
       # Makefile and switch its failures off, and the tests that refuse such a file run inside that same make.
       - run: make -f Makefile check PY="$(command -v python)" COMPAT_PY="$(command -v python)"

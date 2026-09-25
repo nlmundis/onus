@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -60,6 +61,10 @@ LEAKY |= {"UV_PYTHON_DOWNLOADS", "UV_NO_CONFIG", "HYPOTHESIS_STORAGE_DIRECTORY",
 # Files read instead of the Makefile (by make) or of pyproject.toml's tool tables (by ruff, mypy, coverage, uv).
 SIBLINGS = ["GNUmakefile", "makefile", "ruff.toml", ".ruff.toml", "mypy.ini", ".mypy.ini", ".coveragerc"]
 SIBLINGS += ["setup.cfg", "tox.ini", "uv.toml"]
+
+
+# CI's first step: the byte-for-byte pins, run outside make, so no line in a pinned file can switch them off.
+PIN_STEP = "python -B -m unittest tests.test_repo.ApprovedFilesTest"
 
 
 def minor(version: str) -> tuple[int, int]:
@@ -792,18 +797,44 @@ class CheckWorkflowTest(unittest.TestCase):
         check = job_block(CHECK_YML, "check")
         self.assertIn("          python-version: ${{ matrix.python }}\n", check)
         self.assertEqual(
-            run_lines(check), ['make -f Makefile check PY="$(command -v python)" COMPAT_PY="$(command -v python)"']
+            run_lines(check),
+            [
+                PIN_STEP,
+                'make -f Makefile check PY="$(command -v python)" COMPAT_PY="$(command -v python)"',
+            ],
         )
         for escape in ("exclude:", "include:", "continue-on-error", "if:"):
             with self.subTest(escape=escape):
                 self.assertNotIn(escape, check)
         self.assertNotIn("UV_PYTHON_DOWNLOADS", CHECK_YML)
 
+    def test_ci_checks_the_approved_copies_where_no_makefile_line_can_hide_a_mismatch(self):
+        # One `.IGNORE:` line in the Makefile makes make carry on past every failing recipe, ApprovedFilesTest's own
+        # failure included. CI's first step runs outside make, so the mismatch fails the job by itself.
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "repo"
+            shutil.copytree(ROOT, copy, ignore=shutil.ignore_patterns(".git", "__pycache__", "*_cache", ".coverage"))
+            bin_dir = Path(tmp) / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "python").symlink_to(sys.executable)
+            env = clean_env() | {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+            step = run_lines(job_block(CHECK_YML, "check"))[0]
+            self.assertEqual(step, PIN_STEP)
+            clean = subprocess.run(["sh", "-c", step], cwd=copy, env=env, capture_output=True, text=True)
+            self.assertEqual(clean.returncode, 0, clean.stderr[-2000:])
+            with (copy / "Makefile").open("a", encoding="utf-8") as makefile:
+                makefile.write(".IGNORE:\n")
+            hidden = subprocess.run(["sh", "-c", step], cwd=copy, env=env, capture_output=True, text=True)
+        self.assertNotEqual(hidden.returncode, 0)
+        self.assertIn("Makefile differs from tests/approved/Makefile.approved", hidden.stderr)
+
     def test_ci_reads_the_makefile_whatever_sits_beside_it(self):
         # make reads a GNUmakefile instead of the Makefile, and one holding `include Makefile` and `.IGNORE:`
         # would turn CI green; the tests that forbid it run inside that same make. CI's own make options, taken
         # from the workflow, must make it read the Makefile alone.
-        command = shlex.split(run_lines(job_block(CHECK_YML, "check"))[0])
+        command = shlex.split(
+            next(line for line in run_lines(job_block(CHECK_YML, "check")) if line.startswith("make "))
+        )
         self.assertEqual(command[0], "make")
         options = command[1 : command.index("check")]
         with tempfile.TemporaryDirectory() as tmp:

@@ -34,7 +34,8 @@ through uvx or `uv run --no-project` at the versions pinned in the Makefile.
 - **The files that define the gate and the release have reviewed copies** in `tests/approved/`: the
   Makefile, `pyproject.toml`, `MANIFEST.in`, and every workflow. `ApprovedFilesTest` fails on any byte of
   difference, and on a workflow with no copy. Change one only together with its copy, in the same commit, so
-  the diff shows the reviewer every changed line of the gate or the release.
+  the diff shows the reviewer every changed line of the gate or the release. CI runs `ApprovedFilesTest` in its
+  own step before the gate, outside make, so no line in a pinned file can switch that check off.
 - **The Makefile is the only makefile.** make reads only the first of `GNUmakefile`, `makefile`, and
   `Makefile` that it finds, so either of the others beside it would be read instead, and could `include` it
   with its failures switched off. `make siblings` refuses both, and CI runs `make -f Makefile check`, which
