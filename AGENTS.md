@@ -16,6 +16,12 @@ synthetic: no client names, no real addresses, no paths from anyone's machine, n
   each build with the newest version uv resolves when they run, so a setuptools release between the two can
   change or break the artifacts.
 
+- `make reference` and `make sims` are opt-in and never part of `make check`. `make reference` rewrites
+  `tests/reference/stats_reference.json` with the answers of the scipy and statsmodels versions pinned in the
+  Makefile; `make sims` rewrites `tests/reference/sims.json` with simulated rejection rates. Each file carries
+  the sha256 of the script that wrote it, so editing a script without re-running its target fails the suite.
+  Commit the rewritten file with the change that needed it; its diff is the review.
+
 The interpreters are pyenv's exact patches, the one in `.python-version` and `COMPAT_PIN` for the floor
 check, each handed to uv by path; never let uv discover or download one. `make interpreters` resolves both
 before any stage runs, and `make gate-env` prints the settings make exports to every stage. Tools run
