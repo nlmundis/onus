@@ -54,7 +54,7 @@ jobs:
       - name: Build the sdist and wheel, and check them as the gate does
         run: |
           status=0
-          python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist || status=$?
+          python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/onus-dist" || status=$?
           # tools/check_dist.py's own exit codes: 3 is a defect, including tracked files the build backend
           # refuses; 4 is a build that could not run, since a tool, the network, or the runner failed before the
           # backend ran, or a build requirement could not be installed. A 4 that repeats on a re-run is the
@@ -73,4 +73,5 @@ jobs:
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        # Only the two checked files: $RUNNER_TEMP is outside the checkout, so no tracked file can join them.
+        run: gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/onus-dist/*.whl "$RUNNER_TEMP"/onus-dist/*.tar.gz --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

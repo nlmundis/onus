@@ -484,6 +484,30 @@ find = "        if extra:"
 replace = "        if False:"
 
 [[mutant]]
+name = "release_builds_into_the_checkout"
+why = "The checkout's dist/ is a folder the gate never builds into; a tracked file there breaks the build, and one inside it rides along into the release."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = '"${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/onus-dist" || status=$?'
+replace = '"${GITHUB_REF_NAME#v}" dist || status=$?'
+
+[[mutant]]
+name = "release_publishes_whatever_is_in_the_folder"
+why = "Uploading the whole folder attaches any file that landed beside the checked pair to the permanent release, unchecked."
+suites = ["tests.test_repo.ReleaseWorkflowTest"]
+file = ".github/workflows/release.yml"
+find = '"$RUNNER_TEMP"/onus-dist/*.whl "$RUNNER_TEMP"/onus-dist/*.tar.gz --verify-tag'
+replace = '"$RUNNER_TEMP"/onus-dist/* --verify-tag'
+
+[[mutant]]
+name = "stray_files_beside_the_artifacts_unchecked"
+why = "A file left beside the wheel and the sdist would pass the check and, uploaded with them, reach the release unchecked."
+suites = ["tests.test_repo.DistCheckTest"]
+file = "tools/check_dist.py"
+find = "    if others:"
+replace = "    if False:"
+
+[[mutant]]
 name = "wheel_import_unchecked"
 why = "A wheel whose core imports a third-party package fails for every caller without the extra."
 suites = ["tests.test_repo.DistCheckTest"]

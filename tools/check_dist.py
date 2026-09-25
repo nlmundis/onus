@@ -110,6 +110,9 @@ def problems(dist: Path, version: str) -> list[str]:
         found = [path.name for path in wheels + sdists]
         return [f"expected exactly one wheel and one sdist in {dist}, found {found}"]
     found_problems = []
+    others = sorted(path.name for path in dist.iterdir() if path not in (wheels[0], sdists[0], dist / ".gitignore"))
+    if others:
+        found_problems.append(f"the artifact folder {dist} holds more than the wheel and the sdist: {others}")
     with zipfile.ZipFile(wheels[0]) as wheel:
         extra = sorted({name.split("/")[0] for name in wheel.namelist()} - {"onus", *dist_info(wheel)})
         if extra:

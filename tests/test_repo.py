@@ -354,6 +354,16 @@ class DistCheckTest(unittest.TestCase):
             ["the sdist carries tests/: MANIFEST.in must prune tests, and no line after it may add them back"],
         )
 
+    def test_nothing_but_the_pair_and_uvs_gitignore_sits_in_the_folder(self):
+        self.artifacts()
+        (self.dist / ".gitignore").write_text("*\n", encoding="utf-8")
+        self.assertEqual(check_dist.problems(self.dist, "1.2.3"), [])
+        (self.dist / "NOTES.txt").write_text("", encoding="utf-8")
+        self.assertEqual(
+            check_dist.problems(self.dist, "1.2.3"),
+            [f"the artifact folder {self.dist.resolve()} holds more than the wheel and the sdist: ['NOTES.txt']"],
+        )
+
     def test_exactly_one_wheel_and_one_sdist(self):
         self.assertIn("found []", check_dist.problems(self.dist, "1.2.3")[0])
         self.artifacts()
@@ -945,6 +955,20 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(sum("is not spent" in command and "re-run this job" in command for command in commands), 2)
         self.assertTrue(any("tag this same commit v$version" in command for command in commands))
 
+    def test_it_builds_outside_the_checkout_and_publishes_only_the_checked_pair(self):
+        # The checkout's dist/ is a folder the gate never uses, and a tracked file there would break the build or
+        # ride along into the release; $RUNNER_TEMP is outside the checkout and empty for each job.
+        commands = run_lines(job_block(RELEASE_YML, "release"))
+        publish = [command for command in commands if command.startswith("gh release create")]
+        self.assertEqual(
+            publish,
+            [
+                'gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/onus-dist/*.whl "$RUNNER_TEMP"/onus-dist/*.tar.gz'
+                ' --verify-tag --generate-notes --title "$GITHUB_REF_NAME"'
+            ],
+        )
+        self.assertNotIn(" dist", RELEASE_YML.replace("check_dist", ""))
+
     def test_a_build_that_cannot_run_twice_is_called_spent(self):
         # A build requirement no index has also stops the fetch, which exits NOT_BUILT; only a repeat tells that
         # apart from the network, so the message must say what a repeat means.
@@ -957,7 +981,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_the_artifacts_are_checked_by_the_gates_own_script_before_publishing(self):
         commands = run_lines(job_block(RELEASE_YML, "release"))
-        check = commands.index('python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" dist || status=$?')
+        check = commands.index(
+            'python tools/check_dist.py --build --version "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/onus-dist" || status=$?'
+        )
         # The release reads check_dist's own exit codes: a defect spends the tag, a build that could not run
         # does not, and any other exit (a crash) is re-run once before it is called either.
         branches = [command for command in commands[check + 1 :] if command.startswith(("if [", "elif [", "fi"))]
