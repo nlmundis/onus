@@ -216,6 +216,12 @@ class SignTestTest(unittest.TestCase):
         result = mcnemar_exact(9, 2, alternative="two-sided", method="exact")
         self.assertEqual((result.test, result.successes, result.n), ("mcnemar", 9, 11))
         self.assertEqual(result.p_exact, sign(9, 11, "two-sided"))
+        # One-sided, the direction matters: "greater" asks whether b outcomes are the likelier ones.
+        for alternative in ("greater", "less"):
+            with self.subTest(alternative=alternative):
+                self.assertEqual(
+                    mcnemar_exact(9, 2, alternative=alternative, method="exact").p_exact, sign(9, 11, alternative)
+                )
         with self.assertRaisesRegex(EmptySampleError, "at least one discordant pair"):
             mcnemar_exact(0, 0, alternative="two-sided", method="exact")
 
@@ -292,10 +298,13 @@ class MultiplicityTest(unittest.TestCase):
         family.add("accuracy", "3/100")
         self.assertEqual(family.adjusted(), {"speed": Fraction(1, 50), "accuracy": Fraction(3, 100)})
         self.assertEqual(family.decide("0.025"), {"speed": True, "accuracy": False})
-        bh = Family("secondary", ["a", "b"], correction="benjamini-hochberg")
-        bh.add("a", "1/100")
-        bh.add("b", "3/100")
-        self.assertEqual(bh.adjusted(), {"a": Fraction(1, 50), "b": Fraction(3, 100)})
+        # Between the raw p-values and the adjusted ones: the raw 1/100 would reject, the adjusted 1/50 does not.
+        self.assertEqual(family.decide("0.015"), {"speed": False, "accuracy": False})
+        # Three members, where Benjamini-Hochberg and Holm disagree (Holm would give 3/100, 3/50, 3/50).
+        bh = Family("secondary", ["a", "b", "c"], correction="benjamini-hochberg")
+        for member, p in zip("abc", ("1/100", "1/25", "3/100"), strict=True):
+            bh.add(member, p)
+        self.assertEqual(bh.adjusted(), {"a": Fraction(3, 100), "b": Fraction(1, 25), "c": Fraction(1, 25)})
 
     def test_a_family_is_declared_whole(self):
         cases = {

@@ -1049,3 +1049,27 @@ suites = ["tests.test_stats.PowerTest"]
 file = "onus/stats/power.py"
 find = "        weights = {k: w for k, w in grown.items() if k not in region}\n"
 replace = "        weights = grown\n"
+
+[[mutant]]
+name = "mcnemar_counts_the_other_discordant_cell"
+why = "One-sided, McNemar's p-value depends on which discordant count it is about; computed from c, 'greater' reports the opposite direction."
+suites = ["tests.test_stats.SignTestTest"]
+file = "onus/stats/binomial.py"
+find = "_p_exact(b, b + c, HALF, alternative)"
+replace = "_p_exact(c, b + c, HALF, alternative)"
+
+[[mutant]]
+name = "family_decides_on_raw_p_values"
+why = "A family exists so its members are decided on adjusted p-values; deciding on the raw ones drops the correction entirely."
+suites = ["tests.test_stats.MultiplicityTest"]
+file = "onus/stats/multiplicity.py"
+find = "for member, p in self.adjusted().items()}"
+replace = "for member, p in self._results.items()}"
+
+[[mutant]]
+name = "a_bh_family_adjusted_by_holm"
+why = "A family declared Benjamini-Hochberg that is adjusted by Holm reports the wrong error rate and rejects less than declared."
+suites = ["tests.test_stats.MultiplicityTest"]
+file = "onus/stats/multiplicity.py"
+find = 'adjust = holm if self.correction == "holm" else benjamini_hochberg'
+replace = "adjust = holm"
