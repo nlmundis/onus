@@ -11,6 +11,7 @@ import inspect
 import io
 import json
 import math
+import re
 import sys
 import tempfile
 import types
@@ -427,8 +428,26 @@ class ReferenceTest(unittest.TestCase):
             self.fixture["header"]["script_sha256"], hashlib.sha256(script).hexdigest(), "run make reference"
         )
 
+    def test_the_fixture_holds_every_case_the_script_lists(self):
+        # Case by case, so a section emptied or cut short cannot pass as a smaller reference.
+        fixture = self.fixture
+        self.assertEqual(
+            [(c["k"], c["n"], c["p"], c["alternative"]) for c in fixture["binomial"]], list(make_reference.BINOMIAL)
+        )
+        self.assertEqual(
+            [(c["k"], c["n"], c["confidence"]) for c in fixture["intervals"]], list(make_reference.INTERVALS)
+        )
+        self.assertEqual([c["p_values"] for c in fixture["families"]], make_reference.FAMILIES)
+
+    def test_the_fixture_came_from_the_versions_the_makefile_pins(self):
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        for name, variable in (("scipy", "SCIPY"), ("statsmodels", "STATSMODELS")):
+            with self.subTest(library=name):
+                pin = re.search(rf"(?m)^{variable} := {name}==(\S+)$", makefile)
+                assert pin is not None, variable
+                self.assertEqual(self.fixture["header"][name], pin.group(1), "run make reference")
+
     def test_binomial_p_values_match(self):
-        self.assertEqual(len(self.fixture["binomial"]), len(make_reference.BINOMIAL))
         for case in self.fixture["binomial"]:
             with self.subTest(**case):
                 ours = binomial_test(case["k"], case["n"], p=case["p"], alternative=case["alternative"], method="exact")

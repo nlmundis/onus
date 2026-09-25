@@ -1073,3 +1073,19 @@ suites = ["tests.test_stats.MultiplicityTest"]
 file = "onus/stats/multiplicity.py"
 find = 'adjust = holm if self.correction == "holm" else benjamini_hochberg'
 replace = "adjust = holm"
+
+[[mutant]]
+name = "a_reference_section_emptied"
+why = "A fixture with a section cut short compares fewer cases and still passes, as if the reference agreed."
+suites = ["tests.test_stats.ReferenceTest"]
+file = "tests/reference/stats_reference.json"
+find = "\"families\": ["
+replace = "\"families\": [],\n \"cut\": ["
+
+[[mutant]]
+name = "the_reference_pin_moved_without_regenerating"
+why = "A fixture from scipy 1.18.1 checked under a Makefile that pins another version no longer says what the pinned library answers."
+suites = ["tests.test_stats.ReferenceTest"]
+file = "Makefile"
+find = "SCIPY := scipy==1.18.1"
+replace = "SCIPY := scipy==1.17.0"
