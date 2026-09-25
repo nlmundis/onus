@@ -1306,3 +1306,19 @@ suites = ["tests.test_stats.PowerTest"]
 file = "onus/stats/power.py"
 find = "        if high == top:\n"
 replace = "        if False:\n"
+
+[[mutant]]
+name = "the_power_near_one_summed_directly"
+why = "Near power 1 the float power's rounding hides the gap to the target, so the guess lands far off and the exact search takes 40 to 60 steps instead of 3."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "        if target > HALF:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_run_from_zero_summed_as_two_tails"
+why = "A run of counts from 0 is one lower tail; as a difference of upper tails it computes the whole distribution and more."
+suites = ["tests.test_stats.PowerTest"]
+file = "onus/stats/power.py"
+find = "            if start == 0:\n"
+replace = "            if False:\n"

@@ -596,6 +596,22 @@ class PowerTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no index up to 64 reaches"):
                 _settle(lambda i: False, 3, top)
 
+    def test_near_power_one_the_float_search_lands_within_a_step_of_the_exact_crossing(self):
+        from onus.stats import power
+
+        # Summing the power itself near 1, the float search missed by far more than a grid step: 40 to 60 exact
+        # evaluations instead of 3 (the no-effect check, the guess, and the point one step nearer p0).
+        with mock.patch.object(power, "_region_power", wraps=power._region_power) as spy:
+            binomial_mde(2000, p0="1/3", alpha="0.05", power=1 - Fraction(1, 10**15), alternative="greater")
+        self.assertEqual(spy.call_count, 3)
+
+    def test_a_run_of_counts_from_zero_costs_one_tail(self):
+        from onus.stats import binomial, power
+
+        with mock.patch.object(power, "binom_tail", wraps=binomial.binom_tail) as spy:
+            power._region_power([0, 1, 2, 3], 9, Fraction(2, 7))
+        self.assertEqual(spy.call_args_list, [mock.call(3, 9, p=Fraction(2, 7), tail="lower")])
+
     def test_the_power_of_any_region_is_its_exact_probability(self):
         from onus.stats.power import _region_power
 
