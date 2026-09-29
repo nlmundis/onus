@@ -238,10 +238,13 @@ class ScaleTest(unittest.TestCase):
 
     def test_a_budget_inside_a_budget_is_refused_and_leaves_the_outer_one_running(self):
         with within(30.0):
+            outer = signal.getsignal(signal.SIGALRM)
             with self.assertRaisesRegex(RuntimeError, "within does not nest"):
                 with within(1.0):
                     pass
+            # The outer budget still runs, and still fails with its own handler and its own message.
             self.assertGreater(signal.getitimer(signal.ITIMER_REAL)[0], 0)
+            self.assertIs(signal.getsignal(signal.SIGALRM), outer)
 
     def test_without_an_interval_timer_a_budget_times_the_block_and_fails_afterwards(self):
         # A signal module with no setitimer, as on Windows; the budget must not touch it at all.

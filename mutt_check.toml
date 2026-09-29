@@ -1422,6 +1422,14 @@ find = "    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
 replace = "    if False:\n"
 
 [[mutant]]
+name = "a_refused_budget_replaces_the_outer_handler"
+why = "A nested within refused only after it installed its handler would leave that handler in place, so the outer budget would fail with the inner one's message."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
+replace = "    signal.signal(signal.SIGALRM, lambda signum, frame: None)\n    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
+
+[[mutant]]
 name = "a_budget_without_an_interval_timer_crashes"
 why = "Where signal has no setitimer (Windows), within reaches for it anyway and raises AttributeError instead of timing the block."
 suites = ["tests.test_stats.ScaleTest"]

@@ -26,6 +26,22 @@ for v in "$pin" "$compat"; do
 done
 
 logs="$(mktemp -d "${TMPDIR:-/tmp}/onus-session-start.XXXXXX")"
+# However the hook ends (a failed clone, a failed build, or the hook's timeout), it removes its temp folder, a
+# CPython checkout included, and any prefix it was building; only a failed build's log is kept.
+building=""
+kept_log=""
+cleanup() {
+  if [ -n "$building" ]; then
+    rm -rf "$PYENV_ROOT/versions/$building"
+  fi
+  if [ -n "$kept_log" ]; then
+    find "$logs" -mindepth 1 -maxdepth 1 ! -path "$kept_log" -exec rm -rf {} +
+  else
+    rm -rf "$logs"
+  fi
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 
 # A pyenv that does not run (absent, or a copy cut short) is copied in again.
 if ! "$PYENV_ROOT/bin/pyenv" --version > /dev/null 2>&1; then
@@ -67,15 +83,16 @@ for v in "$pin" "$compat"; do
   fi
   echo "session-start: building Python $v from CPython's v$v tag"
   # A failed or partial build leaves no prefix behind, so the next start builds it again. Its log is kept.
+  building="$v"
   if ! (build "$v") || ! present "$v"; then
-    rm -rf "$PYENV_ROOT/versions/$v" "$logs/cpython-$v"
+    kept_log="$logs/build-$v.log"
     echo "session-start: building Python $v failed; its log is $logs/build-$v.log, ending:" >&2
     tail -n 40 "$logs/build-$v.log" >&2 || true
     exit 1
   fi
+  building=""
   rm -rf "$logs/cpython-$v" "$logs/build-$v.log"
   echo "session-start: built Python $v in $PYENV_ROOT/versions/$v"
 done
 
-rm -rf "$logs"
 echo "session-start: pyenv has Python $pin and $compat"
