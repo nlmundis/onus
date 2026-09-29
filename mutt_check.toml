@@ -1336,5 +1336,111 @@ name = "a_huge_int_quantile_printed_in_full"
 why = "An int past Python's 4300-digit print limit makes repr raise its own ValueError, so the refusal names neither z nor the reason."
 suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
-find = "if math.isinf(crit) and isinstance(z, int) else repr(z)"
-replace = "if False else repr(z)"
+find = "        if isinstance(z, int) and int.bit_length(z) > 1024:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_huge_int_quantile_judged_by_its_float"
+why = "Judged by float(z), a plain int beyond any float raises OverflowError, and a 16610-bit subclass posing as 1.96 passes the size check and reaches the refusal's repr, which raises past 4300 digits."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if isinstance(z, int) and int.bit_length(z) > 1024:\n"
+replace = "        if isinstance(z, int) and math.isinf(float(z)):\n"
+
+[[mutant]]
+name = "a_float_sized_int_quantile_named_by_its_size"
+why = "At 1024 bits an int can still be a float (2**1023), so it is refused by its value; only a wider one is named by size."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "int.bit_length(z) > 1024:"
+replace = "int.bit_length(z) >= 1024:"
+
+[[mutant]]
+name = "a_huge_negative_int_quantile_loses_its_sign"
+why = "-(10**5000) was named as an int of 16610 bits, as if it were positive."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = 'sign = "a negative" if int.__lt__(z, 0) else "an"'
+replace = 'sign = "an"'
+
+[[mutant]]
+name = "a_huge_positive_int_quantile_named_negative"
+why = "10**5000 would be named as a negative int of 16610 bits."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = 'sign = "a negative" if int.__lt__(z, 0) else "an"'
+replace = 'sign = "a negative"'
+
+[[mutant]]
+name = "a_huge_int_quantile_sized_by_its_own_bit_length"
+why = "An int subclass whose bit_length says 5 passes the size check, so its 16610 bits reach the refusal's repr, which raises past 4300 digits."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if isinstance(z, int) and int.bit_length(z) > 1024:\n"
+replace = "        if isinstance(z, int) and z.bit_length() > 1024:\n"
+
+[[mutant]]
+name = "a_huge_int_quantile_signed_by_its_own_compare"
+why = "An int subclass whose < always says False would name -(10**5000) as a positive int of 16610 bits."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = 'sign = "a negative" if int.__lt__(z, 0) else "an"'
+replace = 'sign = "a negative" if z < 0 else "an"'
+
+[[mutant]]
+name = "an_int_quantile_taken_at_its_own_float"
+why = "An int subclass's __float__ may pose as 1.96 while the int is 3, so wilson would build the interval of a z it was not given."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        crit = int.__float__(z) if isinstance(z, int) else float.__float__(z)\n"
+replace = "        crit = float(z) if isinstance(z, int) else float.__float__(z)\n"
+
+[[mutant]]
+name = "a_float_quantile_taken_at_its_own_float"
+why = "A float subclass's __float__ may pose as 1.96 while the float is 40.0, which is no quantile."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        crit = int.__float__(z) if isinstance(z, int) else float.__float__(z)\n"
+replace = "        crit = int.__float__(z) if isinstance(z, int) else float(z)\n"
+
+[[mutant]]
+name = "a_refused_quantile_named_by_its_own_repr"
+why = "A subclass's own __repr__ may say anything or raise, so the refusal would name a z it was not given, or no z at all."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "            shown = int.__repr__(z) if isinstance(z, int) else float.__repr__(z)\n"
+replace = "            shown = repr(z)\n"
+
+# --- the tests' time budget ---
+
+[[mutant]]
+name = "a_budget_nested_in_a_budget"
+why = "A nested within re-arms the one real-time timer and, on leaving, switches the outer budget off."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_refused_budget_replaces_the_outer_handler"
+why = "A nested within refused only after it replaced the SIGALRM handler would leave its own handler in place, so the outer budget would no longer fail with its own."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
+replace = "    signal.signal(signal.SIGALRM, lambda signum, frame: None)\n    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
+
+[[mutant]]
+name = "a_budget_without_an_interval_timer_crashes"
+why = "Where signal has no setitimer (Windows), within reaches for it anyway and raises AttributeError instead of timing the block."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "    if not hasattr(signal, \"setitimer\"):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_budget_without_an_interval_timer_never_checked"
+why = "Without an interval timer the block is timed, and a block that ran past its budget must fail once it ends."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "        if time.perf_counter() - start > seconds:\n"
+replace = "        if False:\n"

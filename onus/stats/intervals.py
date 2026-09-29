@@ -44,6 +44,9 @@ def _checked(k: int, n: int, confidence: Fraction | int | str) -> Fraction:
     return probability(confidence, "confidence", open_interval=True)
 
 
+_NOT_A_QUANTILE = "z must be a positive finite quantile below about 8 (where float confidence is 1)"
+
+
 def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z: float | None = None) -> Interval:
     """Return the Wilson score interval for ``k`` successes in ``n`` trials.
 
@@ -63,17 +66,21 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
             raise ValueError("wilson takes confidence or z, not both")
         if isinstance(z, bool) or not isinstance(z, int | float):
             raise TypeError(f"z must be a float such as 1.96, not {z!r}")
+        # z is judged and named by its value as int or float holds it: a subclass's own __float__, bit_length, <,
+        # or __repr__ may say anything.
+        if isinstance(z, int) and int.bit_length(z) > 1024:
+            # Beyond any float, and perhaps beyond the digits Python will print (repr raises past 4300), so it is
+            # named by its size.
+            sign = "a negative" if int.__lt__(z, 0) else "an"
+            raise ValueError(f"{_NOT_A_QUANTILE}, not {sign} int of {int.bit_length(z)} bits")
         try:
-            crit = float(z)
-        except OverflowError:  # an int beyond any float is no finite quantile; refuse it as one below
+            crit = int.__float__(z) if isinstance(z, int) else float.__float__(z)
+        except OverflowError:  # a 1024-bit int that rounds past the largest float; refuse it as no quantile below
             crit = math.inf
         implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan
         if not 0 < implied < 1:
-            # An int beyond any float may also be beyond the digits Python will print; name its size instead.
-            shown = f"an int of {z.bit_length()} bits" if math.isinf(crit) and isinstance(z, int) else repr(z)
-            raise ValueError(
-                f"z must be a positive finite quantile below about 8 (where float confidence is 1), not {shown}"
-            )
+            shown = int.__repr__(z) if isinstance(z, int) else float.__repr__(z)
+            raise ValueError(f"{_NOT_A_QUANTILE}, not {shown}")
         level = _checked(k, n, Fraction(implied))
     phat = k / n
     denom = 1 + crit**2 / n
