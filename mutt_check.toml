@@ -1341,7 +1341,7 @@ replace = "        if False:\n"
 
 [[mutant]]
 name = "a_huge_int_quantile_judged_by_its_float"
-why = "An int subclass's __float__ may pose as 1.96 while the int has 16610 bits; judged by float(z), it is accepted as a quantile."
+why = "Judged by float(z), a plain int beyond any float raises OverflowError, and a 16610-bit subclass posing as 1.96 passes the size check and reaches the refusal's repr, which raises past 4300 digits."
 suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
 find = "        if isinstance(z, int) and int.bit_length(z) > 1024:\n"
@@ -1373,7 +1373,7 @@ replace = 'sign = "a negative"'
 
 [[mutant]]
 name = "a_huge_int_quantile_sized_by_its_own_bit_length"
-why = "An int subclass whose bit_length says 5 would pass a 16610-bit int to its own __float__, which may pose as 1.96."
+why = "An int subclass whose bit_length says 5 passes the size check, so its 16610 bits reach the refusal's repr, which raises past 4300 digits."
 suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
 find = "        if isinstance(z, int) and int.bit_length(z) > 1024:\n"
@@ -1402,6 +1402,14 @@ suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
 find = "        crit = int.__float__(z) if isinstance(z, int) else float.__float__(z)\n"
 replace = "        crit = int.__float__(z) if isinstance(z, int) else float(z)\n"
+
+[[mutant]]
+name = "a_refused_quantile_named_by_its_own_repr"
+why = "A subclass's own __repr__ may say anything or raise, so the refusal would name a z it was not given, or no z at all."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "            shown = int.__repr__(z) if isinstance(z, int) else float.__repr__(z)\n"
+replace = "            shown = repr(z)\n"
 
 # --- the tests' time budget ---
 

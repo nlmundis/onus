@@ -66,8 +66,8 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
             raise ValueError("wilson takes confidence or z, not both")
         if isinstance(z, bool) or not isinstance(z, int | float):
             raise TypeError(f"z must be a float such as 1.96, not {z!r}")
-        # z is judged by its value as int or float holds it: a subclass's own __float__, bit_length, or < may say
-        # anything.
+        # z is judged and named by its value as int or float holds it: a subclass's own __float__, bit_length, <,
+        # or __repr__ may say anything.
         if isinstance(z, int) and int.bit_length(z) > 1024:
             # Beyond any float, and perhaps beyond the digits Python will print (repr raises past 4300), so it is
             # named by its size.
@@ -79,7 +79,8 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
             crit = math.inf
         implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan
         if not 0 < implied < 1:
-            raise ValueError(f"{_NOT_A_QUANTILE}, not {z!r}")
+            shown = int.__repr__(z) if isinstance(z, int) else float.__repr__(z)
+            raise ValueError(f"{_NOT_A_QUANTILE}, not {shown}")
         level = _checked(k, n, Fraction(implied))
     phat = k / n
     denom = 1 + crit**2 / n

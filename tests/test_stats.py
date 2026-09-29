@@ -456,6 +456,20 @@ class IntervalTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not a negative int of 16610 bits$"):
             wilson(3, 10, z=Liar(-(10**5000)))
 
+    def test_wilson_names_a_refused_z_by_its_value_not_by_its_own_repr(self):
+        class Loud(float):
+            def __repr__(self) -> str:
+                raise RuntimeError("a repr that raises")
+
+        class Masked(int):
+            def __repr__(self) -> str:
+                return "1.96"
+
+        with self.assertRaisesRegex(ValueError, "not 40.0$"):
+            wilson(3, 10, z=Loud(40.0))
+        with self.assertRaisesRegex(ValueError, "not 40$"):
+            wilson(3, 10, z=Masked(40))
+
     def test_clopper_pearson_bounds_meet_their_exact_tails_even_at_high_confidence(self):
         # At each bound the exact tail equals (1 - confidence) / 2: P(X >= k) at the lower, P(X <= k) at the upper.
         # Near 0 or 1 the exact bound may fall between two floats, so the crossing must lie within two floats of it.
