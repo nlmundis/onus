@@ -1457,7 +1457,7 @@ replace = "    if False:\n"
 
 [[mutant]]
 name = "a_float_in_the_record_accepted"
-why = "0.05 as a float is not 1/20; a float alpha would load, and the record could not say what it meant exactly."
+why = "A float such as alpha 0.05 would be refused only by its field, whose message does not say a float was written, the one mistake the parse names first."
 suites = ["tests.test_prereg.RecordTest"]
 file = "onus/prereg/_rule.py"
 find = "parse_float=_no_float, "
@@ -1484,7 +1484,7 @@ name = "interim_looks_accepted"
 why = "Planned interim looks would load though this release reads a rule only at its horizon and spends no alpha on them."
 suites = ["tests.test_prereg.RecordTest"]
 file = "onus/prereg/_rule.py"
-find = "    if record[\"looks\"] != [horizon.size]:\n"
+find = "    if not isinstance(looks, list) or len(looks) != 1 or type(looks[0]) is not int or looks[0] != horizon.size:\n"
 replace = "    if False:\n"
 
 [[mutant]]
@@ -1548,8 +1548,8 @@ name = "a_unit_missing_an_outcome_escapes_as_a_key_error"
 why = "A used unit that records no outcome for a hypothesis must be refused by name, not fail with a KeyError."
 suites = ["tests.test_prereg.EvaluateTest"]
 file = "onus/prereg/_evaluate.py"
-find = "        if not isinstance(outcomes, Mapping) or sorted(outcomes) != sorted(names):\n"
-replace = "        if not isinstance(outcomes, Mapping):\n"
+find = "        if sorted(outcomes) != sorted(names):\n"
+replace = "        if False:\n"
 
 [[mutant]]
 name = "an_outcome_outside_the_tests_vocabulary_ignored"
@@ -1574,3 +1574,75 @@ suites = ["tests.test_prereg.ReadTest"]
 file = "onus/prereg/_evaluate.py"
 find = "    if evaluation.prereg != rule.id:\n"
 replace = "    if False:\n"
+
+[[mutant]]
+name = "a_lone_surrogate_loaded"
+why = "An escape for U+D800 would load as text that no UTF-8 file can hold, and crash evaluate's hash and record_read's write later."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    _unicode(record)\n"
+replace = ""
+
+[[mutant]]
+name = "a_non_ascii_exact_number_accepted"
+why = "Arabic-Indic digits or an underscore would read as alpha 1/20, a number the record's reader may not see as one."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if not isinstance(value, str) or not _EXACT.fullmatch(value):\n"
+replace = "    if not isinstance(value, str):\n"
+
+[[mutant]]
+name = "a_symlink_out_of_the_folder_bound"
+why = "A bound name that is a symlink out of the record's folder would be accepted as inside it."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "        if not target.resolve().is_relative_to(root.resolve()):\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_window_before_registration_accepted"
+why = "A record registered after its window opened would load as a pre-registration of data already gathered."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if horizon.start is not None and horizon.start < registered:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_tampered_rule_evaluated"
+why = "A rule widened by replace() to 8 units would be evaluated under the id of the record that says 6."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    check_intact(rule)\n    chosen = "
+replace = "    chosen = "
+
+[[mutant]]
+name = "a_same_day_listing_changes_the_hash"
+why = "Units dated the same day, listed in another order, would give the same verdict a different data hash."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    dated.sort(key=lambda entry: (entry[0], json.dumps(entry[1])))\n"
+replace = "    dated.sort(key=lambda entry: entry[0])\n"
+
+[[mutant]]
+name = "a_tampered_rule_read"
+why = "A read would be recorded under the id of a record the rule no longer matches."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    check_intact(rule)\n    if evaluation.prereg != rule.id:\n"
+replace = "    if evaluation.prereg != rule.id:\n"
+
+[[mutant]]
+name = "a_forged_evaluation_read"
+why = "An evaluation holding no results would be recorded as a read of every hypothesis."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if [hypothesis.name for hypothesis in evaluation.hypotheses] != [h.name for h in rule.hypotheses]:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_torn_reads_file_appended_to"
+why = "A line appended after a cut-short write would join it, and neither would parse."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "            if existing.read(1) != b\"\\n\":\n"
+replace = "            if False:\n"

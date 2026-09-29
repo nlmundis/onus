@@ -4,10 +4,11 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from fractions import Fraction
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any, NoReturn
 
 from onus.stats._common import check_alternative, probability
@@ -37,6 +38,8 @@ _TOP = (
 _HYPOTHESIS = ("name", "test", "alternative", "method", "alpha", "family")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+# An exact number as ASCII digits: "0.05", "1", or "1/3"; no signs, exponents, underscores, or other scripts.
+_EXACT = re.compile(r"[0-9]+(?:\.[0-9]+)?|[0-9]+/[0-9]+")
 
 
 class PreregError(ValueError):
@@ -111,6 +114,7 @@ class Rule:
         looks: when its result is planned to be read; in this release, only at the horizon.
         bound_artifacts: the sha256 of each file the record binds, by path relative to the record.
         provenance: free-form notes on where the record came from.
+        raw: the record's bytes, which ``evaluate`` and ``record_read`` check the rule still matches.
     """
 
     id: str
@@ -125,6 +129,7 @@ class Rule:
     looks: tuple[int, ...]
     bound_artifacts: Mapping[str, str]
     provenance: Mapping[str, str]
+    raw: bytes = field(repr=False)
 
 
 def _id(stem: str, raw: bytes) -> str:
@@ -192,7 +197,7 @@ def iso_date(value: object, where: str) -> date:
 
 
 def _exact_probability(value: object, where: str) -> Fraction:
-    if not isinstance(value, str):
+    if not isinstance(value, str) or not _EXACT.fullmatch(value):
         raise PreregError(f'{where} must be an exact number written as a string, such as "0.05", not {value!r}')
     try:
         return probability(value, where, open_interval=True)
@@ -233,19 +238,28 @@ def _horizon(value: object) -> Horizon:
         record = _object(value, "horizon", ("kind", "n"))
         return Horizon("count", _positive(record["n"], "horizon.n"), None)
     record = _object(value, "horizon", ("kind", "days", "start"))
-    return Horizon("days", _positive(record["days"], "horizon.days"), iso_date(record["start"], "horizon.start"))
+    horizon = Horizon("days", _positive(record["days"], "horizon.days"), iso_date(record["start"], "horizon.start"))
+    try:
+        _ = horizon.end
+    except (ValueError, OverflowError):
+        raise PreregError(f"horizon.days ({horizon.size}) runs past the last date there is") from None
+    return horizon
 
 
-def _bound(value: object, root: Path) -> dict[str, str]:
+def _bound(value: object, root: Path | None) -> dict[str, str]:
     if not isinstance(value, dict):
         raise PreregError(f"bound_artifacts must be an object of path: sha256, not {value!r}")
     for name, digest in value.items():
         path = PurePosixPath(name)
-        if not name or "\\" in name or path.is_absolute() or ".." in path.parts:
-            raise PreregError(f"bound artifact {name!r} must be a relative path inside the record's folder")
+        if not name or "\\" in name or path.is_absolute() or ".." in path.parts or path.as_posix() != name:
+            raise PreregError(f"bound artifact {name!r} must be a plain relative path inside the record's folder")
         if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             raise PreregError(f"bound artifact {name!r} must name a lowercase hex sha256, not {digest!r}")
+        if root is None:
+            continue
         target = root / path
+        if not target.resolve().is_relative_to(root.resolve()):
+            raise PreregError(f"bound artifact {name!r} must be a plain relative path inside the record's folder")
         if not target.is_file():
             raise BoundArtifactError(f"bound artifact {name!r} is missing from {root}")
         actual = hashlib.sha256(target.read_bytes()).hexdigest()
@@ -254,8 +268,26 @@ def _bound(value: object, root: Path) -> dict[str, str]:
     return dict(value)
 
 
-def parse(raw: bytes, *, rule_id: str, root: Path) -> Rule:
+def _unicode(value: object) -> None:
+    """Refuse text JSON can carry but UTF-8 cannot: a lone surrogate, from an escape like the one for U+D800."""
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            raise PreregError(f"the record holds text that is not valid Unicode: {value!r}") from None
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _unicode(key)
+            _unicode(item)
+    elif isinstance(value, list):
+        for item in value:
+            _unicode(item)
+
+
+def _parse(raw: bytes, *, rule_id: str, root: Path | None) -> Rule:
     """Return the rule a prereg/1 record's bytes describe, checking each file it binds under ``root``.
+
+    With ``root`` None, the bound files' names and digests are checked but the files are not read.
 
     Raises:
         PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires.
@@ -267,8 +299,11 @@ def parse(raw: bytes, *, rule_id: str, root: Path) -> Rule:
         raise PreregError("the record is not UTF-8") from None
     try:
         record = json.loads(text, object_pairs_hook=_no_duplicates, parse_float=_no_float, parse_constant=_no_constant)
-    except json.JSONDecodeError as error:
-        raise PreregError(f"the record is not JSON: {error}") from None
+    except PreregError:
+        raise
+    except (ValueError, RecursionError) as error:
+        raise PreregError(f"the record is not JSON onus can read: {error}") from None
+    _unicode(record)
     record = _object(record, "the record", _TOP)
     if record["schema"] != SCHEMA:
         raise PreregError(f"schema must be {SCHEMA!r}, not {record['schema']!r}")
@@ -301,7 +336,14 @@ def parse(raw: bytes, *, rule_id: str, root: Path) -> Rule:
     if record["cluster_key"] is not None:
         raise PreregError("cluster_key must be null: clustered analyses arrive in v0.2, and v0.1 would ignore it")
     horizon = _horizon(record["horizon"])
-    if record["looks"] != [horizon.size]:
+    registered = iso_date(record["registered"], "registered")
+    if horizon.start is not None and horizon.start < registered:
+        raise PreregError(
+            f"the window starts on {horizon.start}, before the record was registered on {registered}, so it would "
+            "not be registered before its data"
+        )
+    looks = record["looks"]
+    if not isinstance(looks, list) or len(looks) != 1 or type(looks[0]) is not int or looks[0] != horizon.size:
         raise PreregError(
             f"looks must be [{horizon.size}], the horizon alone: this release reads a rule only at its horizon"
         )
@@ -312,15 +354,16 @@ def parse(raw: bytes, *, rule_id: str, root: Path) -> Rule:
         id=rule_id,
         sha256=hashlib.sha256(raw).hexdigest(),
         experiment=_text(record["experiment"], "experiment"),
-        registered=iso_date(record["registered"], "registered"),
+        registered=registered,
         hypotheses=hypotheses,
-        families=families,
+        families=MappingProxyType(families),
         unit=unit,
         order_key=order_key,
         horizon=horizon,
         looks=(horizon.size,),
-        bound_artifacts=_bound(record["bound_artifacts"], root),
-        provenance=dict(provenance),
+        bound_artifacts=MappingProxyType(_bound(record["bound_artifacts"], root)),
+        provenance=MappingProxyType(dict(provenance)),
+        raw=raw,
     )
 
 
@@ -333,4 +376,15 @@ def load(path: str | Path) -> Rule:
     """
     path = Path(path)
     raw = path.read_bytes()
-    return parse(raw, rule_id=_id(path.stem, raw), root=path.parent)
+    return _parse(raw, rule_id=_id(path.stem, raw), root=path.parent)
+
+
+def check_intact(rule: Rule) -> None:
+    """Refuse a rule that no longer matches the record it was loaded from, such as one built by replace().
+
+    Raises:
+        PreregError: its id does not name its bytes, or its fields are not what those bytes say.
+    """
+    stem = rule.id.rpartition("@")[0]
+    if _id(stem, rule.raw) != rule.id or _parse(rule.raw, rule_id=rule.id, root=None) != rule:
+        raise PreregError(f"rule {rule.id!r} no longer matches the record it was loaded from; load it again")

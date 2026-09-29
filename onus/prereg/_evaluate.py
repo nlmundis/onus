@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Any
 
 import onus
-from onus.prereg._rule import OUTCOMES, OUTCOMES_FIELD, HorizonNotReachedError, PreregError, Rule, iso_date
+from onus.prereg._rule import (
+    OUTCOMES,
+    OUTCOMES_FIELD,
+    HorizonNotReachedError,
+    PreregError,
+    Rule,
+    check_intact,
+    iso_date,
+)
 from onus.stats import Family, TestResult, binomial_test, decide, sign_test
 
 READ_SCHEMA = "read/1"
@@ -88,6 +96,11 @@ class ReadReceipt:
 def _identity(value: object, where: str) -> str | int:
     if isinstance(value, bool) or not isinstance(value, str | int):
         raise PreregError(f"{where} must be a string or an int, not {value!r}")
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            raise PreregError(f"{where} is not valid Unicode: {value!r}") from None
     return value
 
 
@@ -127,11 +140,14 @@ def _chosen(
         return sorted(units, key=lambda unit: unit[1])[: horizon.size]
     if as_of is None:
         raise PreregError("a days horizon needs as_of, the day the evaluation is made, since evaluate reads no clock")
+    if type(as_of) is not date:
+        raise PreregError(f"as_of must be a date, not {as_of!r}")
     assert horizon.start is not None and horizon.end is not None
     if as_of < horizon.end:
         raise HorizonNotReachedError(f"the window runs to {horizon.end} (exclusive); as_of is {as_of}")
     dated = [(iso_date(order, f"{rule.order_key!r} of unit {unit!r}"), unit, order, o) for unit, order, o in units]
-    dated.sort(key=lambda entry: entry[0])
+    # By day, then by unit, so the data's hash does not depend on how units dated the same day were listed.
+    dated.sort(key=lambda entry: (entry[0], json.dumps(entry[1])))
     return [(unit, order, o) for day, unit, order, o in dated if horizon.start <= day < horizon.end]
 
 
@@ -142,17 +158,22 @@ def evaluate(rule: Rule, data: Sequence[Mapping[str, Any]], *, as_of: date | Non
     ``"outcomes"``, a mapping from each hypothesis's name to what the unit recorded for it: "win", "loss", or
     "tie" for a sign test, "success" or "failure" for a binomial test. A count horizon uses exactly the first N
     units in ``order_key`` order. A days horizon's ``order_key`` holds "YYYY-MM-DD" dates, and it uses the units
-    dated inside its window, once ``as_of`` is past the window.
+    dated inside its window, once ``as_of`` is past the window. String order values sort as text, so "10" comes
+    before "2": write them zero-padded, or as ints.
 
     Raises:
         HorizonNotReachedError: the data holds fewer units than a count horizon, or a days window is still open.
         PreregError: a unit is malformed, two units share an id, a count horizon's order is ambiguous, or a used
-            unit's outcomes do not match the rule's hypotheses.
+            unit's outcomes do not match the rule's hypotheses, or ``rule`` no longer matches its record.
+        EmptySampleError: a sign test's used units are all ties, or a days window holds no units.
     """
+    check_intact(rule)
     chosen = _chosen(rule, _units(rule, data), as_of)
     names = [hypothesis.name for hypothesis in rule.hypotheses]
     for unit, _, outcomes in chosen:
-        if not isinstance(outcomes, Mapping) or sorted(outcomes) != sorted(names):
+        if not isinstance(outcomes, Mapping) or not all(isinstance(name, str) for name in outcomes):
+            raise PreregError(f"unit {unit!r} must record its outcomes as a mapping by hypothesis name")
+        if sorted(outcomes) != sorted(names):
             raise PreregError(f"unit {unit!r} must record an outcome for exactly {sorted(names)}, not {outcomes!r}")
         for hypothesis in rule.hypotheses:
             if outcomes[hypothesis.name] not in OUTCOMES[hypothesis.test]:
@@ -208,6 +229,7 @@ def status(rule: Rule, data: Sequence[Mapping[str, Any]], *, as_of: date | None 
 
     Raises:
         PreregError: as ``evaluate`` does, except that a horizon not yet reached is "pending", not an error.
+        EmptySampleError: as ``evaluate`` does.
     """
     try:
         return evaluate(rule, data, as_of=as_of).labels()
@@ -220,14 +242,19 @@ def record_read(
 ) -> ReadReceipt:
     """Append a line to ``reads_path`` recording that ``evaluation`` was read, and return its receipt.
 
-    ``now`` defaults to the current time; a given ``now`` must carry its timezone.
+    ``now`` defaults to the current time; a given ``now`` must carry its timezone. Appends are not locked, so
+    one process at a time should record reads to a file.
 
     Raises:
-        PreregError: ``evaluation`` is not a result of ``rule``.
+        PreregError: ``evaluation`` is not a result of ``rule``, ``rule`` no longer matches its record, or the
+            reads file's last line was cut short.
         ValueError: ``now`` has no timezone.
     """
+    check_intact(rule)
     if evaluation.prereg != rule.id:
         raise PreregError(f"the evaluation is of {evaluation.prereg!r}, not of {rule.id!r}")
+    if [hypothesis.name for hypothesis in evaluation.hypotheses] != [h.name for h in rule.hypotheses]:
+        raise PreregError(f"the evaluation does not hold a result for each of {rule.id!r}'s hypotheses")
     at = datetime.now(UTC) if now is None else now
     if at.tzinfo is None or at.utcoffset() is None:
         raise ValueError(f"now must carry its timezone, not {at!r}")
@@ -248,6 +275,11 @@ def record_read(
         ensure_ascii=False,
     )
     reads_path = Path(reads_path)
+    if reads_path.is_file() and reads_path.stat().st_size > 0:
+        with reads_path.open("rb") as existing:
+            existing.seek(-1, os.SEEK_END)
+            if existing.read(1) != b"\n":
+                raise PreregError(f"{reads_path} does not end in a newline: its last write was cut short; repair it")
     with reads_path.open("a", encoding="utf-8") as reads:
         reads.write(line + "\n")
         reads.flush()

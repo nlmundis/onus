@@ -17,7 +17,6 @@ from onus.prereg._rule import (
     PreregError,
     Rule,
     load,
-    parse,
     prereg_id,
 )
 
@@ -33,7 +32,6 @@ __all__ = [
     "Rule",
     "evaluate",
     "load",
-    "parse",
     "prereg_id",
     "record_read",
     "status",

@@ -1,6 +1,7 @@
 """onus.prereg: records refused on any doubt, evaluation that is pure and bounded by its horizon, and reads."""
 
 import copy
+import dataclasses
 import hashlib
 import json
 import re
@@ -15,6 +16,8 @@ from typing import Any
 import onus
 from onus.prereg import (
     BoundArtifactError,
+    Evaluation,
+    Horizon,
     HorizonNotReachedError,
     PreregError,
     Rule,
@@ -167,8 +170,12 @@ class RecordTest(Folder):
             "the float 0.05": '{"alpha": 0.05}',
             "holds NaN": '{"alpha": NaN}',
             r"gives a key more than once: \['schema'\]": '{"schema": "prereg/1", "schema": "prereg/1"}',
-            "is not JSON": "{",
+            "is not JSON onus can read": "{",
             "is not UTF-8": b"\xff",
+            r"the float 0\.05": json.dumps(record()).replace('"alpha": "0.05"', '"alpha": 0.05', 1),
+            "Exceeds the limit": '{"n": ' + "9" * 5000 + "}",
+            "maximum recursion depth": "[" * 200000,
+            "not valid Unicode": json.dumps(record(experiment="\ud800")),
         }
         for message, text in cases.items():
             with self.subTest(message=message):
@@ -215,6 +222,19 @@ class RecordTest(Folder):
             "horizon.n must be a positive int": record(horizon={"kind": "count", "n": 0}, looks=[0]),
             r"looks must be \[6\], the horizon alone": record(looks=[3, 6]),
             "provenance must be an object of strings": record(provenance={"version": 2}),
+            r"looks must be \[1\]": record(horizon={"kind": "count", "n": 1}, looks=[True]),
+            "not '\u0660.\u0660\u0665'": record(
+                hypotheses=[{**hypotheses[0], "alpha": "\u0660.\u0660\u0665"}, *hypotheses[1:]]
+            ),
+            "exact number written as a string, such as": record(
+                hypotheses=[{**hypotheses[0], "alpha": "0.0_5"}, *hypotheses[1:]]
+            ),
+            "runs past the last date there is": record(
+                horizon={"kind": "days", "days": 10**9, "start": "2026-01-05"}, looks=[10**9]
+            ),
+            "before the record was registered on 2026-03-01": record(
+                registered="2026-03-01", horizon={"kind": "days", "days": 3, "start": "2026-01-05"}, looks=[3]
+            ),
         }
         for message, content in cases.items():
             with self.subTest(message=message):
@@ -258,10 +278,17 @@ class RecordTest(Folder):
             load(self.write(record(bound_artifacts={"plan.md": digest})))
         with self.assertRaisesRegex(BoundArtifactError, "'gone.md' is missing"):
             load(self.write(record(bound_artifacts={"gone.md": digest})))
-        for name in ("/etc/plan.md", "../plan.md", "sub\\plan.md", ""):
+        for name in ("/etc/plan.md", "../plan.md", "sub\\plan.md", "", "./plan.md", "sub//plan.md"):
             with self.subTest(name=name):
-                with self.assertRaisesRegex(PreregError, "must be a relative path inside the record's folder"):
+                with self.assertRaisesRegex(PreregError, "must be a plain relative path inside the record's folder"):
                     load(self.write(record(bound_artifacts={name: digest})))
+        outside = Path(tempfile.mkdtemp(prefix="onus-prereg-outside-"))
+        self.addCleanup(shutil.rmtree, outside)
+        (outside / "plan.md").write_bytes(analysis.read_bytes())
+        (self.folder / "linked.md").symlink_to(outside / "plan.md")
+        linked = hashlib.sha256(analysis.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(PreregError, "'linked.md' must be a plain relative path inside"):
+            load(self.write(record(bound_artifacts={"linked.md": linked})))
         with self.assertRaisesRegex(PreregError, "must name a lowercase hex sha256"):
             load(self.write(record(bound_artifacts={"plan.md": digest.upper()})))
         with self.assertRaisesRegex(PreregError, "bound_artifacts must be an object"):
@@ -387,6 +414,36 @@ class EvaluateTest(Folder):
         data[1] = unit("p3", 3, "win", "loss", "success", note="a field the rule does not read")
         self.assertEqual(evaluate(self.rule(), data), evaluate(self.rule(), self.data()))
 
+    def test_a_rule_changed_after_loading_is_refused(self):
+        rule = self.rule()
+        with self.assertRaises(TypeError):
+            rule.families["primary"] = "benjamini-hochberg"  # type: ignore[index]
+        widened = dataclasses.replace(rule, horizon=Horizon("count", 8, None), looks=(8,))
+        with self.assertRaisesRegex(PreregError, f"rule '{rule.id}' no longer matches the record"):
+            evaluate(widened, self.data())
+        renamed = dataclasses.replace(rule, id="layout@000000000000")
+        with self.assertRaisesRegex(PreregError, "no longer matches the record"):
+            evaluate(renamed, self.data())
+
+    def test_a_unit_s_text_and_a_days_as_of_are_checked(self):
+        with self.assertRaisesRegex(PreregError, "is not valid Unicode"):
+            evaluate(self.rule(), [unit("\ud800", 0, "win", "win", "success"), *self.data()])
+        with self.assertRaisesRegex(PreregError, "as a mapping by hypothesis name"):
+            evaluate(self.rule(), [{**unit("p0", 0, "win", "win", "success"), "outcomes": {1: "win"}}, *self.data()])
+        rule = self.rule(horizon={"kind": "days", "days": 3, "start": "2026-01-05"}, looks=[3])
+        with self.assertRaisesRegex(PreregError, "as_of must be a date"):
+            evaluate(rule, [], as_of=datetime(2026, 1, 9, tzinfo=UTC))
+
+    def test_a_days_evaluation_does_not_depend_on_how_same_day_units_are_listed(self):
+        rule = self.rule(horizon={"kind": "days", "days": 1, "start": "2026-01-05"}, looks=[1])
+        data = [
+            unit("a", "2026-01-05", "win", "win", "success"),
+            unit(2, "2026-01-05", "loss", "win", "failure"),
+            unit("c", "2026-01-05", "win", "tie", "success"),
+        ]
+        forward = evaluate(rule, data, as_of=date(2026, 1, 6))
+        self.assertEqual(evaluate(rule, list(reversed(data)), as_of=date(2026, 1, 6)), forward)
+
     def test_evaluate_changes_nothing_it_is_given_and_writes_nothing(self):
         rule, data = self.rule(), self.data()
         before, files = copy.deepcopy(data), sorted(self.folder.iterdir())
@@ -397,6 +454,15 @@ class EvaluateTest(Folder):
 
 class ReadTest(Folder):
     """record_read appends one line per read and returns its receipt."""
+
+    def test_a_reads_file_whose_last_write_was_cut_short_is_not_appended_to(self):
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample())
+        reads = self.folder / "reads.jsonl"
+        reads.write_text('{"schema":"read/1","prereg":', encoding="utf-8")
+        with self.assertRaisesRegex(PreregError, "does not end in a newline"):
+            record_read(rule, result, reads_path=reads)
+        self.assertEqual(reads.read_text(encoding="utf-8"), '{"schema":"read/1","prereg":')
 
     def test_each_read_appends_a_line_and_its_receipt_names_it(self):
         rule = load(self.write(record()))
@@ -434,6 +500,13 @@ class ReadTest(Folder):
             record_read(other, result, reads_path=reads)
         with self.assertRaisesRegex(ValueError, "must carry its timezone"):
             record_read(rule, result, reads_path=reads, now=datetime(2026, 1, 20, 9, 30))
+        self.assertFalse(reads.exists())
+        tampered = dataclasses.replace(rule, experiment="a different synthetic experiment")
+        with self.assertRaisesRegex(PreregError, "no longer matches the record"):
+            record_read(tampered, result, reads_path=reads)
+        forged = Evaluation(rule.id, rule.experiment, 0, "0" * 64, ())
+        with self.assertRaisesRegex(PreregError, "does not hold a result for each"):
+            record_read(rule, forged, reads_path=reads)
         self.assertFalse(reads.exists())
         receipt = record_read(rule, result, reads_path=reads)
         self.assertEqual(receipt.at.tzinfo, UTC)
