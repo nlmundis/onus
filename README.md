@@ -12,7 +12,9 @@ It is built for `unittest` suites and has no runtime dependencies.
 
 Pre-release (v0.0.0). The gate and the exact statistics are in place: `onus.stats` has the binomial, sign,
 paired sign, and exact McNemar tests, Wilson and Clopper-Pearson intervals, Holm and Benjamini-Hochberg over
-declared families, and exact power, minimum detectable effect, and peeking size. v0.1.0 brings:
+declared families, and exact power, minimum detectable effect, and peeking size. `onus.prereg` loads
+`prereg/1` records, evaluates them at their horizon with the sign or binomial test, and records each read; its
+amendments arrive with `onus.signoff`. v0.1.0 brings:
 
 | Subpackage | What it gives a caller |
 |---|---|
