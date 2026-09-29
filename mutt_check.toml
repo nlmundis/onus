@@ -4,7 +4,7 @@
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
-suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties"]
+suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg"]
 timeout = 300
 
 # --- the environment every stage runs with ---
@@ -1444,3 +1444,133 @@ suites = ["tests.test_stats.ScaleTest"]
 file = "tests/test_stats.py"
 find = "        if time.perf_counter() - start > seconds:\n"
 replace = "        if False:\n"
+
+# --- pre-registration ---
+
+[[mutant]]
+name = "unknown_prereg_key_accepted"
+why = "A key prereg/1 does not define, such as a notes field or a power target, would load as if it bound nothing."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if unknown:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_float_in_the_record_accepted"
+why = "0.05 as a float is not 1/20; a float alpha would load, and the record could not say what it meant exactly."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "parse_float=_no_float, "
+replace = ""
+
+[[mutant]]
+name = "a_changed_bound_artifact_accepted"
+why = "An analysis plan edited after registering would still load under the record that bound its old content."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "        if actual != digest:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_cluster_key_ignored"
+why = "v0.1 has no clustered analysis, so a cluster_key would load and its units be tested as if independent."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if record[\"cluster_key\"] is not None:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "interim_looks_accepted"
+why = "Planned interim looks would load though this release reads a rule only at its horizon and spends no alpha on them."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if record[\"looks\"] != [horizon.size]:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "horizon_not_enforced"
+why = "A count horizon of 6 would be evaluated on 5 units, a verdict read before the data the rule waits for."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        if len(units) < horizon.size:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "evaluate_uses_more_than_the_first_n"
+why = "Units past the horizon would be counted, so data gathered after the rule's stopping point could change the verdict."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "sorted(units, key=lambda unit: unit[1])[: horizon.size]"
+replace = "sorted(units, key=lambda unit: unit[1])"
+
+[[mutant]]
+name = "evaluate_ignores_order_key"
+why = "The first N units in the data's listed order, not in order_key order, would be used."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "sorted(units, key=lambda unit: unit[1])[: horizon.size]"
+replace = "units[: horizon.size]"
+
+[[mutant]]
+name = "repeated_order_values_accepted"
+why = "With two units sharing an order value at the cut, which one is among the first N would depend on the listing."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        if len(set(orders)) != len(orders):\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "repeated_unit_ids_accepted"
+why = "A unit listed twice would be counted twice."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if len(set(ids)) != len(ids):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_days_window_read_before_it_closes"
+why = "A days horizon would be evaluated while its window is still open."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if as_of < horizon.end:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "units_outside_the_days_window_used"
+why = "Units dated before the window's start or after its end would be counted."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "if horizon.start <= day < horizon.end]"
+replace = "if True]"
+
+[[mutant]]
+name = "a_unit_missing_an_outcome_escapes_as_a_key_error"
+why = "A used unit that records no outcome for a hypothesis must be refused by name, not fail with a KeyError."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        if not isinstance(outcomes, Mapping) or sorted(outcomes) != sorted(names):\n"
+replace = "        if not isinstance(outcomes, Mapping):\n"
+
+[[mutant]]
+name = "an_outcome_outside_the_tests_vocabulary_ignored"
+why = "A sign test's unit recording 'success' would count as neither win nor loss, silently shrinking n."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "            if outcomes[hypothesis.name] not in OUTCOMES[hypothesis.test]:\n"
+replace = "            if False:\n"
+
+[[mutant]]
+name = "a_family_decided_on_raw_p_values"
+why = "Two members at raw 1/32 would both be met at 0.05, though Holm makes each 1/16."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "decide(adjusted[h.name], h.alpha)"
+replace = "decide(results[h.name], h.alpha)"
+
+[[mutant]]
+name = "a_read_recorded_against_another_rule"
+why = "A receipt would name a rule the evaluation did not come from."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if evaluation.prereg != rule.id:\n"
+replace = "    if False:\n"
