@@ -171,13 +171,14 @@ class RecordTest(Folder):
             "the float 0.05": '{"alpha": 0.05}',
             "holds NaN": '{"alpha": NaN}',
             r"gives a key more than once: \['schema'\]": '{"schema": "prereg/1", "schema": "prereg/1"}',
-            "is not JSON onus can read": "{",
+            "not JSON onus can read: Expecting": "{",
             "is not UTF-8": b"\xff",
             r"the float 0\.05": json.dumps(record()).replace('"alpha": "0.05"', '"alpha": 0.05', 1),
             "Exceeds the limit": '{"n": ' + "9" * 5000 + "}",
-            "maximum recursion depth": "[" * 200000,
+            # Each interpreter words its limit differently (3.14 reports a stack overflow), so match onus's words.
+            "the record is not JSON onus can read": "[" * 200000,
             # Deeper than Python's recursion limit: 3.11's parser refuses it, 3.13's accepts it and the walk must not.
-            "the record must be an object|maximum recursion depth": "[" * 3000 + "]" * 3000,
+            "the record must be an object|the record is not JSON onus can read": "[" * 3000 + "]" * 3000,
             "not valid Unicode": json.dumps(record(experiment="\ud800")),
         }
         for message, text in cases.items():
