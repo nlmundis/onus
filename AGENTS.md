@@ -33,11 +33,12 @@ by `.claude/settings.json`, fills the gap only when `CLAUDE_CODE_REMOTE` is `tru
 `~/.pyenv` unless `~/.pyenv/bin/pyenv` runs. It then builds each patch whose `python3` does not run and report
 its exact version, from that patch's `v<X.Y.Z>` tag of `github.com/python/cpython`: a `--depth 1` clone,
 `./configure --prefix=$HOME/.pyenv/versions/<X.Y.Z>`, then CPython's own make, in parallel, and its install
-target. It reads the patches from `.python-version` and `COMPAT_PIN`, so a new pin needs no change to it.
-However the hook ends, it removes its temp folder and any prefix it was building, keeping only a failed
-build's log, so the next start tries again; with both patches present it only checks them, in well under a
-second. It puts `~/.pyenv/bin` on the session's PATH even when a build fails. The first build takes a few
-minutes and needs github.com in the environment's network allowlist. A local session is left alone.
+target. It reads the patches from `.python-version` and `COMPAT_PIN`, so a new pin needs no change to it. When
+it exits, fails, or is stopped by HUP, INT, or TERM, it removes its temp folder and any prefix it was
+building, keeping only a failed build's log, so the next start tries again (SIGKILL leaves the folder behind);
+with both patches present it only checks them, in well under a second. It puts `~/.pyenv/bin` on the session's
+PATH even when a build fails. The first build takes a few minutes and needs github.com in the environment's
+network allowlist. A local session is left alone.
 
 ## Rules
 

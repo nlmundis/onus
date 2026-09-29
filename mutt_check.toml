@@ -1423,7 +1423,7 @@ replace = "    if False:\n"
 
 [[mutant]]
 name = "a_refused_budget_replaces_the_outer_handler"
-why = "A nested within refused only after it installed its handler would leave that handler in place, so the outer budget would fail with the inner one's message."
+why = "A nested within refused only after it replaced the SIGALRM handler would leave its own handler in place, so the outer budget would no longer fail with its own."
 suites = ["tests.test_stats.ScaleTest"]
 file = "tests/test_stats.py"
 find = "    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"

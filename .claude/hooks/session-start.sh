@@ -26,8 +26,9 @@ for v in "$pin" "$compat"; do
 done
 
 logs="$(mktemp -d "${TMPDIR:-/tmp}/onus-session-start.XXXXXX")"
-# However the hook ends (a failed clone, a failed build, or the hook's timeout), it removes its temp folder, a
-# CPython checkout included, and any prefix it was building; only a failed build's log is kept.
+# When the hook exits, fails, or is stopped by HUP, INT, or TERM, it removes its temp folder, a CPython checkout
+# included, and any prefix it was building; only a failed build's log is kept. A signal sent to this shell alone
+# waits for the running build step; SIGKILL leaves the folder behind.
 building=""
 kept_log=""
 cleanup() {
@@ -35,7 +36,7 @@ cleanup() {
     rm -rf "$PYENV_ROOT/versions/$building"
   fi
   if [ -n "$kept_log" ]; then
-    find "$logs" -mindepth 1 -maxdepth 1 ! -path "$kept_log" -exec rm -rf {} +
+    find "$logs" -mindepth 1 -maxdepth 1 ! -name "${kept_log##*/}" -exec rm -rf {} +
   else
     rm -rf "$logs"
   fi
