@@ -246,7 +246,9 @@ def record_read(
     one process at a time should record reads to a file.
 
     Raises:
-        PreregError: ``evaluation`` is not a result of ``rule``, ``rule`` no longer matches its record, or the
+        PreregError: ``evaluation`` names another rule or other hypotheses, states a family or alpha the rule does
+            not, or labels a hypothesis other than its adjusted p-value decides; ``rule`` no longer matches its
+            record; or the
             reads file's last line was cut short.
         ValueError: ``now`` has no timezone.
     """
@@ -255,6 +257,12 @@ def record_read(
         raise PreregError(f"the evaluation is of {evaluation.prereg!r}, not of {rule.id!r}")
     if [hypothesis.name for hypothesis in evaluation.hypotheses] != [h.name for h in rule.hypotheses]:
         raise PreregError(f"the evaluation does not hold a result for each of {rule.id!r}'s hypotheses")
+    # The data is not here to re-check, so only what follows from the rule is: pass what evaluate returned.
+    for result, hypothesis in zip(evaluation.hypotheses, rule.hypotheses, strict=True):
+        if (result.family, result.alpha) != (hypothesis.family, hypothesis.alpha):
+            raise PreregError(f"{result.name!r} states a family or alpha that {rule.id!r} does not")
+        if result.met != decide(result.adjusted_p, result.alpha):
+            raise PreregError(f"{result.name!r} is labelled {result.label!r}, which its adjusted p-value does not give")
     at = datetime.now(UTC) if now is None else now
     if at.tzinfo is None or at.utcoffset() is None:
         raise ValueError(f"now must carry its timezone, not {at!r}")

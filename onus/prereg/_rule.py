@@ -114,7 +114,8 @@ class Rule:
         looks: when its result is planned to be read; in this release, only at the horizon.
         bound_artifacts: the sha256 of each file the record binds, by path relative to the record.
         provenance: free-form notes on where the record came from.
-        raw: the record's bytes, which ``evaluate`` and ``record_read`` check the rule still matches.
+        raw: the record's bytes, which ``evaluate`` and ``record_read`` check the rule still matches; the bound
+            files are checked only by ``load``.
     """
 
     id: str
@@ -258,7 +259,11 @@ def _bound(value: object, root: Path | None) -> dict[str, str]:
         if root is None:
             continue
         target = root / path
-        if not target.resolve().is_relative_to(root.resolve()):
+        try:
+            inside = target.resolve().is_relative_to(root.resolve())
+        except (OSError, RuntimeError):  # a symlink loop: RuntimeError on 3.11, OSError from 3.13
+            raise BoundArtifactError(f"bound artifact {name!r} cannot be resolved; is it a symlink loop?") from None
+        if not inside:
             raise PreregError(f"bound artifact {name!r} must be a plain relative path inside the record's folder")
         if not target.is_file():
             raise BoundArtifactError(f"bound artifact {name!r} is missing from {root}")
@@ -269,19 +274,23 @@ def _bound(value: object, root: Path | None) -> dict[str, str]:
 
 
 def _unicode(value: object) -> None:
-    """Refuse text JSON can carry but UTF-8 cannot: a lone surrogate, from an escape like the one for U+D800."""
-    if isinstance(value, str):
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError:
-            raise PreregError(f"the record holds text that is not valid Unicode: {value!r}") from None
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            _unicode(key)
-            _unicode(item)
-    elif isinstance(value, list):
-        for item in value:
-            _unicode(item)
+    """Refuse text JSON can carry but UTF-8 cannot: a lone surrogate, from an escape like the one for U+D800.
+
+    The walk keeps its own stack, since json may accept nesting deeper than Python's recursion limit.
+    """
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError:
+                raise PreregError(f"the record holds text that is not valid Unicode: {item!r}") from None
+        elif isinstance(item, dict):
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
 
 
 def _parse(raw: bytes, *, rule_id: str, root: Path | None) -> Rule:

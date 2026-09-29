@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import onus
 from onus.prereg import (
@@ -175,6 +176,8 @@ class RecordTest(Folder):
             r"the float 0\.05": json.dumps(record()).replace('"alpha": "0.05"', '"alpha": 0.05', 1),
             "Exceeds the limit": '{"n": ' + "9" * 5000 + "}",
             "maximum recursion depth": "[" * 200000,
+            # Deeper than Python's recursion limit: 3.11's parser refuses it, 3.13's accepts it and the walk must not.
+            "the record must be an object|maximum recursion depth": "[" * 3000 + "]" * 3000,
             "not valid Unicode": json.dumps(record(experiment="\ud800")),
         }
         for message, text in cases.items():
@@ -273,6 +276,7 @@ class RecordTest(Folder):
         digest = hashlib.sha256(analysis.read_bytes()).hexdigest()
         rule = load(self.write(record(bound_artifacts={"plan.md": digest})))
         self.assertEqual(dict(rule.bound_artifacts), {"plan.md": digest})
+        self.assertEqual(evaluate(rule, sample()).n, 6)  # an intact rule with bound files is evaluated as it is
         analysis.write_text("the synthetic analysis plan, edited after registering\n", encoding="utf-8")
         with self.assertRaisesRegex(BoundArtifactError, "'plan.md' has changed"):
             load(self.write(record(bound_artifacts={"plan.md": digest})))
@@ -289,6 +293,11 @@ class RecordTest(Folder):
         linked = hashlib.sha256(analysis.read_bytes()).hexdigest()
         with self.assertRaisesRegex(PreregError, "'linked.md' must be a plain relative path inside"):
             load(self.write(record(bound_artifacts={"linked.md": linked})))
+        # A symlink loop: Path.resolve raises RuntimeError on 3.11 and OSError from 3.13.
+        for error in (RuntimeError("Symlink loop from 'loop.md'"), OSError(40, "Too many levels of symbolic links")):
+            with self.subTest(error=type(error).__name__), mock.patch.object(Path, "resolve", side_effect=error):
+                with self.assertRaisesRegex(BoundArtifactError, "'plan.md' cannot be resolved"):
+                    load(self.write(record(bound_artifacts={"plan.md": linked})))
         with self.assertRaisesRegex(PreregError, "must name a lowercase hex sha256"):
             load(self.write(record(bound_artifacts={"plan.md": digest.upper()})))
         with self.assertRaisesRegex(PreregError, "bound_artifacts must be an object"):
@@ -507,6 +516,16 @@ class ReadTest(Folder):
         forged = Evaluation(rule.id, rule.experiment, 0, "0" * 64, ())
         with self.assertRaisesRegex(PreregError, "does not hold a result for each"):
             record_read(rule, forged, reads_path=reads)
+        flipped = dataclasses.replace(
+            result, hypotheses=tuple(dataclasses.replace(h, met=not h.met) for h in result.hypotheses)
+        )
+        with self.assertRaisesRegex(PreregError, "'faster' is labelled 'not met', which its adjusted p-value"):
+            record_read(rule, flipped, reads_path=reads)
+        moved = dataclasses.replace(
+            result, hypotheses=(dataclasses.replace(result.hypotheses[0], alpha=Fraction(1, 2)), *result.hypotheses[1:])
+        )
+        with self.assertRaisesRegex(PreregError, "'faster' states a family or alpha"):
+            record_read(rule, moved, reads_path=reads)
         self.assertFalse(reads.exists())
         receipt = record_read(rule, result, reads_path=reads)
         self.assertEqual(receipt.at.tzinfo, UTC)
