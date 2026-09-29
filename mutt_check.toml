@@ -1336,5 +1336,63 @@ name = "a_huge_int_quantile_printed_in_full"
 why = "An int past Python's 4300-digit print limit makes repr raise its own ValueError, so the refusal names neither z nor the reason."
 suites = ["tests.test_stats.IntervalTest"]
 file = "onus/stats/intervals.py"
-find = "if math.isinf(crit) and isinstance(z, int) else repr(z)"
-replace = "if False else repr(z)"
+find = "        if isinstance(z, int) and z.bit_length() > 1024:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_huge_int_quantile_judged_by_its_float"
+why = "An int subclass's __float__ may pose as 1.96 while the int has 16610 bits; judged by float(z), it is accepted as a quantile."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "        if isinstance(z, int) and z.bit_length() > 1024:\n"
+replace = "        if isinstance(z, int) and math.isinf(float(z)):\n"
+
+[[mutant]]
+name = "a_float_sized_int_quantile_named_by_its_size"
+why = "At 1024 bits an int can still be a float (2**1023), so it is refused by its value; only a wider one is named by size."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = "z.bit_length() > 1024:"
+replace = "z.bit_length() >= 1024:"
+
+[[mutant]]
+name = "a_huge_negative_int_quantile_loses_its_sign"
+why = "-(10**5000) was named as an int of 16610 bits, as if it were positive."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = 'sign = "a negative" if z < 0 else "an"'
+replace = 'sign = "an"'
+
+[[mutant]]
+name = "a_huge_positive_int_quantile_named_negative"
+why = "10**5000 would be named as a negative int of 16610 bits."
+suites = ["tests.test_stats.IntervalTest"]
+file = "onus/stats/intervals.py"
+find = 'sign = "a negative" if z < 0 else "an"'
+replace = 'sign = "a negative"'
+
+# --- the tests' time budget ---
+
+[[mutant]]
+name = "a_budget_nested_in_a_budget"
+why = "A nested within re-arms the one real-time timer and, on leaving, switches the outer budget off."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_budget_without_an_interval_timer_crashes"
+why = "Where signal has no setitimer (Windows), within reaches for it anyway and raises AttributeError instead of timing the block."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "    if not hasattr(signal, \"setitimer\"):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_budget_without_an_interval_timer_never_checked"
+why = "Without an interval timer the block is timed, and a block that ran past its budget must fail once it ends."
+suites = ["tests.test_stats.ScaleTest"]
+file = "tests/test_stats.py"
+find = "        if time.perf_counter() - start > seconds:\n"
+replace = "        if False:\n"

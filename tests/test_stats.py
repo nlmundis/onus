@@ -142,7 +142,19 @@ class DecisionTest(unittest.TestCase):
 
 @contextmanager
 def within(seconds: float) -> Iterator[None]:
-    """Fail when the budget runs out rather than when the work ends, so a slow regression fails in seconds."""
+    """Fail when the budget runs out rather than when the work ends, so a slow regression fails in seconds.
+
+    Budgets do not nest: the inner one would re-arm the one real-time timer and, on leaving, switch off the outer
+    budget. Where there is no interval timer (Windows), the block is timed and fails afterwards instead.
+    """
+    if not hasattr(signal, "setitimer"):
+        start = time.perf_counter()
+        yield
+        if time.perf_counter() - start > seconds:
+            raise AssertionError(f"took longer than {seconds} seconds")
+        return
+    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:
+        raise RuntimeError("within does not nest: a real-time timer is already running, and would be switched off")
 
     def expire(signum: int, frame: object) -> None:
         raise AssertionError(f"took longer than {seconds} seconds")
@@ -222,6 +234,25 @@ class ScaleTest(unittest.TestCase):
             with within(0.05):
                 time.sleep(10)
         self.assertLess(time.perf_counter() - start, 5.0)
+
+    def test_a_budget_inside_a_budget_is_refused_and_leaves_the_outer_one_running(self):
+        with within(30.0):
+            with self.assertRaisesRegex(RuntimeError, "within does not nest"):
+                with within(1.0):
+                    pass
+            self.assertGreater(signal.getitimer(signal.ITIMER_REAL)[0], 0)
+
+    def test_without_an_interval_timer_a_budget_times_the_block_and_fails_afterwards(self):
+        # A signal module with no setitimer, as on Windows; the budget must not touch it at all.
+        with mock.patch.object(sys.modules[__name__], "signal", types.SimpleNamespace()):
+            with within(5.0):
+                pass
+            start = time.perf_counter()
+            with self.assertRaisesRegex(AssertionError, "longer than 0.01 seconds"):
+                with within(0.01):
+                    time.sleep(0.05)
+            # It fails only once the block ends: no timer cut the sleep short.
+            self.assertGreaterEqual(time.perf_counter() - start, 0.05)
 
 
 class ExactSizeTest(unittest.TestCase):
@@ -368,14 +399,33 @@ class IntervalTest(unittest.TestCase):
         self.assertNotEqual(wilson(7, 20).low, wilson(7, 20, z=1.0).low)
 
     def test_wilson_refuses_a_quantile_that_cannot_be_one_and_a_confidence_beside_it(self):
-        for z in (-1.96, 0.0, float("nan"), float("inf"), 40.0, 10**400, -(10**400)):
+        # 2**1024 - 1 has 1024 bits, so it passes the size check, yet float() of it rounds past the largest float.
+        widest = 2**1024 - 1
+        for z in (-1.96, 0.0, float("nan"), float("inf"), 40.0, 10**400, -(10**400), widest, -widest):
             with self.subTest(z=z):
                 with self.assertRaisesRegex(ValueError, "z must be a positive"):
                     wilson(3, 10, z=z)
         with self.assertRaisesRegex(ValueError, "confidence or z, not both"):
             wilson(3, 10, confidence="0.9", z=1.64)
-        with self.assertRaisesRegex(ValueError, "not an int of 16610 bits"):
+
+    def test_wilson_names_an_int_beyond_any_float_by_its_size_and_sign(self):
+        # Past Python's 4300-digit print limit repr itself raises, so the refusal names the size, not the digits.
+        with self.assertRaisesRegex(ValueError, "z must be a positive .*, not an int of 16610 bits$"):
             wilson(3, 10, z=10**5000)
+        with self.assertRaisesRegex(ValueError, "z must be a positive .*, not a negative int of 16610 bits$"):
+            wilson(3, 10, z=-(10**5000))
+        # At 1024 bits an int can still be a float (2**1023 is one), so it is refused by value, digits and all.
+        with self.assertRaisesRegex(ValueError, f"not {2**1023}$"):
+            wilson(3, 10, z=2**1023)
+
+    def test_wilson_judges_a_huge_int_by_its_size_not_by_what_its_float_says(self):
+        class Posing(int):
+            def __float__(self) -> float:
+                return 1.96
+
+        # A huge int whose __float__ poses as a quantile is still no quantile.
+        with self.assertRaisesRegex(ValueError, "not an int of 16610 bits$"):
+            wilson(3, 10, z=Posing(10**5000))
         wrong: list[Any] = [True, "1.96", Fraction(49, 25), Decimal("1.96")]
         for z in wrong:
             with self.subTest(z=z):

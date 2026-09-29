@@ -27,6 +27,17 @@ check, each handed to uv by path; never let uv discover or download one. `make i
 before any stage runs, and `make gate-env` prints the settings make exports to every stage. Tools run
 through uvx or `uv run --no-project` at the versions pinned in the Makefile.
 
+A cloud session (Claude Code on the web) starts with neither interpreter, and python.org is out of its reach,
+so `pyenv install` cannot fetch a source tarball there. `.claude/hooks/session-start.sh`, run at session start
+by `.claude/settings.json`, fills the gap only when `CLAUDE_CODE_REMOTE` is `true`. It clones pyenv into
+`~/.pyenv` if `~/.pyenv/bin/pyenv` is missing. It then builds each patch whose `python3` does not run and
+report its exact version, from that patch's `v<X.Y.Z>` tag of `github.com/python/cpython`: a `--depth 1`
+clone, `./configure --prefix=$HOME/.pyenv/versions/<X.Y.Z>`, then CPython's own make, in parallel, and its
+install target. It reads the patches from `.python-version` and `COMPAT_PIN`, so a new pin needs no change to
+it. A failed build removes its prefix, so the next start tries again; with both patches present it only checks
+them, in well under a second. It puts `~/.pyenv/bin` on the session's PATH. The first build takes a few
+minutes and needs github.com in the environment's network allowlist. A local session is left alone.
+
 ## Rules
 
 - **No runtime dependency.** `dependencies = []`. Only `onus.invariants` may import hypothesis, and only
