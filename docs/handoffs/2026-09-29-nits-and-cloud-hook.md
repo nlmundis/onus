@@ -2,19 +2,24 @@
 date: 2026-09-29
 scope: two nits left open by the onus.stats handoff (wilson's size check, the tests' within budget), and a SessionStart hook that builds the gate's interpreters in a cloud session
 state: in-progress
-prs: []
-next: read the PR's review state and gate result, then wait for the maintainer's word on merging
+prs: [4]
+next: merge PR #4 on the maintainer's word once CI is green, then start L1 step 3 from main
 ---
 
 # Handoff: wilson and within nits, and the cloud session hook (2026-09-29)
 
 ## State
 
-- **Branch** `claude/infallible-greider-507a0e-rpg3uu`, from main `0711fea` (PR #3's merge). Not merged; the
+- **PR #4**, branch `claude/infallible-greider-507a0e-rpg3uu`, from main `0711fea` (PR #3's merge). Not merged; the
   maintainer merges it on their word. L1 step 3 was not started.
-- **Gate:** GATE_RESULT
-- **Reviews:** one adversarial review of the first commit found two bugs, both fixed in `56e1ea2`; a
-  re-review of that commit REVIEW2_RESULT
+- **Gate:** `make -f Makefile check` exit 0 on `c6acd9a`, on pyenv's 3.13.12 and 3.11.14 as built by the new
+  hook: 161 tests, 100% branch coverage, the dist check passed, 170 of 170 mutants caught, and the no-op
+  survived. The raw output is in the PR.
+- **Reviews:** three adversarial rounds. The first, of `7851b38`, found two bugs, fixed in `56e1ea2`: wilson
+  read z through a subclass's own `__float__`, `bit_length`, and `<`, and the hook's build ran with `set -e`
+  off, so a failed clone went on to run configure and make in the checkout. The second found two mutants whose
+  `why` no longer named the reason their test fails, fixed in `c6acd9a` together with its nit (the refusal
+  named z through the subclass's own `__repr__`). The third, of `c6acd9a`, found no bug.
 
 ## Done this session
 
@@ -27,7 +32,7 @@ next: read the PR's review state and gate result, then wait for the maintainer's
   is armed, so an inner budget can no longer switch the outer one off. Where `signal` has no `setitimer` it
   times the block and fails afterwards, without skipping; the test patches the module's `signal` with an
   empty namespace. The scale tests that check the timer itself still assume Linux.
-- **Mutants:** 11 new (wilson 8, within 3), 169 in all, and the rewritten anchor of
+- **Mutants:** 12 new (wilson 9, within 3), 170 in all, and the rewritten anchor of
   `a_huge_int_quantile_printed_in_full`; each was run alone and caught by the test it names.
 - **SessionStart hook** (`.claude/hooks/session-start.sh`, registered in `.claude/settings.json` with a
   30-minute timeout), documented in AGENTS.md. Only when `CLAUDE_CODE_REMOTE` is `true`, it installs pyenv
