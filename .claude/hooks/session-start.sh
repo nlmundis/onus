@@ -27,45 +27,16 @@ done
 
 logs="$(mktemp -d "${TMPDIR:-/tmp}/onus-session-start.XXXXXX")"
 
-if [ ! -x "$PYENV_ROOT/bin/pyenv" ]; then
+# A pyenv that does not run (absent, or a copy cut short) is copied in again.
+if ! "$PYENV_ROOT/bin/pyenv" --version > /dev/null 2>&1; then
   git clone --quiet --depth 1 https://github.com/pyenv/pyenv "$logs/pyenv"
   mkdir -p "$PYENV_ROOT"
   cp -a "$logs/pyenv/." "$PYENV_ROOT/"
+  rm -rf "$logs/pyenv"
   echo "session-start: installed pyenv in $PYENV_ROOT"
 fi
 
-# A patch counts as present only when its python3 runs and reports that exact version.
-present() {
-  [ "$("$PYENV_ROOT/versions/$1/bin/python3" -c 'import platform; print(platform.python_version())' 2>/dev/null)" = "$1" ]
-}
-
-build() {
-  local v="$1" prefix="$PYENV_ROOT/versions/$1" src="$logs/cpython-$1"
-  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v$v" https://github.com/python/cpython "$src"
-  (
-    cd "$src"
-    ./configure --prefix="$prefix"
-    make -j"$(nproc)"
-    make install
-  ) > "$logs/build-$v.log" 2>&1
-}
-
-for v in "$pin" "$compat"; do
-  if present "$v"; then
-    continue
-  fi
-  echo "session-start: building Python $v from CPython's v$v tag (log in $logs/build-$v.log)"
-  # A failed or partial build leaves no prefix behind, so the next start builds it again.
-  if ! build "$v" || ! present "$v"; then
-    rm -rf "$PYENV_ROOT/versions/$v"
-    echo "session-start: building Python $v failed; the last lines of its log:" >&2
-    tail -n 40 "$logs/build-$v.log" >&2 || true
-    exit 1
-  fi
-  rm -rf "$logs/cpython-$v"
-  echo "session-start: built Python $v in $PYENV_ROOT/versions/$v"
-done
-
+# pyenv goes on the session's PATH whether or not the builds below succeed.
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   {
     echo "export PYENV_ROOT=\"$PYENV_ROOT\""
@@ -73,5 +44,38 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   } >> "$CLAUDE_ENV_FILE"
 fi
 
-rmdir "$logs" 2>/dev/null || true
+# A patch counts as present only when its python3 runs and reports that exact version.
+present() {
+  [ "$("$PYENV_ROOT/versions/$1/bin/python3" -c 'import platform; print(platform.python_version())' 2>/dev/null)" = "$1" ]
+}
+
+# Called inside an `if`, where set -e is off, so every step is chained explicitly.
+build() {
+  local v="$1" prefix="$PYENV_ROOT/versions/$1" src="$logs/cpython-$1"
+  {
+    git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v$v" https://github.com/python/cpython "$src" &&
+      cd "$src" &&
+      ./configure --prefix="$prefix" &&
+      make -j"$(nproc)" &&
+      make install
+  } > "$logs/build-$v.log" 2>&1
+}
+
+for v in "$pin" "$compat"; do
+  if present "$v"; then
+    continue
+  fi
+  echo "session-start: building Python $v from CPython's v$v tag"
+  # A failed or partial build leaves no prefix behind, so the next start builds it again. Its log is kept.
+  if ! (build "$v") || ! present "$v"; then
+    rm -rf "$PYENV_ROOT/versions/$v" "$logs/cpython-$v"
+    echo "session-start: building Python $v failed; its log is $logs/build-$v.log, ending:" >&2
+    tail -n 40 "$logs/build-$v.log" >&2 || true
+    exit 1
+  fi
+  rm -rf "$logs/cpython-$v" "$logs/build-$v.log"
+  echo "session-start: built Python $v in $PYENV_ROOT/versions/$v"
+done
+
+rm -rf "$logs"
 echo "session-start: pyenv has Python $pin and $compat"

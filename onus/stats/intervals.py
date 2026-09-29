@@ -66,13 +66,15 @@ def wilson(k: int, n: int, *, confidence: Fraction | int | str | None = None, z:
             raise ValueError("wilson takes confidence or z, not both")
         if isinstance(z, bool) or not isinstance(z, int | float):
             raise TypeError(f"z must be a float such as 1.96, not {z!r}")
-        if isinstance(z, int) and z.bit_length() > 1024:
-            # Beyond any float, and perhaps beyond the digits Python will print: judged and named by its size, since
-            # an int subclass's __float__ may say anything, and repr would raise past 4300 digits.
-            sign = "a negative" if z < 0 else "an"
-            raise ValueError(f"{_NOT_A_QUANTILE}, not {sign} int of {z.bit_length()} bits")
+        # z is judged by its value as int or float holds it: a subclass's own __float__, bit_length, or < may say
+        # anything.
+        if isinstance(z, int) and int.bit_length(z) > 1024:
+            # Beyond any float, and perhaps beyond the digits Python will print (repr raises past 4300), so it is
+            # named by its size.
+            sign = "a negative" if int.__lt__(z, 0) else "an"
+            raise ValueError(f"{_NOT_A_QUANTILE}, not {sign} int of {int.bit_length(z)} bits")
         try:
-            crit = float(z)
+            crit = int.__float__(z) if isinstance(z, int) else float.__float__(z)
         except OverflowError:  # a 1024-bit int that rounds past the largest float; refuse it as no quantile below
             crit = math.inf
         implied = 2 * NormalDist().cdf(crit) - 1 if math.isfinite(crit) else math.nan

@@ -145,7 +145,8 @@ def within(seconds: float) -> Iterator[None]:
     """Fail when the budget runs out rather than when the work ends, so a slow regression fails in seconds.
 
     Budgets do not nest: the inner one would re-arm the one real-time timer and, on leaving, switch off the outer
-    budget. Where there is no interval timer (Windows), the block is timed and fails afterwards instead.
+    budget. Where there is no interval timer (Windows), the block is timed and fails afterwards instead; the scale
+    tests that check the timer itself still assume one.
     """
     if not hasattr(signal, "setitimer"):
         start = time.perf_counter()
@@ -407,6 +408,12 @@ class IntervalTest(unittest.TestCase):
                     wilson(3, 10, z=z)
         with self.assertRaisesRegex(ValueError, "confidence or z, not both"):
             wilson(3, 10, confidence="0.9", z=1.64)
+        wrong: list[Any] = [True, "1.96", Fraction(49, 25), Decimal("1.96")]
+        for z in wrong:
+            with self.subTest(z=z):
+                with self.assertRaisesRegex(TypeError, "z must be a float such as 1.96"):
+                    wilson(3, 10, z=z)
+        self.assertEqual(wilson(3, 10, z=2), wilson(3, 10, z=2.0))
 
     def test_wilson_names_an_int_beyond_any_float_by_its_size_and_sign(self):
         # Past Python's 4300-digit print limit repr itself raises, so the refusal names the size, not the digits.
@@ -418,20 +425,36 @@ class IntervalTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, f"not {2**1023}$"):
             wilson(3, 10, z=2**1023)
 
-    def test_wilson_judges_a_huge_int_by_its_size_not_by_what_its_float_says(self):
+    def test_wilson_judges_z_by_its_value_not_by_what_a_subclass_says(self):
         class Posing(int):
             def __float__(self) -> float:
                 return 1.96
 
-        # A huge int whose __float__ poses as a quantile is still no quantile.
+        class PosingFloat(float):
+            def __float__(self) -> float:
+                return 1.96
+
+        class Liar(int):
+            def __float__(self) -> float:
+                return 1.96
+
+            def bit_length(self) -> int:
+                return 5
+
+            def __lt__(self, other: object) -> bool:
+                return False
+
+        # An int or float subclass whose __float__ poses as 1.96 is taken at its own value.
+        self.assertEqual(wilson(3, 10, z=Posing(3)), wilson(3, 10, z=3))
+        with self.assertRaisesRegex(ValueError, "not 40.0$"):
+            wilson(3, 10, z=PosingFloat(40.0))
+        # So is a huge one, whatever it says of its float, its size, or its sign.
         with self.assertRaisesRegex(ValueError, "not an int of 16610 bits$"):
             wilson(3, 10, z=Posing(10**5000))
-        wrong: list[Any] = [True, "1.96", Fraction(49, 25), Decimal("1.96")]
-        for z in wrong:
-            with self.subTest(z=z):
-                with self.assertRaisesRegex(TypeError, "z must be a float such as 1.96"):
-                    wilson(3, 10, z=z)
-        self.assertEqual(wilson(3, 10, z=2), wilson(3, 10, z=2.0))
+        with self.assertRaisesRegex(ValueError, "not an int of 16610 bits$"):
+            wilson(3, 10, z=Liar(10**5000))
+        with self.assertRaisesRegex(ValueError, "not a negative int of 16610 bits$"):
+            wilson(3, 10, z=Liar(-(10**5000)))
 
     def test_clopper_pearson_bounds_meet_their_exact_tails_even_at_high_confidence(self):
         # At each bound the exact tail equals (1 - confidence) / 2: P(X >= k) at the lower, P(X <= k) at the upper.
