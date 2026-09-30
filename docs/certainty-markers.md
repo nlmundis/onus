@@ -76,8 +76,7 @@ written as inline code.
 **Each marker is a single string literal, and the scanner accepts no variants.** The scanner matches the
 precise strings the writers are told to emit, instead of a pattern that tolerates variations in spelling;
 hence, what is counted cannot drift away from what is written. The cost of this choice is that a misspelled
-marker is simply not counted, and consequently both the writers' instructions and the write-time reminder
-bear the precise strings.
+marker is simply not counted, and consequently both the writers' instructions and the write-time reminder bear the precise strings. In that sense the markers behave as idioms do: their meaning is agreed upon and holds only in the fixed form, much as "kick the bucket" stops meaning anything in particular once it becomes "kick the pail".
 
 ## How It Is Enforced, in Three Layers
 
@@ -143,7 +142,7 @@ The search behind this section was conducted in two passes on September 29, 2026
 encyclopedia maintenance templates, code annotation conventions, note-taking communities, documentation and
 knowledge-base tools, and recent work on LLM grounding and agent memory; the second covered engineering
 requirements practice, intelligence analysis, legal citators, provenance standards, and laboratory notebooks.
-Every source below was accessed that day. Each piece of this convention has a published precedent somewhere
+Every source below was accessed that day. Each piece of this idiomatic system has a published precedent somewhere
 below: engineering requirements attach a closure plan to an unconfirmed value, Wikipedia dates its tags, and
 an agent-metadata format stores a re-runnable check with each verified claim. What no source was found to
 combine is the particular set: a binary flag the writer places inline, on the claim's own line, at the moment
