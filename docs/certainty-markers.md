@@ -1,79 +1,56 @@
-# Certainty markers: a grammar for claims nobody has checked yet
-
+# Uncertainty Markers: Labels to Track the Strength of Claims
 *September 2026*
 
-An agent that writes into a knowledge base has two bad options when it is not sure of something. It can
-assert the claim anyway, in which case the note carries a wrong fact with the same authority as a right one.
-Or it can drop the claim, in which case a later reader cannot tell a thing that was checked and found false
-from a thing that was never looked at, or from a thing nobody thought of.
+In a strict sense, when an agent writes into a knowledge store, like an Obsidian Vault, it can either make the claim or not.  And we all know that Agents are often arrogant and will exert many things it assumes a facts.  That doesn't work for me as hallucinations carry the same weight as confirmed facts.  If it happens to be a more careful agent or model, it can also just decide not to write anything and thereby we will lose knowledge.  I want a system that works more like my own memory: some things I know are facts and I can tell you exactly where you can look them up, other things I am fairly certain of, but can't source.  And yet others are vague recollections I would want to confirm before I act on them. I want my agents to emulate a similar system.
 
-Both failures get worse when the knowledge base is read back automatically. When notes are retrieved into
-prompts by search, summarized by scheduled jobs, and synthesized into new notes, an unmarked wrong claim does
-not sit unread in one file: it is retrieved, quoted, and built on, and each step makes it look better
-sourced than it was.
+Both of the original failures of the binary "to write or not to write" question compound errors when they are read into models and used to make decisions or write new memories. In other words, when notes are retrieved into prompts by search, summarized by scheduled jobs, and synthesized into new notes, an wrong claim does
+not sit unread in one file: it is retrieved, quoted, and can even be strengthened into an even more outrageous claim, all the while each step makes it look more believable and better sourced than it ever was.
 
-This essay describes a small grammar that was adopted for exactly that setting, a personal markdown
-knowledge base written to by both a person and a coding agent, after unverified claims kept arriving in notes
-and in the agent's memory files phrased exactly like checked ones. It covers the grammar, the design
-decisions behind it, how it is enforced, what it does not give you, and how it relates to published work.
+In this essay, I describe a small idiomatic categorization that Claude and I have adopted over the past 3 months to bound the certainty of claims it writes into the notes inside our Obsidian Vault.  Our personal markdown knowledge base, written to by both me and AI agents, required we impose an organizing principle for uncertainty after unverified claims kept arriving in notes and in the agent's memory files phrased exactly like the same as verified claims. This essay covers the grammar, the design decisions behind it, how it is enforced, how it helps and how it still doesn't, and how it relates to published work.
 
-## The grammar
+## The Languge of Uncertainty
 
-Two forms for prose, and nothing else.
+All claims, even the most innocuous are flagged in notes.  
 
-An open flag, written the moment a claim is made without a source in hand:
+the most uncertain flag is written the moment a claim is made without a verified in hand:
 
 `⚠ UNVERIFIED (YYYY-MM-DD) — <claim> — check: <one concrete step that would verify it>`
 
-A resolution, which replaces the flag **in place**. The claim stays where it was, now worded as what the
-check found, and is followed by:
+The resolution that replaces the flag **in place** is simply to verify it. The claim stays where it was in the vault but is now worded with certainty: it includes what the check found, and is followed by the verified marker:
 
 `✓ VERIFIED (YYYY-MM-DD) — <how it was checked>`
 
-The date records when the marker was written. It says nothing about when the claim became true. A flag with
-no date is *legacy*, meaning it predates the grammar; legacy flags stay valid and are counted separately
-rather than being rewritten in bulk.
+The date records when the marker was written. It says nothing about when the claim was shown to be true. Currently, a flag with no date is a *legacy* artifact as it predates the full development of our syntax; legacy flags maintain their character and are counted separately from the newer ones.  Nothing has been rewritten in bulk.
 
 If a check shows the claim to be wrong, the claim is corrected or deleted, and the correction is recorded in
-the note that caused the error. A resolved marker never stands over a claim that turned out false. The
-agent's memory files are handled differently: a wrong memory is deleted outright and its correction recorded
-in a knowledge-base note, because memory files are loaded into every session, and a superseded line there
-costs context in all of them.
+the note that caused the error. This way, knowledge is never just lost.  There is no separate marker for a  claim that turned out false. Outside of the vault notes, like in MEMORY.md, false claims are deleted outright and its correction recorded
+in a vault note.  The behavior results from the fact that memory files are loaded into every session, and a superseded line in one incurrs the context cost in every session.
 
-A sibling convention marks a known gap in code rather than in prose, for a limit shipped knowingly:
+A partner convention marks a known gap in code or an equation, rather than in writing. It applies to a claim of limited veracity that we decided to ship knowingly:
 
 `# ⚠ SHORTCUT (YYYY-MM-DD) — <what> — ceiling: <limit> — exit: <what lifts it>`
 
-It is resolved the same way, by replacing it in place when the exit is taken. The scanner described below
-does not read it; `grep -rn '⚠ SHORTCUT'` is its whole ledger, by design.
+It is resolved the same way as an `⚠ UNVERIFIED` claim, i.e. by replacing it in place when the facts prevail. The scanner applied to memories, described below, does not read it; rather `grep -rn '⚠ SHORTCUT'` is used to fill its whole ledger.
 
-## One flag's life
+## The Life of an Uncertainty Flag
 
-A synthetic example. On 2 March a note records something read in passing, worded as tentatively as it is
-known:
+Here we give a synthetic example. On March 2, a note records something read in passing, worded as tentatively as it is known:
 
 `⚠ UNVERIFIED (2026-03-02) — the nightly export may retry three times before it gives up; a code comment says three, and the code was not read — check: read the retry constant in the export job's configuration`
 
-A week later someone runs the check. The flag is replaced, on its own line, by the claim as found and its
-resolution, and nothing is added anywhere else:
+A week later, when vault audit is read, the flag is replaced, on its own line, by the claim as found and its resolution. Nothing else is added to the memory:
 
 `The nightly export retries three times before it gives up. ✓ VERIFIED (2026-03-09) — read MAX_RETRIES = 3 in the export job's configuration at commit 4e1f0a2`
 
-Had the constant been 5, the sentence would have said five, and the resolution would have said what was
-read. In a knowledge base kept under version control, either outcome is a one-line diff that a person can
-review, and a search for the claim returns its status in the same result.
+Had the constant been five, the sentence would have been updated to say five, and the resolution would have noted the source of the verified claim. In a knowledge base kept under version control, both outcomes are seen as a one-line diff that can be reviewed.  A search for the claim returns its status in the same result.
 
 A shortcut in code looks like this:
 
 `# ⚠ SHORTCUT (2026-03-02) — markers are matched line by line — ceiling: a marker split across a line wrap is missed — exit: parse by paragraph instead of by line`
 
-## Six decisions worth defending
+## Six Decisions Worth A Word
 
-**A binary flag, with no confidence score.** Numeric confidence was considered and rejected, chiefly because
-a number invites quiet re-adjudication that no lint can catch: 0.7 drifting to 0.8 across two edits leaves no
-trace, whereas `⚠ UNVERIFIED` becoming `✓ VERIFIED` is a diff a person can read. A number would also need
-calibrating, and nothing in this setup could measure whether it was. Binary status plus a date, a statement
-of how the claim was checked, and a check step carries what a reader needs.
+**A binary flag, with no confidence score.** we considered and rejected a numeric confidence score, chiefly because a number invites quiet adjudication that no lint can catch: 0.7 drifting to 0.8 across two edits leaves less clear trace and how do we guage confidence anyway?  AI tends frequently to be overconfident in my experience so most claim it makes would be scored higher than a human likely would (except, of course, arrogant people). On the other hand, when `⚠ UNVERIFIED` becomes `✓ VERIFIED` the result is a diff a person can easily read. As noted before, a number would also need calibrating, and maintaining the calibration over time and with a limited context window would be unwieldy.  Thus, binary status plus a date, a statement of how the claim was checked, and the check step carries everything a reader needs.
 
 **Resolution happens in place, rather than in a separate log.** The status lives on the same line as the
 claim, so anyone who searches for the claim gets its status in the same result. A separate ledger of
