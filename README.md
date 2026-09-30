@@ -28,8 +28,8 @@ amendments arrive with `onus.signoff`. v0.1.0 brings:
 
 ## Writing
 
-- [Certainty markers: a grammar for claims nobody has checked yet](https://github.com/nlmundis/onus/blob/main/docs/certainty-markers.md).
-  The same burden of proof applied to prose rather than to a test suite: dated flags on unchecked claims in a
+- [Uncertainty Markers: Labels to Track the Strength of Claims](https://github.com/nlmundis/onus/blob/main/docs/certainty-markers.md).
+  The same burden of proof applied to the claims in a knowledge base instead of to a test suite: dated flags on unchecked claims in a
   knowledge base, resolved in place with a record of how each was checked, and a marked form for shortcuts in
   code. An essay, with no code in this package, licensed under CC BY 4.0.
 

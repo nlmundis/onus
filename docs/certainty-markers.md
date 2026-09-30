@@ -6,7 +6,7 @@ In a strict sense, when an agent writes into a knowledge store, like an Obsidian
 Both of the original failures of the binary "to write or not to write" question compound errors when they are read into models and used to make decisions or write new memories. In other words, when notes are retrieved into prompts by search, summarized by scheduled jobs, and synthesized into new notes, an wrong claim does
 not sit unread in one file: it is retrieved, quoted, and can even be strengthened into an even more outrageous claim, all the while each step makes it look more believable and better sourced than it ever was.
 
-In this essay, I describe a small idiomatic categorization that Claude and I have adopted over the past three months to bound the certainty of claims it writes into the notes inside our Obsidian Vault.  Our personal markdown knowledge base, written to by both me and AI agents, required we impose an organizing principle for uncertainty after unverified claims kept arriving in notes and in the agent's memory files phrased exactly like the same as verified claims. This essay covers the grammar, the design decisions behind it, how it is enforced, how it helps and how it still doesn't, and how it relates to published work.
+In this essay, I describe a small idiomatic categorization that Claude and I have adopted over the past three months to bound the certainty of claims it writes into the notes inside our Obsidian Vault.  Our personal markdown knowledge base, written to by both me and AI agents, required we impose an organizing principle for uncertainty after unverified claims kept arriving in notes and in the agent's memory files phrased exactly like the same as verified claims. This essay covers the syntax, the design decisions behind it, how it is enforced, how it helps and how it still doesn't, and how it relates to published work.
 
 ## The Language of Uncertainty
 
@@ -84,12 +84,12 @@ bear the precise strings.
 **A reminder at the moment of writing.** A hook runs before each call the agent makes to its file-writing
 and file-editing tools. In our setup it is a `PreToolUse` hook in Claude Code, matched to the `Write` and
 `Edit` tools. It fires only for markdown files inside the vault or the agent's memory store, and it always
-allows the call, attaching the grammar as a reminder instead of asking permission or refusing. Its purpose is to put the rule in front of the model at the moment of the write; my working theory is that instructions read once at the start of a session have to compete with everything read afterwards. The hook cannot judge whether a claim
+allows the call, attaching the syntax as a reminder instead of asking permission or refusing. Its purpose is to put the rule in front of the model at the moment of the write; my working theory is that instructions read once at the start of a session have to compete with everything read afterwards. The hook cannot judge whether a claim
 ought to be flagged, and it makes no attempt to do so. Any exception raised inside the hook is handled and
 the hook exits normally, because a bug in a reminder must never block a legitimate write.
 
 **An offline scanner that classifies, and does more than count.** The scanner walks every markdown file
-beneath a root directory and sorts each marker into one of three classes, as parsed from the grammar:
+beneath a root directory and sorts each marker into one of three classes, as parsed from their syntax:
 
 | Class | What the line contains |
 |---|---|
@@ -127,15 +127,14 @@ fault is mine: we built the reminder on July 31, weeks before I adopted the rule
 a log of what it says, and I have yet to go back and give it one.
 
 **It cannot flag doubt that no one felt.** No part of this verifies a claim, and a writer can assert a
-falsehood with no marker whatsoever. It would be pleasant to claim that the grammar makes a writer more
-careful; in truth, it only renders visible the doubt a writer actually had.
+falsehood with no marker whatsoever. It would be pleasant to claim that the convention makes a writer more careful; in truth, it only renders visible the doubt a writer actually had.
 
 **It is not a dependable signal to downstream agents.** Automated read-back is the reason the marker exists: a flag travels with its claim into search results, summaries, and syntheses, where a person reviewing
 the output can see it and a scanner can count it. Whether an agent that reads the flag actually discounts the
 claim is a separate question, and the published evidence is discouraging. Kwon (discussed under Related Work)
 found that a passive "unverified" tag was ignored, and that agents respond to how confidently a claim is
 worded. Where agents read the notes, that evidence suggests it is wiser to word an unverified claim tentatively in addition to flagging it, preferring a modal hedge such as "may" to an attribution such as "reportedly", the
-latter being the hedge the same study found agents discounted least. The grammar does not require this;
+latter being the hedge the same study found agents discounted least. The convention does not require this;
 however, the example given earlier follows it.
 
 ## Related Work
@@ -144,7 +143,7 @@ The search behind this section was conducted in two passes on September 29, 2026
 encyclopedia maintenance templates, code annotation conventions, note-taking communities, documentation and
 knowledge-base tools, and recent work on LLM grounding and agent memory; the second covered engineering
 requirements practice, intelligence analysis, legal citators, provenance standards, and laboratory notebooks.
-Every source below was accessed that day. Each piece of this grammar has a published precedent somewhere
+Every source below was accessed that day. Each piece of this convention has a published precedent somewhere
 below: engineering requirements attach a closure plan to an unconfirmed value, Wikipedia dates its tags, and
 an agent-metadata format stores a re-runnable check with each verified claim. What no source was found to
 combine is the particular set: a binary flag the writer places inline, on the claim's own line, at the moment
@@ -159,12 +158,11 @@ that the oldest problems can be addressed first. A bot adds the date soon after 
 Resolution removes the tag and adds a citation, whose
 [`access-date`](https://en.wikipedia.org/wiki/Template:Cite_web) field records when the source was read. The
 differences are threefold. First, the tag is designed for statements already in an article that lack a
-source, so it typically serves as a reader's request to the writer, whereas this grammar is the writer's own
-admission at the moment of writing. Second, the tag's optional `reason` describes the doubt but does not name
+source, so it typically serves as a reader's request to the writer, whereas this convention is the writer's own admission at the moment of writing. Second, the tag's optional `reason` describes the doubt but does not name
 the step that would dispel it. Finally, a citation has a slot for a publication but none for evidence that is
 a procedure, such as a query that was run or a file read at a given commit. The bot's dating is appropriate
 for Wikipedia, because the bot runs soon after the tag is placed; a flag that predates a convention by months
-has no such proxy, and so the grammar keeps a legacy class instead.
+has no such proxy, and so the convention keeps a legacy class instead.
 
 **Engineering requirements practice** offers the closest relative I found to the check step, which, as an aerospace engineer, I probably ought to have remembered before the search began. NASA's systems
 engineering guidance on
@@ -173,7 +171,7 @@ a value not yet settled be written as a best estimate marked "To Be Resolved" (T
 rationale, what should be done to eliminate the TBR, who is responsible for doing so, and by when, and that a
 complete listing of TBDs and TBRs be maintained with the requirements. That is, in effect, a claim-level flag
 with a closure plan, which is most of the open form described herein. It differs in three respects: a TBR
-bears an owner and a deadline where this grammar bears the date the flag was written; closure is tracked in a
+bears an owner and a deadline where these markers bear the date the flag was written; closure is tracked in a
 separate listing; and the document does not record how the value was finally confirmed.
 
 **Code annotation conventions** are the closest relatives I found to `⚠ SHORTCUT`, which is largely established
@@ -183,8 +181,7 @@ for code that is "temporary, a short-term solution, or good-enough but not perfe
 and asks for a specific date or event for removal; the `exit:` field holds much the same thing. What the shortcut
 form adds is `ceiling:`, the limit the shortcut imposes, and the date of writing it shares with the claim
 markers. [PEP 350](https://peps.python.org/pep-0350/) (2005, rejected) proposed codetags with an originator,
-an origination date, and a due date, and recorded completed items in a separate DONE file, which is the
-separate-log design this grammar rejects. The `expiring-todo-comments` rule in
+an origination date, and a due date, and recorded completed items in a separate DONE file, which is the separate-log design this convention rejects. The `expiring-todo-comments` rule in
 [eslint-plugin-unicorn](https://github.com/sindresorhus/eslint-plugin-unicorn/blob/main/docs/rules/expiring-todo-comments.md)
 and the [todo_or_die](https://github.com/searls/todo_or_die) gem go further than an exit written in words, by
 making the exit a machine-checked date, version, or dependency condition that fails the lint or raises an
@@ -197,8 +194,7 @@ structured instance thereof.
 ["epistemic status"](https://www.lesswrong.com/posts/Hrm59GdN2yDPWbtrd/feature-idea-epistemic-status),
 proposed in 2018 as a per-post field, and the status, confidence, and importance metadata on
 [gwern.net](https://gwern.net/about), graded with Kesselman's estimative words, both describe the author's
-stance toward an entire essay. Neither is resolved over time, and both are graded, whereas this grammar is
-per-claim, dated, and binary by design. The two are complementary: a header tells the reader how heavily to
+stance toward an entire essay. Neither is resolved over time, and both are graded, whereas this convention is per-claim, dated, and binary by design. The two are complementary: a header tells the reader how heavily to
 lean on a piece, and the markers tell the reader which of its sentences were checked.
 
 **Note-taking communities** mark the strength of claims with tags. The Zettelkasten
@@ -212,12 +208,12 @@ questions. Not one of these is dated, bears a check step, or retains a record on
 [Admiralty code](https://en.wikipedia.org/wiki/Admiralty_code) grades an intelligence report on two scales,
 the reliability of its source and the credibility of its information, and the US intelligence community's
 [ICD 203](https://www.dni.gov/files/documents/ICD/ICD-203.pdf) asks analysts to state both the likelihood of a
-judgment and their confidence in its basis. Both schemes are graded, where this grammar is binary, and both
+judgment and their confidence in its basis. Both schemes are graded, where these markers are binary, and both
 describe an assessment instead of a pending check. Legal citators such as KeyCite and Shepard's
 [flag cases](https://guides.libraries.uc.edu/c.php?g=222559&p=1472876) that are no longer good law; that
 status is maintained by the vendor, and the writer who cites the case plays no part in it. Wikidata's
 [deprecated rank](https://www.wikidata.org/wiki/Help:Ranking) keeps a statement known to be wrong visible,
-with a qualifier giving the reason, whereas this grammar corrects or deletes the claim and records the
+with a qualifier giving the reason, whereas this convention corrects or deletes the claim and records the
 correction.
 
 **Knowledge-base products and decision records** operate at the level of the document.
@@ -242,15 +238,14 @@ no durable record remains in a store for a person to audit afterwards.
 (January 2026) stores each remembered fact with citations to code locations, and the agent re-reads them
 before relying on the fact. That is automatic re-verification, and it works because the evidence is code the
 agent can re-read; many claims in a personal knowledge base rest on evidence that cannot be re-read
-mechanically, and so this grammar keeps the unverified state visible instead of making verification a
+mechanically, and so this convention keeps the unverified state visible instead of making verification a
 prerequisite for use. [AKF](https://github.com/HMAKT99/AKF) (Agent Knowledge Format, 2026) goes further on
 the agent side: it embeds metadata in a file listing claims, each with a verified flag, a trust score between
 0 and 1, and timestamped evidence, and a stamp can bear a re-runnable probe, so that a later agent re-checks
 the claim instead of trusting the label; a file modified after its stamp is reported as stale. That record
-holds nearly everything this grammar's resolution holds, plus a stored check. It differs in residing as
+holds nearly everything a resolution here holds, plus a stored check. It differs in residing as
 machine-readable metadata about a file, where these markers are text on the claim's own line; in scoring
-trust numerically; and in targeting artifacts an agent can re-test, where this grammar targets claims a
-person reads. Two recent papers bear on the marker directly.
+trust numerically; and in targeting artifacts an agent can re-test, where these markers target claims a person reads. Two recent papers bear on the marker directly.
 [Kwon (2026)](https://arxiv.org/abs/2606.29279) finds that memory consolidation turns hedged remarks into
 confident stored facts, that agents respond to the confidence of the phrasing and not to its source, and that
 a passive "unverified" tag is ignored, with evidential phrasing such as "reportedly" discounted least of all
@@ -266,7 +261,7 @@ If I were to set this up again somewhere else, these are the four pieces I would
 
 1. The two claim markers and the in-place resolution rule, written down wherever writers, human or agent,
    read their instructions.
-2. A scanner that classifies markers by the grammar, exempts code spans, and excludes its own report.
+2. A scanner that classifies markers by their syntax, exempts code spans, and excludes its own report.
 3. A write-time reminder that allows the write and reminds the writer, instead of gating it.
 4. A weekly pass that proposes capped fixes, ready for copy and paste, and edits no note itself.
 
