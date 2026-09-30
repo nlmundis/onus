@@ -54,20 +54,16 @@ A shortcut in code looks like this:
 
 **A flag is resolved in place, on its own line.** The status of a claim lives on the same line as the
 claim itself; thus, anyone who searches for the claim finds its status in the same result. A separate ledger
-of resolutions would oblige the reader to join two files by hand, and in my experience that is a join no one
-ever makes. It should also be noted that a verbatim copy of the line, whether into a summary, a quotation, or
+of resolutions would oblige the reader to join two files by hand, and in my experience that is a join almost no one bothers to make, myself included. It should also be noted that a verbatim copy of the line, whether into a summary, a quotation, or
 another note, bears the status along with it.
 
 **The check step is expected but not mandatory.** The scanner counts the flags that lack a `check:` clause,
 and the weekly triage proposes a step for each of them; however, no flag is ever rejected for being
-incomplete. The alternative fails toward suppression. A writer, human or agent, who cannot think of a check
-step and is confronted with a gate will simply delete the claim in lieu of flagging it, and the doubt
-vanishes along with the claim.
+incomplete. The alternative fails toward suppression. A writer, human or agent, who cannot think of a check step and is confronted with a gate is, I suspect, more likely to delete the claim than to flag it, and the doubt would vanish along with the claim.
 
 **A legacy class in lieu of a migration.** Undated flags are kept in a bucket of their own. They are triaged
 a few at a time, each with a proposed replacement line, and they are never rewritten without notice. A bulk
-rewrite would stamp today's date on claims made months earlier, thereby destroying the very information the
-date exists to convey.
+rewrite would stamp today's date on claims made months earlier, thereby erasing the information the date exists to convey.
 
 **Only bare occurrences are counted, and code spans are exempt.** A note that documents the convention must
 be able to name a marker without asserting one. For that reason, the scanner strips inline code spans first,
@@ -88,9 +84,7 @@ bear the precise strings.
 **A reminder at the moment of writing.** A hook runs before each call the agent makes to its file-writing
 and file-editing tools. In our setup it is a `PreToolUse` hook in Claude Code, matched to the `Write` and
 `Edit` tools. It fires only for markdown files inside the vault or the agent's memory store, and it always
-allows the call, attaching the grammar as a reminder instead of asking permission or refusing. Its sole
-purpose is to put the rule in front of the model at the moment of the write, since instructions read once at
-the start of a session must compete with everything read afterwards. The hook cannot judge whether a claim
+allows the call, attaching the grammar as a reminder instead of asking permission or refusing. Its purpose is to put the rule in front of the model at the moment of the write; my working theory is that instructions read once at the start of a session have to compete with everything read afterwards. The hook cannot judge whether a claim
 ought to be flagged, and it makes no attempt to do so. Any exception raised inside the hook is handled and
 the hook exits normally, because a bug in a reminder must never block a legitimate write.
 
@@ -110,8 +104,7 @@ number, and the line verbatim. It never edits a note.
 without performing any of it. The proposals consist of a verification queue of a few open flags per week that
 lack a check step, ranked first by age and then by how many flags a file contains, together with a legacy
 triage of a few more, each with its replacement line written out for copy and paste. The report states how
-many items were left out of the queue, so that the list is never truncated without notice. The caps keep the
-backlog reviewable; without them, it would quickly become an insurmountable wall. The agent's memory store is
+many items were left out of the queue, so that the list is never truncated without notice. The caps keep the backlog reviewable; without them, I suspect it would soon become a wall I would stop reading. The agent's memory store is
 scanned and reported under a heading of its own, since its corrections follow the different route described
 previously.
 
@@ -121,8 +114,7 @@ over time instead of a single snapshot.
 ## Where It Still Falls Short
 
 **It is not a quality score.** The ratio of open to resolved markers mixes a flag written this morning with
-one written months ago, and a note no one has needed since with one in daily use. Only the trend over time
-means anything.
+one written months ago, and a note no one has needed since with one in daily use. The trend over time is, I think, the only part that means much.
 
 **It does not cover every write.** The reminder is matched to two named tools. A write made through a shell
 command, or through any other tool, never triggers it; the weekly scan finds the result later, although not
@@ -130,7 +122,7 @@ at the moment of writing.
 
 **Its effect has not been measured.** The write-time hook keeps no log of its own firings, so there is
 presently no way to say how often it changed what was written. A hook that only warns, and that keeps no log
-of its warnings, cannot be evaluated, and this is the most conspicuous shortcoming of the convention. The
+of its warnings, cannot be evaluated, and this is, as far as I can tell, the convention's most obvious shortcoming. The
 fault is mine: we built the reminder on July 31, weeks before I adopted the rule that every warning hook keep
 a log of what it says, and I have yet to go back and give it one.
 
@@ -138,13 +130,11 @@ a log of what it says, and I have yet to go back and give it one.
 falsehood with no marker whatsoever. It would be pleasant to claim that the grammar makes a writer more
 careful; in truth, it only renders visible the doubt a writer actually had.
 
-**It is not a dependable signal to downstream agents.** Automated read-back is the very reason the marker
-exists: a flag travels with its claim into search results, summaries, and syntheses, where a person reviewing
+**It is not a dependable signal to downstream agents.** Automated read-back is the reason the marker exists: a flag travels with its claim into search results, summaries, and syntheses, where a person reviewing
 the output can see it and a scanner can count it. Whether an agent that reads the flag actually discounts the
 claim is a separate question, and the published evidence is discouraging. Kwon (discussed under Related Work)
 found that a passive "unverified" tag was ignored, and that agents respond to how confidently a claim is
-worded. Where agents read the notes, it is therefore advisable to word an unverified claim tentatively in
-addition to flagging it, preferring a modal hedge such as "may" to an attribution such as "reportedly", the
+worded. Where agents read the notes, that evidence suggests it is wiser to word an unverified claim tentatively in addition to flagging it, preferring a modal hedge such as "may" to an attribution such as "reportedly", the
 latter being the hedge the same study found agents discounted least. The grammar does not require this;
 however, the example given earlier follows it.
 
@@ -162,7 +152,7 @@ of writing; the date of writing in lieu of a deadline; a resolution that replace
 records the procedure used; and a legacy class in place of backfilled dates. That is a narrower claim than I would have
 liked to make, and the relatives discussed below are closer than the word "novel" would suggest.
 
-**Wikipedia's dated maintenance templates** are the closest relative to the form of these markers.
+**Wikipedia's dated maintenance templates** are the closest relative I found to the form of these markers.
 [`{{Citation needed}}`](https://en.wikipedia.org/wiki/Template:Citation_needed) is claim-level, inline,
 machine-readable, and dated to the month, and the date sorts articles into dated maintenance categories so
 that the oldest problems can be addressed first. A bot adds the date soon after an undated tag is placed.
@@ -176,7 +166,7 @@ a procedure, such as a query that was run or a file read at a given commit. The 
 for Wikipedia, because the bot runs soon after the tag is placed; a flag that predates a convention by months
 has no such proxy, and so the grammar keeps a legacy class instead.
 
-**Engineering requirements practice** offers the closest relative to the check step. NASA's systems
+**Engineering requirements practice** offers the closest relative I found to the check step, which, as an aerospace engineer, I probably ought to have remembered before the search began. NASA's systems
 engineering guidance on
 [writing requirements](https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/) asks that
 a value not yet settled be written as a best estimate marked "To Be Resolved" (TBR), together with its
@@ -186,11 +176,11 @@ with a closure plan, which is most of the open form described herein. It differs
 bears an owner and a deadline where this grammar bears the date the flag was written; closure is tracked in a
 separate listing; and the document does not record how the value was finally confirmed.
 
-**Code annotation conventions** are the closest relatives to `⚠ SHORTCUT`, which is largely established
+**Code annotation conventions** are the closest relatives I found to `⚠ SHORTCUT`, which is largely established
 practice with a single field added.
 [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html#TODO_Comments) reserves `TODO`
 for code that is "temporary, a short-term solution, or good-enough but not perfect", names an owner or a bug,
-and asks for a specific date or event for removal; the `exit:` field holds precisely that. What the shortcut
+and asks for a specific date or event for removal; the `exit:` field holds much the same thing. What the shortcut
 form adds is `ceiling:`, the limit the shortcut imposes, and the date of writing it shares with the claim
 markers. [PEP 350](https://peps.python.org/pep-0350/) (2005, rejected) proposed codetags with an originator,
 an origination date, and a due date, and recorded completed items in a separate DONE file, which is the
@@ -198,7 +188,7 @@ separate-log design this grammar rejects. The `expiring-todo-comments` rule in
 [eslint-plugin-unicorn](https://github.com/sindresorhus/eslint-plugin-unicorn/blob/main/docs/rules/expiring-todo-comments.md)
 and the [todo_or_die](https://github.com/searls/todo_or_die) gem go further than an exit written in words, by
 making the exit a machine-checked date, version, or dependency condition that fails the lint or raises an
-error once it is met; wherever an exit can be stated in that manner, it ought to be. Software-engineering
+error once it is met; where an exit can be stated in that manner, I would prefer their approach to mine. Software-engineering
 research refers to such comments as self-admitted technical debt
 ([Potdar and Shihab, ICSME 2014](https://doi.org/10.1109/ICSME.2014.31)), and the shortcut form is a
 structured instance thereof.
@@ -247,7 +237,7 @@ check step, but they serve the single response being produced and not a later re
 among them one judging whether a passage supports what was generated. These are signals inside a generation;
 no durable record remains in a store for a person to audit afterwards.
 
-**Agent memory work** is the nearest in purpose. GitHub's
+**Agent memory work** comes nearest in purpose, as far as I can judge. GitHub's
 [agentic memory for Copilot](https://github.blog/ai-and-ml/github-copilot/building-an-agentic-memory-system-for-github-copilot/)
 (January 2026) stores each remembered fact with citations to code locations, and the agent re-reads them
 before relying on the fact. That is automatic re-verification, and it works because the evidence is code the
@@ -264,8 +254,7 @@ person reads. Two recent papers bear on the marker directly.
 [Kwon (2026)](https://arxiv.org/abs/2606.29279) finds that memory consolidation turns hedged remarks into
 confident stored facts, that agents respond to the confidence of the phrasing and not to its source, and that
 a passive "unverified" tag is ignored, with evidential phrasing such as "reportedly" discounted least of all
-hedges; its recommended remedy is to keep the tentative phrasing in the store. An open flag is precisely such
-a separable tag; thus, the finding limits what the marker can do for an agent reader, and it is the origin of
+hedges; its recommended remedy is to keep the tentative phrasing in the store. An open flag is, I have to admit, just such a separable tag; thus, the finding limits what the marker can do for an agent reader, and it is the origin of
 the aforementioned advice on wording. [Hu (2026)](https://arxiv.org/abs/2609.20211) shows that summarizers
 frequently weaken, and memory compressors often remove, the framing that marks a claim as unverified, and
 recommends carrying that status as structured state attached to the claim. A single, exact marker on the
@@ -273,7 +262,7 @@ claim's line is a modest step in that direction, although a summarizer can still
 
 ## Adopting It Elsewhere
 
-Four pieces are needed, listed here in the order in which they pay off:
+If I were to set this up again somewhere else, these are the four pieces I would start with, in the order in which I think they pay off:
 
 1. The two claim markers and the in-place resolution rule, written down wherever writers, human or agent,
    read their instructions.
@@ -281,9 +270,8 @@ Four pieces are needed, listed here in the order in which they pay off:
 3. A write-time reminder that allows the write and reminds the writer, instead of gating it.
 4. A weekly pass that proposes capped fixes, ready for copy and paste, and edits no note itself.
 
-The first piece alone provides most of the value. The fourth is what prevents the first from decaying into a
-field that no one resolves. To determine whether the convention is working, run the scanner on a schedule and
-follow two numbers over time: resolved markers against open ones, and open flags that lack a check step.
+I suspect the first piece alone provides most of the value. The fourth is what prevents the first from decaying into a
+field that no one resolves. The best way I have found to tell whether it is working is to run the scanner on a schedule and follow two numbers over time: resolved markers against open ones, and open flags that lack a check step.
 
 ---
 
