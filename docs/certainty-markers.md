@@ -113,7 +113,7 @@ over time instead of a single snapshot.
 **It is not a quality score.** The ratio of open to resolved markers mixes a flag written this morning with
 one written months ago, and a note no one has needed since with one in daily use. The trend over time is, I think, the only part that means much.
 
-**It does not cover every write.** The reminder is matched to two named tools. A write made through a shell
+**It does not cover every write.** The reminder will be matched to two, and no more, known tools. A write made through a shell
 command, or through any other tool, never triggers it; the weekly scan finds the result later, although not
 at the moment of writing.
 
@@ -254,11 +254,10 @@ claim's line is a modest step in that direction, although a summarizer can still
 
 If I were to set this up again somewhere else, these are the four pieces I would start with, in the order in which I think they pay off:
 
-1. The two claim markers and the in-place resolution rule, written down wherever writers, human or agent,
-   read their instructions.
-2. A scanner that classifies markers by their syntax, exempts code spans, and excludes its own report.
+1. The two distinct claim markers -- `verified` and `unverified` -- and the prescriptive rule to resolve each `unverified` claim in-place.
+2. A classifier  that segregates markers by their syntax, exempts code itself, and excludes the  report it produces.
 3. A write-time reminder that allows the write and reminds the writer, instead of gating it.
-4. A weekly pass that proposes capped fixes, ready for copy and paste, and edits no note itself.
+4. The weekly audit that proposes fixes, subject to a cap, already ready to be copied and pasted, but that actually edits no note itself.
 
 I suspect the first piece alone provides most of the value. The fourth is what prevents the first from decaying into a
 field that no one resolves. The best way I have found to tell whether it is working is to run the scanner on a schedule and follow two numbers over time: resolved markers against open ones, and open flags that lack a check step.
