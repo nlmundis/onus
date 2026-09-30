@@ -6,11 +6,11 @@ In a strict sense, when an agent writes into a knowledge store, like an Obsidian
 Both of the original failures of the binary "to write or not to write" question compound errors when they are read into models and used to make decisions or write new memories. In other words, when notes are retrieved into prompts by search, summarized by scheduled jobs, and synthesized into new notes, an wrong claim does
 not sit unread in one file: it is retrieved, quoted, and can even be strengthened into an even more outrageous claim, all the while each step makes it look more believable and better sourced than it ever was.
 
-In this essay, I describe a small idiomatic categorization that Claude and I have adopted over the past 3 months to bound the certainty of claims it writes into the notes inside our Obsidian Vault.  Our personal markdown knowledge base, written to by both me and AI agents, required we impose an organizing principle for uncertainty after unverified claims kept arriving in notes and in the agent's memory files phrased exactly like the same as verified claims. This essay covers the grammar, the design decisions behind it, how it is enforced, how it helps and how it still doesn't, and how it relates to published work.
+In this essay, I describe a small idiomatic categorization that Claude and I have adopted over the past three months to bound the certainty of claims it writes into the notes inside our Obsidian Vault.  Our personal markdown knowledge base, written to by both me and AI agents, required we impose an organizing principle for uncertainty after unverified claims kept arriving in notes and in the agent's memory files phrased exactly like the same as verified claims. This essay covers the grammar, the design decisions behind it, how it is enforced, how it helps and how it still doesn't, and how it relates to published work.
 
 ## The Language of Uncertainty
 
-All claims, even the most innocuous are flagged in notes.  
+All claims on which a decision rests, even the most innocuous, are to be flagged in notes until they have been verified.  
 
 The most uncertain flag is written the moment a claim is made without a verified source in hand:
 
@@ -30,7 +30,7 @@ A partner convention marks a known gap in code or an equation, rather than in wr
 
 `# ⚠ SHORTCUT (YYYY-MM-DD) — <what> — ceiling: <limit> — exit: <what lifts it>`
 
-It is resolved the same way as an `⚠ UNVERIFIED` claim, i.e. by replacing it in place when the facts prevail. The scanner applied to memories, described below, does not read it; rather `grep -rn '⚠ SHORTCUT'` is used to fill its whole ledger.
+It is resolved the same way as an `⚠ UNVERIFIED` claim, i.e. by replacing it in place when the facts prevail. The scanner described below reads only markdown, meaning the vault notes and the agent's memory files (both of which are memories of a sort; I admit the word "memory" is doing a great deal of work in this essay), so it never sees a shortcut written in code. For those, `grep -rn '⚠ SHORTCUT'` serves as the ledger.
 
 ## The Life of an Uncertainty Flag
 
@@ -130,10 +130,13 @@ at the moment of writing.
 
 **Its effect has not been measured.** The write-time hook keeps no log of its own firings, so there is
 presently no way to say how often it changed what was written. A hook that only warns, and that keeps no log
-of its warnings, cannot be evaluated, and this is the most conspicuous shortcoming of the convention.
+of its warnings, cannot be evaluated, and this is the most conspicuous shortcoming of the convention. The
+fault is mine: we built the reminder on July 31, weeks before I adopted the rule that every warning hook keep
+a log of what it says, and I have yet to go back and give it one.
 
 **It cannot flag doubt that no one felt.** No part of this verifies a claim, and a writer can assert a
-falsehood with no marker whatsoever. The grammar only renders visible the doubt a writer actually had.
+falsehood with no marker whatsoever. It would be pleasant to claim that the grammar makes a writer more
+careful; in truth, it only renders visible the doubt a writer actually had.
 
 **It is not a dependable signal to downstream agents.** Automated read-back is the very reason the marker
 exists: a flag travels with its claim into search results, summaries, and syntheses, where a person reviewing
@@ -156,8 +159,8 @@ below: engineering requirements attach a closure plan to an unconfirmed value, W
 an agent-metadata format stores a re-runnable check with each verified claim. What no source was found to
 combine is the particular set: a binary flag the writer places inline, on the claim's own line, at the moment
 of writing; the date of writing in lieu of a deadline; a resolution that replaces the flag in place and
-records the procedure used; and a legacy class in place of backfilled dates. That is a narrow claim, and the
-relatives discussed below are closer than the word "novel" would suggest.
+records the procedure used; and a legacy class in place of backfilled dates. That is a narrower claim than I would have
+liked to make, and the relatives discussed below are closer than the word "novel" would suggest.
 
 **Wikipedia's dated maintenance templates** are the closest relative to the form of these markers.
 [`{{Citation needed}}`](https://en.wikipedia.org/wiki/Template:Citation_needed) is claim-level, inline,
