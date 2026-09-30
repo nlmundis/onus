@@ -1,18 +1,18 @@
 # Uncertainty Markers: Labels to Track the Strength of Claims
 *September 2026*
 
-In a strict sense, when an agent writes into a knowledge store, like an Obsidian Vault, it can either make the claim or not.  And we all know that Agents are often arrogant and will exert many things it assumes a facts.  That doesn't work for me as hallucinations carry the same weight as confirmed facts.  If it happens to be a more careful agent or model, it can also just decide not to write anything and thereby we will lose knowledge.  I want a system that works more like my own memory: some things I know are facts and I can tell you exactly where you can look them up, other things I am fairly certain of, but can't source.  And yet others are vague recollections I would want to confirm before I act on them. I want my agents to emulate a similar system.
+In a strict sense, when an agent writes into a knowledge store, like an Obsidian Vault, it can either make the claim or not.  And we all know that Agents are often arrogant and will assert many things it assumes are facts.  That doesn't work for me as hallucinations carry the same weight as confirmed facts.  If it happens to be a more careful agent or model, it can also just decide not to write anything and thereby we will lose knowledge.  I want a system that works more like my own memory: some things I know are facts and I can tell you exactly where you can look them up, other things I am fairly certain of, but can't source.  And yet others are vague recollections I would want to confirm before I act on them. I want my agents to emulate a similar system.
 
 Both of the original failures of the binary "to write or not to write" question compound errors when they are read into models and used to make decisions or write new memories. In other words, when notes are retrieved into prompts by search, summarized by scheduled jobs, and synthesized into new notes, an wrong claim does
 not sit unread in one file: it is retrieved, quoted, and can even be strengthened into an even more outrageous claim, all the while each step makes it look more believable and better sourced than it ever was.
 
 In this essay, I describe a small idiomatic categorization that Claude and I have adopted over the past 3 months to bound the certainty of claims it writes into the notes inside our Obsidian Vault.  Our personal markdown knowledge base, written to by both me and AI agents, required we impose an organizing principle for uncertainty after unverified claims kept arriving in notes and in the agent's memory files phrased exactly like the same as verified claims. This essay covers the grammar, the design decisions behind it, how it is enforced, how it helps and how it still doesn't, and how it relates to published work.
 
-## The Languge of Uncertainty
+## The Language of Uncertainty
 
 All claims, even the most innocuous are flagged in notes.  
 
-the most uncertain flag is written the moment a claim is made without a verified in hand:
+The most uncertain flag is written the moment a claim is made without a verified source in hand:
 
 `⚠ UNVERIFIED (YYYY-MM-DD) — <claim> — check: <one concrete step that would verify it>`
 
@@ -24,7 +24,7 @@ The date records when the marker was written. It says nothing about when the cla
 
 If a check shows the claim to be wrong, the claim is corrected or deleted, and the correction is recorded in
 the note that caused the error. This way, knowledge is never just lost.  There is no separate marker for a  claim that turned out false. Outside of the vault notes, like in MEMORY.md, false claims are deleted outright and its correction recorded
-in a vault note.  The behavior results from the fact that memory files are loaded into every session, and a superseded line in one incurrs the context cost in every session.
+in a vault note.  The behavior results from the fact that memory files are loaded into every session, and a superseded line in one incurs the context cost in every session.
 
 A partner convention marks a known gap in code or an equation, rather than in writing. It applies to a claim of limited veracity that we decided to ship knowingly:
 
@@ -48,9 +48,9 @@ A shortcut in code looks like this:
 
 `# ⚠ SHORTCUT (2026-03-02) — markers are matched line by line — ceiling: a marker split across a line wrap is missed — exit: parse by paragraph instead of by line`
 
-## Six Decisions Worth A Word
+## Six Decisions Worth a Word
 
-**A binary flag, with no confidence score.** we considered and rejected a numeric confidence score, chiefly because a number invites quiet adjudication that no lint can catch: 0.7 drifting to 0.8 across two edits leaves less clear trace and how do we guage confidence anyway?  AI tends frequently to be overconfident in my experience so most claim it makes would be scored higher than a human likely would (except, of course, arrogant people). On the other hand, when `⚠ UNVERIFIED` becomes `✓ VERIFIED` the result is a diff a person can easily read. As noted before, a number would also need calibrating, and maintaining the calibration over time and with a limited context window would be unwieldy.  Thus, binary status plus a date, a statement of how the claim was checked, and the check step carries everything a reader needs.
+**A binary flag, with no confidence score.** We considered and rejected a numeric confidence score, chiefly because a number invites quiet adjudication that no lint can catch: 0.7 drifting to 0.8 across two edits leaves less clear trace and how do we gauge confidence anyway?  AI tends frequently to be overconfident in my experience so most claims it makes would be scored higher than a human likely would (except, of course, arrogant people). On the other hand, when `⚠ UNVERIFIED` becomes `✓ VERIFIED` the result is a diff a person can easily read. As noted before, a number would also need calibrating, and maintaining the calibration over time and with a limited context window would be unwieldy.  Thus, binary status plus a date, a statement of how the claim was checked, and the check step carries everything a reader needs.
 
 **Resolution happens in place, rather than in a separate log.** The status lives on the same line as the
 claim, so anyone who searches for the claim gets its status in the same result. A separate ledger of
