@@ -113,6 +113,10 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
 - **Schema:** the read line moves from `read/1` to `read/2`, carrying `as_of`, `early`, `supersedes`, and
   `reason`. No adopter reads file exists yet.
 - **D7, `prereg_id`: keep the stem.** No code change.
+- **D8, the read time (decided after the review raised it): `record_read` loses `now=`.** It reads the clock
+  through one private function that tests patch, so the recorded time, and with it `early` (D5), is not the
+  caller's to choose. This changes `record_read`'s merged but unreleased signature; the test that pins the
+  exact line compares every field but `at`, and checks that `at` lies between two clock reads.
 
 ## The library
 
@@ -181,9 +185,7 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
     the first N units in `order_key` order; a days horizon needs `as_of` past its window and uses the units
     dated inside it.
   - `record_read(rule, evaluation, *, reads_path, now=None)` appends to a reads file and returns a
-    `ReadReceipt`. `now` sets the recorded read time and defaults to the clock. **Open for the `report` pull
-    request, the maintainer to decide:** D5 computes `early` from that read time, so as built a caller can set
-    it; whether `now=` stays as it is, is limited to tests, or is refused when earlier than the clock.
+    `ReadReceipt`. As built, `now` lets a caller set the recorded read time; D8 removes it with `report`.
   - `report.render` requires a receipt, so displaying a verdict records it. Its signature and checks are
     Amendment 2's D1, D5, and D6; exploratory results use `render_exploratory` (D4).
 - **Post hoc:** an amendment signed after the first read of a hypothesis it touches labels that hypothesis
