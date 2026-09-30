@@ -61,13 +61,12 @@ another note, bears the status along with it.
 and the weekly triage proposes a step for each of them; however, no flag is ever rejected for being
 incomplete. The alternative fails toward suppression. A writer, human or agent, who cannot think of a check step and is confronted with a gate is, I suspect, more likely to delete the claim than to flag it, and the doubt would vanish along with the claim.
 
-**A legacy class in lieu of a migration.** Undated flags are kept in a bucket of their own. They are triaged
+**A legacy class in lieu of a migration.** Undated flags are counted separately. They are triaged
 a few at a time, each with a proposed replacement line, and they are never rewritten without notice. A bulk
 rewrite would stamp today's date on claims made months earlier, thereby erasing the information the date exists to convey.
 
 A note that documents the convention must
-be able to name a marker without asserting one. For that reason, the scanner strips inline code spans first,
-so that a marker inside backticks is treated as a mention and never as a flag. That being said, code spans
+be able to name a marker without asserting one. Consequentially, the scanner strips inline code first,.  Thus, a marker contained within backticks is treated as a mention and not as a flag. That being said, code spans
 alone did not suffice: the health report the scanner writes quotes flagged lines verbatim, outside of
 backticks, and at one point it counted itself. The scanner therefore also excludes its own report by name.
 The implementation strips inline spans but not fenced code blocks; for that reason, every example herein is
@@ -84,8 +83,7 @@ marker is simply not counted, and consequently both the writers' instructions an
 and file-editing tools. In our setup it is a `PreToolUse` hook in Claude Code, matched to the `Write` and
 `Edit` tools. It fires only for markdown files inside the vault or the agent's memory store, and it always
 allows the call, attaching the syntax as a reminder instead of asking permission or refusing. Its purpose is to put the rule in front of the model at the moment of the write; my working theory is that instructions read once at the start of a session have to compete with everything read afterwards. The hook cannot judge whether a claim
-ought to be flagged, and it makes no attempt to do so. Any exception raised inside the hook is handled and
-the hook exits normally, because a bug in a reminder must never block a legitimate write.
+ought to be flagged, and it makes no attempt to do so. Any and all exceptions that might be raised by the hook are addressed, and the hook subsequently exits normally, because an error in a reminder should never block a legitimate write.  That would be throwing out things we already know.
 
 **An offline scanner that classifies, and does more than count.** The scanner walks every markdown file
 beneath a root directory and sorts each marker into one of three classes, as parsed from their syntax:
@@ -240,8 +238,7 @@ mechanically, and so this convention keeps the unverified state visible instead 
 prerequisite for use. [AKF](https://github.com/HMAKT99/AKF) (Agent Knowledge Format, 2026) goes further on
 the agent side: it embeds metadata in a file listing claims, each with a verified flag, a trust score between
 0 and 1, and timestamped evidence, and a stamp can bear a re-runnable probe, so that a later agent re-checks
-the claim instead of trusting the label; a file modified after its stamp is reported as stale. That record
-holds nearly everything a resolution here holds, plus a stored check. It differs in residing as
+the claim instead of trusting the label; a file modified after its stamp is reported as stale. The AKF record holds nearly everything that a resolution recorded by our system contains, with the addition of storing its own check. It differs in residing as
 machine-readable metadata about a file, where these markers are text on the claim's own line; in scoring
 trust numerically; and in targeting artifacts an agent can re-test, where these markers target claims a person reads. Two recent papers bear on the marker directly.
 [Kwon (2026)](https://arxiv.org/abs/2606.29279) finds that memory consolidation turns hedged remarks into
