@@ -66,7 +66,7 @@ a few at a time, each with a proposed replacement line, and they are never rewri
 rewrite would stamp today's date on claims made months earlier, thereby erasing the information the date exists to convey.
 
 A note that documents the convention must
-be able to name a marker without asserting one. Consequentially, the scanner strips inline code first.  Thus, a marker contained within backticks is treated as a mention and not as a flag. That being said, code spans
+be able to name a marker without asserting one. Consequently, the scanner strips inline code first.  Thus, a marker contained within backticks is treated as a mention and not as a flag. That being said, code spans
 alone did not suffice: the health report the scanner writes quotes flagged lines verbatim, outside of
 backticks, and at one point it counted itself. The scanner therefore also excludes its own report by name.
 The implementation strips inline spans but not fenced code blocks; for that reason, every example herein is
