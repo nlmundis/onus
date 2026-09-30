@@ -91,7 +91,7 @@ today's date on claims made months earlier, which destroys exactly the informati
 
 **Bare occurrences only; code spans are exempt.** A note that documents the convention has to be able to
 name a marker without asserting one. The scanner strips inline code spans first, so a marker inside
-backticks is a mention, not a flag. Code spans alone were not enough, though: the health report the scanner
+backticks counts as a mention and never as a flag. Code spans alone were not enough, though: the health report the scanner
 writes quotes flagged lines verbatim, outside backticks, and it once counted itself, so the scanner also
 excludes its own report by name. The implementation strips inline spans but not fenced code blocks, which is
 why every example in this essay is written as inline code.
@@ -99,7 +99,7 @@ why every example in this essay is written as inline code.
 **Each marker is one string literal, and the scanner accepts no variants.** The scanner matches the exact
 strings the writers are told to emit, rather than a pattern that tolerates spelling drift, so what gets
 counted cannot drift from what gets written. The cost is that a misspelled marker is simply not counted,
-which is why the writers' instructions and the write-time reminder both carry the exact strings.
+so the writers' instructions and the write-time reminder both carry the exact strings.
 
 ## How it is enforced, in three layers
 
@@ -130,8 +130,8 @@ written out for copy and paste. It states how many items it left unqueued rather
 The caps keep the backlog reviewable instead of a wall. The agent's memory store is scanned and reported
 under its own heading, because its corrections take the different route described above.
 
-The scanner also appends each run's counts to a history file, so what gets reported is a trend, not a
-snapshot.
+The scanner also appends each run's counts to a history file, so what gets reported is a trend rather than
+a snapshot.
 
 ## What this does not give you
 
@@ -176,16 +176,16 @@ removes the tag and adds a citation, whose
 [`access-date`](https://en.wikipedia.org/wiki/Template:Cite_web) field records when the source was read. The
 differences: the tag is designed for statements already in an article that lack a source, so it typically
 works as a reader's request to the writer, while this grammar is the writer's own admission at the moment of
-writing; its optional `reason` describes the doubt, not the step that would clear it; and a citation has a slot
+writing; its optional `reason` describes the doubt and says nothing of the step that would clear it; and a citation has a slot
 for a publication but not for evidence that is a procedure, such as a query that was run or a file read at a
 commit. The bot's dating is right for Wikipedia, because it runs soon after the tag is placed; a flag that
-predates a convention by months has no such proxy, which is why the grammar keeps a legacy class instead.
+predates a convention by months has no such proxy, so the grammar keeps a legacy class instead.
 
 **Code annotation conventions** are the closest relatives for `⚠ SHORTCUT`, which is mostly established
 practice with one field added.
 [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html#TODO_Comments) reserves `TODO`
 for code that is "temporary, a short-term solution, or good-enough but not perfect", names an owner or a bug,
-and asks for a specific date or event for removal, which is what the `exit:` field holds. What the shortcut
+and asks for a specific date or event for removal; the `exit:` field holds exactly that. What the shortcut
 form adds is `ceiling:`, the limit the shortcut imposes, and the written-on date shared with the prose
 markers. [PEP 350](https://peps.python.org/pep-0350/) (2005, rejected) proposed codetags with an originator,
 an origination date, and a due date, and recorded completed items in a separate DONE file, the separate-log
@@ -226,15 +226,15 @@ rather than to factual claims.
 answer, plan verification questions, answer them independently, and revise; the questions resemble a check
 step, but they serve the one response being produced rather than a later reader.
 [Self-RAG](https://arxiv.org/abs/2310.11511) (Asai et al., 2023) trains a model to emit reflection tokens,
-among them one judging whether a passage supports what was generated. These are signals inside a generation,
-not durable records in a store that a person audits later.
+among them one judging whether a passage supports what was generated. These are signals inside a generation;
+nothing durable is left in a store for a person to audit later.
 
 **Agent memory work** is the nearest in purpose. GitHub's
 [agentic memory for Copilot](https://github.blog/ai-and-ml/github-copilot/building-an-agentic-memory-system-for-github-copilot/)
 (January 2026) stores each remembered fact with citations to code locations, and the agent re-reads them
 before relying on the fact. That is automatic re-verification, and it works because the evidence is code
 the agent can re-read; many claims in a personal knowledge base rest on evidence that cannot be re-read
-mechanically, which is why this grammar keeps the unverified state visible instead of making verification a
+mechanically, so this grammar keeps the unverified state visible instead of making verification a
 precondition for use. Two recent papers bear on the marker directly.
 [Kwon (2026)](https://arxiv.org/abs/2606.29279) finds that memory consolidation turns hedged remarks into
 confident stored facts, that agents respond to the confidence of the phrasing rather than to its source, and
