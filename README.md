@@ -31,7 +31,7 @@ amendments arrive with `onus.signoff`. v0.1.0 brings:
 - [Certainty markers: a grammar for claims nobody has checked yet](https://github.com/nlmundis/onus/blob/main/docs/certainty-markers.md).
   The same burden of proof applied to prose rather than to a test suite: dated flags on unchecked claims in a
   knowledge base, resolved in place with a record of how each was checked, and a marked form for shortcuts in
-  code. An essay, with no code in this package.
+  code. An essay, with no code in this package, licensed under CC BY 4.0.
 
 ## Develop
 
@@ -46,4 +46,4 @@ after that, `UV_OFFLINE=1 make check` runs offline. See `AGENTS.md` for the rule
 
 ## License
 
-MIT.
+The code is MIT. The essay in `docs/certainty-markers.md` is licensed under CC BY 4.0.

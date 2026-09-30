@@ -160,15 +160,19 @@ agents discounted least. The grammar does not require this; the example above fo
 
 ## Related work
 
-The search behind this section was run on 29 September 2026 across encyclopedia maintenance templates, code
-annotation conventions, note-taking communities, documentation and knowledge-base tools, and recent work on
-LLM grounding and agent memory. Every source below was accessed that day. No published scheme was found that
-combines the pieces this grammar combines: a flag the writer places at write time, a check step naming the
-action that would clear it, a resolution that stays on the claim's line and records the procedure used, a
-legacy class in place of backfilled dates, and a scanner that classifies by grammar. That is a narrower
-statement than novelty, and several relatives come close on one or two of those axes.
+The search behind this section was run in two passes on 29 September 2026. The first covered encyclopedia
+maintenance templates, code annotation conventions, note-taking communities, documentation and
+knowledge-base tools, and recent work on LLM grounding and agent memory; the second covered engineering
+requirements practice, intelligence analysis, legal citators, provenance standards, and laboratory
+notebooks. Every source below was accessed that day. Each piece of this grammar has a published precedent
+somewhere below: engineering requirements attach a closure plan to an unconfirmed value, Wikipedia dates its
+tags, and an agent-metadata format stores a re-runnable check with each verified claim. What no source found
+combines is the particular set: a binary flag the writer places inline, on the claim's own line, at the
+moment of writing; a written-on date rather than a deadline; a resolution that replaces the flag in place and
+records the procedure used; and a legacy class in place of backfilled dates. That is a narrow claim, and the
+relatives below are closer than the word "novel" would suggest.
 
-**Wikipedia's dated maintenance templates** are the closest relative for the prose markers.
+**Wikipedia's dated maintenance templates** are the closest relative for the form of the prose markers.
 [`{{Citation needed}}`](https://en.wikipedia.org/wiki/Template:Citation_needed) is claim-level, inline,
 machine-readable, and dated to the month, and the date sorts articles into dated maintenance categories so
 the oldest problems can be worked first. A bot adds the date soon after an undated tag is placed. Resolution
@@ -180,6 +184,16 @@ writing; its optional `reason` describes the doubt and says nothing of the step 
 for a publication but not for evidence that is a procedure, such as a query that was run or a file read at a
 commit. The bot's dating is right for Wikipedia, because it runs soon after the tag is placed; a flag that
 predates a convention by months has no such proxy, so the grammar keeps a legacy class instead.
+
+**Engineering requirements practice** has the closest relative for the check step. NASA's systems
+engineering guidance on
+[writing requirements](https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/) asks that
+a value not yet settled be written as a best estimate marked "To Be Resolved" (TBR), together with its
+rationale, what should be done to eliminate the TBR, who is responsible, and by when, and that a complete
+listing of TBDs and TBRs be kept with the requirements. That is a claim-level flag with a closure plan, which
+is most of the open form here. The differences are that a TBR carries an owner and a deadline where this
+grammar carries the date the flag was written, that closure is tracked in a separate listing, and that
+nothing records in the document how the value was finally confirmed.
 
 **Code annotation conventions** are the closest relatives for `⚠ SHORTCUT`, which is mostly established
 practice with one field added.
@@ -212,6 +226,18 @@ anecdote to cross-checked primary source, and a
 (2024) collects ad hoc markers such as `#check_source` tags, to-do checkboxes, and claims restated as
 questions. None of these is dated, carries a check step, or leaves a record when it is resolved.
 
+**Grading and status schemes** in other fields rate how far to trust a source or a statement. The
+[Admiralty code](https://en.wikipedia.org/wiki/Admiralty_code) grades an intelligence report on two scales,
+the reliability of its source and the credibility of the information, and the US intelligence community's
+[ICD 203](https://www.dni.gov/files/documents/ICD/ICD-203.pdf) asks analysts to state both the likelihood of a
+judgment and their confidence in its basis. Both are graded rather than binary and describe an assessment
+rather than a pending check. Legal citators such as KeyCite and Shepard's
+[flag cases](https://guides.libraries.uc.edu/c.php?g=222559&p=1472876) that are no longer good law; the
+vendor maintains that status, and the writer who cites the case has no part in it. Wikidata's
+[deprecated rank](https://www.wikidata.org/wiki/Help:Ranking) keeps a statement known to be wrong visible,
+with a qualifier giving the reason, where this grammar corrects or deletes the claim and records the
+correction.
+
 **Knowledge-base products and decision records** work at the document level.
 [Guru](https://www.getguru.com/features/verification) gives each card a verified or unverified status, a
 verifier, and an interval after which the card lapses back to unverified; the unit is the card, the trigger is
@@ -235,7 +261,14 @@ nothing durable is left in a store for a person to audit later.
 before relying on the fact. That is automatic re-verification, and it works because the evidence is code
 the agent can re-read; many claims in a personal knowledge base rest on evidence that cannot be re-read
 mechanically, so this grammar keeps the unverified state visible instead of making verification a
-precondition for use. Two recent papers bear on the marker directly.
+precondition for use. [AKF](https://github.com/HMAKT99/AKF) (Agent Knowledge Format, 2026) goes further on
+the agent side: it embeds metadata in a file listing claims, each with a verified flag, a 0 to 1 trust score,
+and timestamped evidence, and a stamp can carry a re-runnable probe, so a later agent re-checks the claim
+instead of trusting the label; a file modified after its stamp reads as stale. That record holds nearly
+everything this grammar's resolution holds, plus a stored check. It differs in living as machine-readable
+metadata about a file rather than as text on the claim's own line, in scoring trust numerically, and in
+targeting artifacts an agent can re-test rather than prose claims a person reads. Two recent papers bear on
+the marker directly.
 [Kwon (2026)](https://arxiv.org/abs/2606.29279) finds that memory consolidation turns hedged remarks into
 confident stored facts, that agents respond to the confidence of the phrasing rather than to its source, and
 that a passive "unverified" tag is ignored, with evidential phrasing such as "reportedly" discounted least of
@@ -260,3 +293,7 @@ Four pieces, in the order they pay off:
 The first piece alone is most of the value. The fourth is what keeps the first from decaying into a field
 nobody resolves. To see whether it is working, run the scanner on a schedule and watch two numbers over
 time: resolved markers against open ones, and open flags that lack a check step.
+
+---
+
+© 2026 Nathan Mundis. Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
