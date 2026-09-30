@@ -296,4 +296,6 @@ time: resolved markers against open ones, and open flags that lack a check step.
 
 ---
 
+Drafted with Claude from my design and notes; edited by me.
+
 © 2026 Nathan Mundis. Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
