@@ -103,7 +103,8 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
 - **D5, early read: record and flag.** `Evaluation` stores `as_of`. `record_read` always appends, and refuses a
   days-horizon `Evaluation` without `as_of`. Each line records `as_of` and `early`, which is true when the read
   time is before `horizon.end` 12:00 UTC, the moment the window has closed in every time zone. render states
-  no met / not met for an early read and shows "read early", beside the post hoc label.
+  no met / not met for an early read and shows "read early", beside the post hoc label; Amendment 3, E3, drops
+  its MDE clause too.
 - **D6, re-read on different data: seal, with a recorded override.** `record_read` refuses a read whose
   data_sha256, n, or labels differ from an earlier read in the same reads file with the same experiment or
   record stem. It allows one only when `supersedes=<the first read's line sha256>` and `reason=` are passed,
@@ -118,6 +119,66 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
   caller's to choose. This changes `record_read`'s merged but unreleased signature; the test that pins the
   exact line compares every field but `at`, and checks that `at` lies between two clock reads.
 
+## Amendment 3 (2026-09-29): report details
+
+The review of `report` left three questions the spec did not decide (its findings F3, F6, and F7's case half),
+and the build left three more; the maintainer chose each from options. Each choice binds v0.1. A second review,
+of what these choices built, found where the build fell short of them; the notes marked "as built" record the
+result:
+
+- **E1, `assert_quoted`: every copy must match (F3).** `assert_quoted(doc, sentence)` takes the prereg id and
+  the hypothesis name from the rendered sentence. Every line of the document that names both must hold the
+  rendered sentence verbatim, after any markdown prefix such as "- " or "> ", and at least one such line must
+  exist; otherwise it raises AssertionError naming the offending line. A stale copy of the same result on a line
+  of its own therefore fails wherever it stands in the document, as does any other wording of it on one line
+  with both. The sentence stays one line.
+  - As built: `render` refuses a sentence that would span lines (a hypothesis name, family, or file stem holding
+    any break `str.splitlines` makes), and `assert_quoted` raises ValueError for one that does, and for a
+    sentence `render` did not return (an empty or exploratory one).
+  - As built, what "names" means: a line names the id or the name where it stands as a word, with no word
+    character running on from either end, so "fast" is not named in "faster", nor `layout@X` in `old_layout@X`.
+    Inside the body of any rendered sentence on the line, from its verdict to its onus version, only the prereg
+    id that body names counts, since its other words are the template's, its family's, or its warnings'; and the
+    name does not count inside the prereg id. So a document quoting each sentence once passes when a hypothesis
+    is named "warnings" or "power", when "fast" stands beside "faster", when the file stem is a hypothesis's
+    name, and when `layout@X` stands beside `old_layout@X`. A document quoting both a read and the re-read that
+    superseded it fails for each.
+  - Known limits, from reading line by line: a line quoting another hypothesis of the same record whose name
+    holds this one's as a word ("faster" in "much faster") fails too. A stale copy passes when it shares a line
+    with the exact sentence, when it is hard-wrapped so that no one line names both, and when it is written
+    inside the body of another sentence.
+- **E2, MDE precision: the gap to 4 significant digits (F6).** The MDE prints as p0 plus the gap ("success
+  probability 0.5 + 0.4635"; "0.999 - 0.001844" below the null), with p0 exact and the gap, the MDE's distance
+  from p0, to 4 significant digits, rounded away from the null, so the printed effect still reaches 80% power.
+  It replaces the 4 fixed decimals, which at n = 4000 printed 1.0000 at p0 = 999/1000 (the MDE is 0.99994) and
+  0.0005 at p0 = 1/1000000 (the MDE is 0.000402). It pins sentences once released, as D2's constant does.
+- **E3, early read: no verdict and no MDE.** An early read's sentence carries neither a verdict nor the MDE
+  clause, so nothing hints at the result; the MDE appears only on a read that is not early and not met. The
+  sentence still carries p and the family's adjusted p beside α, from which a reader can work the verdict out.
+- **E4, the seal after an override: kept as built.** After a recorded override, every later read that differs
+  from the first read, a re-read of the corrected data included, needs `supersedes=` (the first read) and
+  `reason=` again, and render keeps showing "re-read on different data; first read <hash>" on each. So does a
+  read of the first data again, which differs from the re-read. No code change; a test and a mutant now pin the
+  corrected data read again.
+- **E5, `reads_path` equality: kept as built (F7's case half).** render compares the caller's `reads_path`
+  with the receipt's once both are resolved (D1), and `resolve()` keeps a name's spelling, so on a
+  case-insensitive disk "Reads.jsonl" is refused for "reads.jsonl", as is a hard link, which a file-identity
+  check would have accepted. No code change; a test and a mutant now pin both refusals.
+- **E6, Windows: `fcntl` is imported lazily.** `record_read` imports fcntl itself, so `onus.prereg` and
+  `onus.report` import on every platform. On a platform without fcntl, `record_read` raises NotImplementedError,
+  which names the missing file lock (`fcntl.flock`), before it opens the reads file. No Windows support is
+  claimed beyond that, and no Windows run tests it.
+- **Known limits, recorded with these decisions:**
+  - A refused read can leave an empty reads file behind when it created the file: `record_read` opens the file
+    to lock it before the seal decides, so a `supersedes=` with no earlier read to supersede leaves it there.
+  - `read/2` labels hold only "met" and "not met", so the post hoc label (L1 step 4) needs a `read/3` or a
+    widening of `read/2` then.
+  - E2's gap has no cap at the boundary, so when the MDE lies within one rounding step of 1 (or of 0, below the
+    null), the printed effect passes it: at p0 = 0.33330001 and n = 2400, with an alpha below p0 to the 2400th
+    power, the MDE is 0.99990703 and the sentence prints "0.33330001 + 0.6667", above 1. Only an absurdly small
+    alpha reaches it. There no gap of four significant digits both reaches the power and keeps the effect within
+    the boundary; which gives way is open for the maintainer.
+
 ## The library
 
 ### Shape
@@ -127,7 +188,7 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
 - **Subpackages, named by intent:** `onus.stats`, `onus.prereg`, `onus.report`, `onus.baseline` (tier 1),
   `onus.signoff` (tier 2), `onus.scrub`, and `onus.invariants` (the Hypothesis part; not `property`, which
   would shadow the builtin). `prereg` will import `signoff` (L1 step 4), since amendments are bound by
-  sign-offs. Built so far: `stats` and `prereg`.
+  sign-offs. Built so far: `stats`, `prereg`, and `report`.
 - **Python:** `requires-python >=3.11`, with CI covering 3.11 to 3.14. Locally, `.python-version` pins the
   exact patch and the floor check (it compiles the package) runs on an exact 3.11 patch, both from pyenv and
   handed to uv by path; in CI each matrix job supplies its own interpreter.
@@ -184,18 +245,21 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
   - `evaluate(rule, data, *, as_of=None)` is pure. It refuses before the horizon. A count horizon uses exactly
     the first N units in `order_key` order; a days horizon needs `as_of` past its window and uses the units
     dated inside it.
-  - `record_read(rule, evaluation, *, reads_path, now=None)` appends to a reads file and returns a
-    `ReadReceipt`. As built, `now` lets a caller set the recorded read time; D8 removes it with `report`.
+  - `record_read(rule, evaluation, *, reads_path, supersedes=None, reason=None)` appends a `read/2` line to a
+    reads file and returns a `ReadReceipt`. The read time is the clock's (D8), and the seal and its override
+    are D6's.
   - `report.render` requires a receipt, so displaying a verdict records it. Its signature and checks are
     Amendment 2's D1, D5, and D6; exploratory results use `render_exploratory` (D4).
 - **Post hoc:** an amendment signed after the first read of a hypothesis it touches labels that hypothesis
-  post hoc. The labels are met / not met / pending today; post hoc arrives with L1 step 4, and "read early" with
-  `report` (D5).
-- **render's sentence** carries n, discordant pairs and ties, sidedness, the family correction, **the MDE
-  whenever the result is not significant** (D2, D3), the prereg id, a data hash, and the library version. It
-  reads no wall clock.
-- **`report.assert_quoted(doc, sentence)`** fails a test when a document quotes a figure that is not the
-  rendered sentence.
+  post hoc. The labels are met / not met / pending today, and render shows "read early" in place of a verdict
+  (D5); post hoc arrives with L1 step 4, and needs a `read/3` or a widened `read/2` (Amendment 3).
+- **render's sentence** is one line, and render refuses one that would span lines (Amendment 3, E1). It carries
+  n, discordant pairs and ties, sidedness, the family correction, **the MDE whenever a read that is not early is
+  not met** (D2, D3; Amendment 3, E2 and E3), the prereg id, a data hash, and the library version. It reads no
+  wall clock.
+- **`report.assert_quoted(doc, sentence)`** fails a test unless every line of the document that names the
+  sentence's hypothesis and prereg id holds the rendered sentence verbatim, and one line does (Amendment 3, E1),
+  so a document quoting a figure that is not the rendered sentence, or a stale copy on a line of its own, fails.
 
 ### baseline, signoff, and scrub (approval testing)
 
@@ -284,10 +348,10 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
 2. `binomial`, `intervals`, `multiplicity`, and `power`, with the oracles, the reference fixture, and the sims
    cross-check (PR #3, merged). **Open, no owner yet:** the plan also named parity scripts here, comparing
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
-3. `prereg` (PR #5, merged), then `report` to Amendment 2 (**next**), as its own pull request.
+3. `prereg` (PR #5, merged), then `report` to Amendments 2 and 3 (**next**), as its own pull request.
 4. `baseline`, `signoff`, and `scrub`, plus the prereg work PR #5 deferred: amendment files and their sign-off
-   binding, the post hoc label in `prereg` and `render`, the "amendment after a read accepted" mutant, and
-   Amendment 1's open count-horizon decision.
+   binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
+   Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
 5. `invariants`.
 6. The v0.1 mutants: each part brings its own, and the no-op spec (`mutt_check.noop.toml`) is already enforced,
    so this step checks that the whole list below is present and caught.

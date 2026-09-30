@@ -8,6 +8,8 @@ import inspect
 import json
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -33,6 +35,8 @@ from onus.prereg import (
     status,
 )
 from onus.stats import binomial_test, holm, sign_test
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def record(**changes: object) -> dict[str, Any]:
@@ -707,6 +711,23 @@ class ReadTest(Folder):
             record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
         self.assertEqual(len(self.lines()), 2)
 
+    def test_the_corrected_data_read_again_names_the_first_read_again(self):
+        # E4: after an override every read that differs from the first read needs supersedes and reason again, the
+        # corrected data read a second time included, though it equals the re-read that last superseded.
+        rule = load(self.write(record()))
+        first = record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        record_read(rule, evaluate(rule, sample_b()), reads_path=self.reads, supersedes=first.line_sha256, reason="x")
+        with self.assertRaisesRegex(
+            PreregError,
+            rf"at line sha256 {first.line_sha256}\); to record a re-read, pass supersedes='{first.line_sha256}'",
+        ):
+            record_read(rule, evaluate(rule, sample_b()), reads_path=self.reads)
+        self.assertEqual(len(self.lines()), 2)
+        record_read(
+            rule, evaluate(rule, sample_b()), reads_path=self.reads, supersedes=first.line_sha256, reason="again"
+        )
+        self.assertEqual(json.loads(self.lines()[2])["supersedes"], first.line_sha256)
+
     def test_supersedes_and_reason_come_together_and_well_formed(self):
         rule = load(self.write(record()))
         first = record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
@@ -871,3 +892,23 @@ class ReadTest(Folder):
         self.assertIsInstance(outcome[0], PreregError)
         self.assertRegex(str(outcome[0]), "was already read on other data")
         self.assertEqual(self.reads.read_bytes(), other.read_bytes())
+
+    def test_where_there_is_no_fcntl_record_read_names_the_missing_lock_and_writes_nothing(self):
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample())
+        with mock.patch.dict(sys.modules, {"fcntl": None}):
+            with self.assertRaisesRegex(NotImplementedError, "holds fcntl.flock on the reads file .* has no fcntl"):
+                record_read(rule, result, reads_path=self.reads)
+        self.assertFalse(self.reads.exists())
+
+    def test_onus_prereg_and_onus_report_import_where_there_is_no_fcntl(self):
+        # A fresh interpreter in which fcntl cannot be imported, as on Windows; it first shows that the block holds.
+        probe = (
+            "import sys; sys.modules['fcntl'] = None; sys.path.insert(0, sys.argv[1])\n"
+            "try:\n    import fcntl\nexcept ImportError:\n    print('no fcntl')\n"
+            "import onus.prereg, onus.report; print(onus.report.render.__module__)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-S", "-B", "-c", probe, str(ROOT)], capture_output=True, text=True, timeout=60
+        )
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "no fcntl\nonus.report._render\n", ""))

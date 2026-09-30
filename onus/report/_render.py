@@ -1,9 +1,8 @@
 """The sentence that quotes a pre-registered verdict, and the one that quotes an exploratory result."""
 
-import math
 from collections.abc import Mapping, Sequence
 from datetime import date
-from decimal import ROUND_HALF_EVEN, Context, Decimal
+from decimal import ROUND_HALF_EVEN, ROUND_UP, Context, Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -23,7 +22,7 @@ _COUNTS = {
     "mcnemar": "b = {k}, c = {rest}, n = {n} discordant pairs",
 }
 P_DIGITS = 4
-MDE_PLACES = 4
+MDE_DIGITS = 4
 
 
 def exact_text(value: Fraction) -> str:
@@ -51,15 +50,17 @@ def significant_text(value: Fraction) -> str:
     return str(context.divide(Decimal(value.numerator), Decimal(value.denominator)))
 
 
-def away_text(value: float, *, upward: bool) -> str:
-    """Return ``value`` to four decimal places, rounded up when ``upward`` and down otherwise, from its exact value.
+def mde_text(null: Fraction, mde: float) -> str:
+    """Return the MDE ``mde`` as the null plus or minus its gap: "0.5 + 0.4635", or "0.999 - 0.001844" below it.
 
-    An MDE is rounded away from the null, so the effect printed still reaches the power: power is monotone in
-    the effect.
+    The null is exact; the gap, the MDE's distance from it, has four significant digits, rounded up from its
+    exact value. So the printed effect lies no nearer the null than the MDE and still reaches the power, since
+    power is monotone in the effect; and the gap keeps its precision wherever the null sits, even at p0 = 0.999,
+    where the whole gap is below 0.001.
     """
-    scaled = Fraction(value) * 10**MDE_PLACES
-    step = math.ceil(scaled) if upward else math.floor(scaled)
-    return f"{step // 10**MDE_PLACES}.{step % 10**MDE_PLACES:0{MDE_PLACES}d}"
+    gap = Fraction(mde) - null
+    digits = Context(prec=MDE_DIGITS, rounding=ROUND_UP).divide(Decimal(abs(gap.numerator)), Decimal(gap.denominator))
+    return f"{exact_text(null)} {'+' if gap > 0 else '-'} {digits:f}"
 
 
 def describe(result: TestResult) -> str:
@@ -106,7 +107,7 @@ def _mde(hypothesis: Hypothesis, result: TestResult, m: int) -> str:
     mde = binomial_mde(n, p0=result.null, alpha=level, power=MDE_POWER, alternative=result.alternative)
     assert mde is not None  # the rejection region is not empty
     what = "win" if result.test == "sign" else "success"
-    return f"{head}: {what} probability {away_text(mde, upward=result.alternative != 'less')}"
+    return f"{head}: {what} probability {mde_text(result.null, mde)}"
 
 
 def _sentence(rule: Rule, evaluation: Evaluation, index: int, early: bool, supersedes: str | None) -> str:
@@ -123,12 +124,20 @@ def _sentence(rule: Rule, evaluation: Evaluation, index: int, early: bool, super
         f"p = {significant_text(result.p_exact)}, {correction}-adjusted p = {significant_text(outcome.adjusted_p)} "
         f'in family "{hypothesis.family}" (m = {m}) at α = {exact_text(outcome.alpha)}',
     ]
-    if not outcome.met:
+    # Only a not-met verdict carries the MDE, so on an early read, which states none, it would give the verdict away.
+    if not early and not outcome.met:
         clauses.append(_mde(hypothesis, result, m))
     clauses.append(_warnings(result))
     clauses.append(f"prereg {rule.id}, data sha256 {evaluation.data_sha256[:12]} over {evaluation.n} units")
     clauses.append(f"onus {onus.__version__}")
-    return "; ".join(clauses) + "."
+    sentence = "; ".join(clauses) + "."
+    # A document quotes the sentence on one line (assert_quoted reads line by line), so one that spans lines cannot be.
+    if sentence.splitlines() != [sentence]:
+        raise PreregError(
+            f"{hypothesis.name!r} of {rule.id!r} cannot be quoted on one line: its name, its family, or the record's "
+            "file stem holds a line break"
+        )
+    return sentence
 
 
 def render(
@@ -147,16 +156,18 @@ def render(
     evaluation: its prereg, experiment, data_sha256, n, and labels, and the receipt's read time. Every number in
     the sentence comes from ``data``, so a hand-built receipt or a hand-edited evaluation cannot be rendered.
 
-    The sentence carries the verdict ("met" or "not met"; "read early" in its place when the read was recorded
-    before a days window closed everywhere; and "re-read on different data; first read <hash>" when the read
-    superseded another), the test and its counts, the exact p-value and the family's adjusted one, the minimum
-    detectable effect whenever the verdict is not met, and the prereg id, a data hash, and the onus version. It
-    reads no clock. p-values have four significant digits; alphas are exact.
+    The sentence is one line. It carries the verdict ("met" or "not met"; "read early" in its place when the read
+    was recorded before a days window closed everywhere; and "re-read on different data; first read <hash>" when
+    the read superseded another), the test and its counts, the exact p-value and the family's adjusted one, the
+    minimum detectable effect whenever a read that is not early is not met, and the prereg id, a data hash, and
+    the onus version. It reads no clock. p-values have four significant digits; alphas are exact; the MDE is the
+    null plus a gap of four significant digits, rounded away from the null.
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
-        PreregError: ``rule`` has no hypothesis ``name``; ``evaluate`` refuses; or the receipt does not bind this
-            evaluation, as above.
+        PreregError: ``rule`` has no hypothesis ``name``; ``evaluate`` refuses; the receipt does not bind this
+            evaluation, as above; or the sentence would span lines, since the hypothesis's name, its family, or
+            the record's file stem holds a line break.
     """
     names = [hypothesis.name for hypothesis in rule.hypotheses]
     if name not in names:

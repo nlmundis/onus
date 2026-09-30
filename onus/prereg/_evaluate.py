@@ -1,6 +1,5 @@
 """Evaluating a rule on its data, which is pure, and recording that a result was read, which writes."""
 
-import fcntl
 import hashlib
 import json
 import os
@@ -317,7 +316,9 @@ def record_read(
     stem, a read whose data hash, n, or labels differ from any such earlier read is refused, unless
     ``supersedes`` names the first of them by its line sha256 and ``reason`` says why; both are written into the
     line. The seal binds only the reads file it is given. The check and the append hold an exclusive flock on the
-    file, so writers take turns (flock is POSIX-only), and a line that is not a read/2 line refuses every read.
+    file, so writers take turns, and a line that is not a read/2 line refuses every read. flock comes from fcntl,
+    which only POSIX has; ``record_read`` imports it itself, so ``onus.prereg`` imports everywhere, and where there
+    is no fcntl it refuses before it opens the reads file.
 
     Raises:
         PreregError: ``evaluation`` names another rule or other hypotheses, states a family or alpha the rule does
@@ -325,7 +326,15 @@ def record_read(
             carries no ``as_of``, or one before its window's end; ``rule`` no longer matches its record;
             ``supersedes`` and ``reason`` are not given together, or are malformed; the seal refuses the read; or
             the reads file holds a line that is not a read/2 line, or its last line was cut short.
+        NotImplementedError: this platform has no fcntl, so no flock to hold while the read is checked and appended.
     """
+    try:
+        import fcntl  # here, not at the top, so that onus.prereg and onus.report import where there is no fcntl
+    except ImportError:
+        raise NotImplementedError(
+            "record_read holds fcntl.flock on the reads file while it checks the seal and appends, and this platform "
+            "has no fcntl, so it cannot record a read"
+        ) from None
     check_intact(rule)
     if evaluation.prereg != rule.id:
         raise PreregError(f"the evaluation is of {evaluation.prereg!r}, not of {rule.id!r}")
