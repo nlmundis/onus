@@ -4,7 +4,7 @@
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
-suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg"]
+suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report"]
 timeout = 300
 
 # --- the environment every stage runs with ---
@@ -1612,8 +1612,8 @@ name = "a_tampered_rule_evaluated"
 why = "A rule widened by replace() to 8 units would be evaluated under the id of the record that says 6."
 suites = ["tests.test_prereg.EvaluateTest"]
 file = "onus/prereg/_evaluate.py"
-find = "    check_intact(rule)\n    chosen = "
-replace = "    chosen = "
+find = "    check_intact(rule)\n    names = "
+replace = "    names = "
 
 [[mutant]]
 name = "a_same_day_listing_changes_the_hash"
@@ -1643,9 +1643,9 @@ replace = "    if False:\n"
 name = "a_torn_reads_file_appended_to"
 why = "A line appended after a cut-short write would join it, and neither would parse."
 suites = ["tests.test_prereg.ReadTest"]
-file = "onus/prereg/_evaluate.py"
-find = "            if existing.read(1) != b\"\\n\":\n"
-replace = "            if False:\n"
+file = "onus/prereg/_reads.py"
+find = "    if raw and not raw.endswith(b\"\\n\"):\n"
+replace = "    if False:\n"
 
 [[mutant]]
 name = "a_flipped_label_read"
@@ -1662,3 +1662,415 @@ suites = ["tests.test_prereg.ReadTest"]
 file = "onus/prereg/_evaluate.py"
 find = "        if (result.family, result.alpha) != (hypothesis.family, hypothesis.alpha):\n"
 replace = "        if False:\n"
+
+# --- the reads file and the report (L1 step 3, part 2) ---
+
+[[mutant]]
+name = "the_read_time_taken_off_the_one_clock"
+why = "record_read reads the time through _now alone; a second clock read times the read where no patched clock, and no test of early, can reach it."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        at = _now().astimezone(UTC)\n"
+replace = "        at = datetime.now(UTC)\n"
+
+[[mutant]]
+name = "a_days_read_without_its_as_of_recorded"
+why = "A days horizon's read would be recorded with no as_of, or one before its window's end, which evaluate never gives."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if end is not None and (as_of is None or as_of < end):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "an_early_read_not_flagged"
+why = "A read recorded while its window was still open somewhere would carry early false, and render would state its verdict."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        early = end is not None and at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)\n"
+replace = "        early = False\n"
+
+[[mutant]]
+name = "early_measured_from_utc_midnight"
+why = "At 06:00 UTC on the end day the window's last day is not over in UTC-12, yet the read would not be flagged early."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "CLOSED_EVERYWHERE = time(12)"
+replace = "CLOSED_EVERYWHERE = time(0)"
+
+[[mutant]]
+name = "a_read_at_noon_utc_flagged_early"
+why = "At noon UTC on the end day the window has closed in every time zone, so the read is not early."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)"
+replace = "at <= datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)"
+
+[[mutant]]
+name = "a_re_read_on_different_data_accepted"
+why = "A second read on corrected data would be recorded silently beside the first, as if nothing had been read before."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if differs and supersedes is None:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_re_read_superseding_a_later_read"
+why = "supersedes naming a later re-read would hide which read came first, the one render must name."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if supersedes is not None and supersedes != related[0].sha256:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_supersedes_with_nothing_superseded"
+why = "A re-read of the same data could claim to supersede the first read, and render would call it a re-read on different data."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if supersedes is not None and not differs:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_supersedes_without_a_reason"
+why = "A re-read on different data would be recorded with no reason for it."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if (supersedes is None) != (reason is None):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "the_seal_ignores_the_record_stem"
+why = "An edited record that also renames its experiment would escape the seal of the record it replaced."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "line.experiment == rule.experiment or line.stem == stem"
+replace = "line.experiment == rule.experiment"
+
+[[mutant]]
+name = "the_seal_ignores_the_experiment"
+why = "A copy of the record under another file name would re-read the experiment on new data unsealed."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "line.experiment == rule.experiment or line.stem == stem"
+replace = "line.stem == stem"
+
+[[mutant]]
+name = "the_seal_ignores_the_labels"
+why = "The same data read again under a record with a stricter alpha would change a verdict unsealed."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    this = (evaluation.data_sha256, evaluation.n, evaluation.labels())\n    differs = [line for line in related if (line.data_sha256, line.n, line.labels) != this]\n"
+replace = "    this = (evaluation.data_sha256, evaluation.n)\n    differs = [line for line in related if (line.data_sha256, line.n) != this]\n"
+
+[[mutant]]
+name = "the_seal_ignores_the_data_hash"
+why = "Corrected data giving the same n and labels would be re-read unsealed."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    this = (evaluation.data_sha256, evaluation.n, evaluation.labels())\n    differs = [line for line in related if (line.data_sha256, line.n, line.labels) != this]\n"
+replace = "    this = (evaluation.n, evaluation.labels())\n    differs = [line for line in related if (line.n, line.labels) != this]\n"
+
+[[mutant]]
+name = "no_lock_around_the_check_then_append"
+why = "Two writers could each check the seal before either appends, so both reads of different data would land."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        fcntl.flock(reads.fileno(), fcntl.LOCK_EX)\n"
+replace = ""
+
+[[mutant]]
+name = "a_malformed_earlier_line_accepted"
+why = "A line that is not a read/2 line would be read as one, so the seal and render would trust fields no read wrote."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_reads.py"
+find = "    if wrong:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_line_superseding_without_a_reason_accepted"
+why = "A line naming a superseded read but no reason would be read as a well-formed re-read."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_reads.py"
+find = "    if (record[\"supersedes\"] is None) != (record[\"reason\"] is None):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "render_without_a_receipt"
+why = "render would quote a verdict from the data alone, with no recorded read behind it: a hand-built receipt, or none, would render."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    read = bound_read(evaluation, receipt=receipt, reads_path=reads_path)\n    return _sentence(rule, evaluation, names.index(name), read.early, read.supersedes)\n"
+replace = "    return _sentence(rule, evaluation, names.index(name), False, None)\n"
+
+[[mutant]]
+name = "render_reads_a_file_the_receipt_does_not_name"
+why = "A copy of the reads file, which the seal does not bind, would be accepted in place of the file the read was recorded in."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    if path.resolve() != Path(receipt.reads_path).resolve():\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "render_ignores_the_recorded_prereg"
+why = "A line or receipt naming another record would bind a render of this one."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"prereg\": (line.prereg, evaluation.prereg, receipt.prereg),\n"
+replace = ""
+
+[[mutant]]
+name = "render_ignores_the_recorded_experiment"
+why = "A line recording another experiment would bind a render of this one."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"experiment\": (line.experiment, evaluation.experiment),\n"
+replace = ""
+
+[[mutant]]
+name = "render_ignores_the_recorded_data_hash"
+why = "A read of other data would bind a render of this data."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"data_sha256\": (line.data_sha256, evaluation.data_sha256, receipt.data_sha256),\n"
+replace = ""
+
+[[mutant]]
+name = "render_ignores_the_recorded_n"
+why = "A line recording another number of units would bind a render of this evaluation."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"n\": (line.n, evaluation.n),\n"
+replace = ""
+
+[[mutant]]
+name = "render_ignores_the_recorded_labels"
+why = "A line whose labels were edited would bind a render whose verdict it does not record."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"labels\": (line.labels, evaluation.labels()),\n"
+replace = ""
+
+[[mutant]]
+name = "render_ignores_the_read_time"
+why = "A receipt carrying another read time than its line would still bind a render."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"at\": (line.at, receipt.at),\n"
+replace = ""
+
+[[mutant]]
+name = "the_mde_left_out_of_a_verdict_not_met"
+why = "A result that is not significant would be quoted with nothing to say how weak the test was."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    if not outcome.met:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "the_mde_at_the_raw_alpha"
+why = "The MDE would be computed at alpha, not alpha/m, which is not a floor on the power under Holm or Benjamini-Hochberg."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    level = hypothesis.alpha / m\n"
+replace = "    level = hypothesis.alpha\n"
+
+[[mutant]]
+name = "the_mde_at_the_units_used"
+why = "The MDE would be computed at every unit used, ties included, though the sign test sees only the non-tied pairs."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    n = result.n  #"
+replace = "    n = result.n + result.ties  #"
+
+[[mutant]]
+name = "the_mde_rounded_toward_the_null"
+why = "The printed effect would be one at which the power falls short of 80%."
+suites = ["tests.test_report.RenderTest", "tests.test_report.NumberTextTest"]
+file = "onus/report/_render.py"
+find = "    step = math.ceil(scaled) if upward else math.floor(scaled)\n"
+replace = "    step = math.floor(scaled) if upward else math.ceil(scaled)\n"
+
+[[mutant]]
+name = "an_early_read_given_its_verdict"
+why = "A read recorded before its window closed everywhere would be quoted as met or not met."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    verdict = \"read early\" if early else outcome.label\n"
+replace = "    verdict = outcome.label\n"
+
+[[mutant]]
+name = "a_re_read_not_disclosed"
+why = "A verdict re-read on different data would be quoted as if it were the first read."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    if supersedes is not None:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_pre_registered_result_quoted_as_exploratory"
+why = "A pre-registered hypothesis's result would be quoted, unrecorded, without the receipt render requires."
+suites = ["tests.test_report.ExploratoryTest"]
+file = "onus/report/_render.py"
+find = "        raise TypeError(f\"{result.name!r} is pre-registered: quote it with render(), which needs its read's receipt\")\n"
+replace = "        result = result.result\n"
+
+[[mutant]]
+name = "assert_quoted_accepts_a_paraphrase"
+why = "A document quoting a rounded or stale figure would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    if sentence not in doc:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "assert_quoted_accepts_an_empty_sentence"
+why = "An empty sentence is in every document, so a caller that lost the rendered sentence would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    if not sentence:\n"
+replace = "    if False:\n"
+
+# --- the report's first review: rules its findings showed no test or no mutant held ---
+
+[[mutant]]
+name = "the_level_with_no_rejection_region_called_alpha"
+why = "The sentence would give α two values, the hypothesis's and α/m, and read with its own α would say no outcome at this n can be met when one can."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "significance at level α/m = {exact_text(level)}"
+replace = "significance at level α = {exact_text(level)}"
+
+[[mutant]]
+name = "no_mde_exists_only_above_the_power"
+why = "A test whose power with no effect is exactly 80% would fall through to binomial_mde, which raises, instead of saying no MDE exists."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "alternative=result.alternative) >= MDE_POWER:"
+replace = "alternative=result.alternative) > MDE_POWER:"
+
+[[mutant]]
+name = "the_mde_for_less_rounded_up"
+why = "A 'less' test's MDE lies below the null, so rounding it up moves it toward the null, where the power falls short of 80%."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "upward=result.alternative != 'less'"
+replace = "upward=True"
+
+[[mutant]]
+name = "render_reads_the_wall_clock"
+why = "render would read the clock, which its sentence must not depend on; a read with no visible effect is one edit from a sentence that changes with the time it was rendered."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    evaluation = evaluate(rule, data, as_of=as_of)\n"
+replace = "    evaluation = evaluate(rule, data, as_of=__import__(\"datetime\").datetime.now().date() and as_of)\n"
+
+[[mutant]]
+name = "a_relative_reads_path_kept_as_spelled"
+why = "The receipt would name the reads file relative to the directory of the read, so after a change of directory render would refuse the very file the read was written to."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    reads_path = Path(reads_path).resolve()"
+replace = "    reads_path = Path(reads_path)"
+
+[[mutant]]
+name = "a_rebuilt_receipt_names_the_path_as_spelled"
+why = "A receipt rebuilt from a relative path would differ from the one record_read returned, and after a change of directory would name another file."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    path = Path(reads_path).resolve()  #"
+replace = "    path = Path(reads_path)  #"
+
+[[mutant]]
+name = "a_unit_s_outcomes_read_again_after_the_check"
+why = "A mapping answering differently on a later read would give counts from one answer and a data hash from another, so render would print numbers the hashed data does not give."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    return dict(outcomes)\n"
+replace = "    return outcomes\n"
+
+[[mutant]]
+name = "the_evaluation_drops_its_as_of"
+why = "An evaluation would forget the day it was made as of, so record_read could not record it, and would refuse every days read."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        as_of=as_of,\n    )\n"
+replace = "    )\n"
+
+[[mutant]]
+name = "a_count_evaluation_keeps_an_as_of_that_is_not_a_date"
+why = "A count horizon never compares as_of with a window, so a string or a datetime would be kept in the evaluation unchecked."
+suites = ["tests.test_prereg.EvaluateTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if as_of is not None and type(as_of) is not date:\n        raise PreregError(f\"as_of must be a date"
+replace = "    if False:\n        raise PreregError(f\"as_of must be a date"
+
+[[mutant]]
+name = "a_count_read_with_an_as_of_that_is_not_a_date"
+why = "A count horizon's read has no window end to compare as_of with, so a datetime would be written into a line that every later read of the file refuses."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if as_of is not None and type(as_of) is not date:\n        raise PreregError(f\"the evaluation's as_of"
+replace = "    if False:\n        raise PreregError(f\"the evaluation's as_of"
+
+[[mutant]]
+name = "the_seal_checked_before_the_lock"
+why = "Two writers could each read the file and pass the seal before either holds the lock, so both reads of different data would land."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        fcntl.flock(reads.fileno(), fcntl.LOCK_EX)\n        reads.seek(0)\n        _seal(rule, evaluation, parse_reads(reads.read(), reads_path), supersedes)\n"
+replace = "        reads.seek(0)\n        _seal(rule, evaluation, parse_reads(reads.read(), reads_path), supersedes)\n        fcntl.flock(reads.fileno(), fcntl.LOCK_EX)\n"
+
+[[mutant]]
+name = "the_seal_compares_only_the_first_read"
+why = "Once a re-read superseded the first read, a read of the first data again would be appended with no supersedes and no reason, silently undoing the re-read."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    differs = [line for line in related if"
+replace = "    differs = [line for line in related[:1] if"
+
+[[mutant]]
+name = "record_read_skips_the_supersedes_and_reason_formats"
+why = "A blank reason, or a supersedes that is not a line sha256, would be written into a line that every later read of the file refuses."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    if not (FIELDS[\"supersedes\"](supersedes) and FIELDS[\"reason\"](reason)):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "the_read_time_kept_in_its_clock_s_zone"
+why = "A clock answering in another zone would write an at that is not UTC, a line the reads file's own parser refuses."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = "        at = _now().astimezone(UTC)\n"
+replace = "        at = _now()\n"
+
+[[mutant]]
+name = "a_line_s_supersedes_and_reason_formats_unchecked"
+why = "A hand-written line with a malformed supersedes or a blank reason would be read as a read/2 line, since pairing them checks only that both are given."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_reads.py"
+find = "    wrong = [key for key, valid in FIELDS.items() if not valid(record[key])]\n"
+replace = "    wrong = [key for key, valid in FIELDS.items() if key not in (\"supersedes\", \"reason\") and not valid(record[key])]\n"
+
+[[mutant]]
+name = "a_line_with_n_zero_accepted"
+why = "A line recording a read of no units, which evaluate never gives, would be read as a read/2 line."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_reads.py"
+find = "    \"n\": lambda value: type(value) is int and value > 0,\n"
+replace = "    \"n\": lambda value: type(value) is int and value >= 0,\n"
+
+[[mutant]]
+name = "a_prereg_id_hash_of_any_length_accepted"
+why = "A line naming a prereg id whose hash is not the 12 hex digits prereg_id writes would be read as a read/2 line."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_reads.py"
+find = "_PREREG_ID = re.compile(r\".+@[0-9a-f]{12}\", re.DOTALL)"
+replace = "_PREREG_ID = re.compile(r\".+@[0-9a-f]+\", re.DOTALL)"
+
+[[mutant]]
+name = "a_line_repeating_a_key_accepted"
+why = "A line giving a key twice would be read with its last value, which another JSON reader need not take, so two readers could see two different reads."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_reads.py"
+find = "    if repeated:\n"
+replace = "    if False:\n"
