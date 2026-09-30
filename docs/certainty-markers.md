@@ -52,7 +52,7 @@ A shortcut in code looks like this:
 
 **A binary flag, with no confidence score.** We considered and rejected a numeric confidence score, chiefly because a number invites quiet adjudication that no lint can catch: 0.7 drifting to 0.8 across two edits leaves less clear trace and how do we gauge confidence anyway?  AI tends frequently to be overconfident in my experience so most claims it makes would be scored higher than a human likely would (except, of course, arrogant people). On the other hand, when `⚠ UNVERIFIED` becomes `✓ VERIFIED` the result is a diff a person can easily read. As noted before, a number would also need calibrating, and maintaining the calibration over time and with a limited context window would be unwieldy.  Thus, binary status plus a date, a statement of how the claim was checked, and the check step carries everything a reader needs.
 
-**A flag is resolved in place, on its own line.** The status of a claim lives on the same line as the
+**A flag is resolved in place, that is, exactly where it was first written.** The status of a claim lives on the same line as the
 claim itself; thus, anyone who searches for the claim finds its status in the same result. A separate ledger
 of resolutions would oblige the reader to join two files by hand, and in my experience that is a join almost no one bothers to make, myself included. It should also be noted that a verbatim copy of the line, whether into a summary, a quotation, or
 another note, bears the status along with it.
@@ -65,7 +65,7 @@ incomplete. The alternative fails toward suppression. A writer, human or agent, 
 a few at a time, each with a proposed replacement line, and they are never rewritten without notice. A bulk
 rewrite would stamp today's date on claims made months earlier, thereby erasing the information the date exists to convey.
 
-**Only bare occurrences are counted, and code spans are exempt.** A note that documents the convention must
+A note that documents the convention must
 be able to name a marker without asserting one. For that reason, the scanner strips inline code spans first,
 so that a marker inside backticks is treated as a mention and never as a flag. That being said, code spans
 alone did not suffice: the health report the scanner writes quotes flagged lines verbatim, outside of
@@ -73,7 +73,7 @@ backticks, and at one point it counted itself. The scanner therefore also exclud
 The implementation strips inline spans but not fenced code blocks; for that reason, every example herein is
 written as inline code.
 
-**Each marker is a single string literal, and the scanner accepts no variants.** The scanner matches the
+**Each individual marker must be a single string literal: the scanner cannot, by design, accept any variations.** The scanner matches the
 precise strings the writers are told to emit, instead of a pattern that tolerates variations in spelling;
 hence, what is counted cannot drift away from what is written. The cost of this choice is that a misspelled
 marker is simply not counted, and consequently both the writers' instructions and the write-time reminder bear the precise strings. In that sense the markers behave as idioms do: their meaning is agreed upon and holds only in the fixed form, much as "kick the bucket" stops meaning anything in particular once it becomes "kick the pail".
@@ -154,8 +154,7 @@ liked to make, and the relatives discussed below are closer than the word "novel
 [`{{Citation needed}}`](https://en.wikipedia.org/wiki/Template:Citation_needed) is claim-level, inline,
 machine-readable, and dated to the month, and the date sorts articles into dated maintenance categories so
 that the oldest problems can be addressed first. A bot adds the date soon after an undated tag is placed.
-Resolution removes the tag and adds a citation, whose
-[`access-date`](https://en.wikipedia.org/wiki/Template:Cite_web) field records when the source was read. The
+The resolution of the claim itself removes the applied tag and adds a citation, where [`access-date`](https://en.wikipedia.org/wiki/Template:Cite_web) field indicates when the appropriate source was found. The
 differences are threefold. First, the tag is designed for statements already in an article that lack a
 source, so it typically serves as a reader's request to the writer, whereas this convention is the writer's own admission at the moment of writing. Second, the tag's optional `reason` describes the doubt but does not name
 the step that would dispel it. Finally, a citation has a slot for a publication but none for evidence that is
