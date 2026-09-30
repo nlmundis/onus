@@ -3,7 +3,7 @@ date: 2026-09-29
 scope: publish the certainty-markers essay as docs/certainty-markers.md, linked from the README
 state: in-progress
 prs: [6]
-next: the maintainer decides the essay's license and confirms placement, then merges PR #6 on their word
+next: the maintainer decides on a drafting note or a rewrite, then merges PR #6 on their word
 ---
 
 # Handoff: certainty-markers essay (2026-09-29)
@@ -34,15 +34,25 @@ next: the maintainer decides the essay's license and confirms placement, then me
   resolution rule and the example disagreed; the memory-store correction route was missing; and the shortcut
   marker was presented as part of the prose grammar rather than as a sibling convention.
 
+## Later the same session
+
+- **License, decided by the maintainer:** the essay ends with a CC BY 4.0 notice in the maintainer's name,
+  and the README's License section says the code is MIT and the essay CC BY 4.0.
+- **Outbound check:** eight sentences flagged by the structure lint were reworded without changing any
+  claim. A forced second-opinion detector run on the final text scored it as fully machine-written, which is
+  what it is; nothing was reworded to move that score.
+- **Second prior-art pass:** it covered engineering requirements practice, intelligence analysis, legal
+  citators, provenance standards, laboratory notebooks, and agent trust metadata. It added three relatives
+  to the essay and narrowed the related-work opening. There is still no substantially equivalent scheme.
+
 ## Open
 
-- **License for the prose.** The repository is MIT and the essay carries no notice of its own, so as it
-  stands it is published under MIT. The maintainer decides before merge.
+- **The detector result.** Whether the essay carries a drafting note, or is rewritten, before it goes out
+  under the maintainer's name.
 - **Placement and README wording** were chosen by the session for the theme they share with onus; both are
   vetoable.
-- **The prior-art verdict** rests on one session's search.
 
 ## Next actions
 
-1. The maintainer decides the license question, adding a notice to the essay if one is wanted.
+1. The maintainer decides on the drafting note or a rewrite.
 2. Merge PR #6 on the maintainer's word.
