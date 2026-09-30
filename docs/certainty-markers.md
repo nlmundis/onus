@@ -254,7 +254,7 @@ claim's line is a modest step in that direction, although a summarizer can still
 
 If I were to set this up again somewhere else, these are the four pieces I would start with, in the order in which I think they pay off:
 
-1. The two distinct claim markers -- `verified` and `unverified` -- and the prescriptive rule to resolve each `unverified` claim in-place.
+1. The two distinct claim markers -- `✓ VERIFIED` and `⚠ UNVERIFIED` -- and the prescriptive rule to resolve each `⚠ UNVERIFIED` claim in-place.
 2. A classifier  that segregates markers by their syntax, exempts code itself, and excludes the  report it produces.
 3. A write-time reminder that allows the write and reminds the writer, instead of gating it.
 4. The weekly audit that proposes fixes, subject to a cap, already ready to be copied and pasted, but that actually edits no note itself.
