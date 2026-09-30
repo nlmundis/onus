@@ -281,6 +281,39 @@ class RecordTest(Folder):
                 with self.assertRaisesRegex(PreregError, message):
                     load(self.write(content))
 
+    def test_a_name_holding_a_line_break_is_refused(self):
+        # E10: render's sentence names the hypothesis, its family, and the file stem, and a document quotes it on one
+        # line, so load refuses any of them, and the experiment and the unit and order_key fields, holding a break
+        # str.splitlines makes; every record that loads renders on one line.
+        marks = ("\n", "\r", "\r\n", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+        hypotheses = record()["hypotheses"]
+
+        def named(name: str) -> dict[str, dict[str, Any]]:
+            return {
+                "hypotheses[0].name": record(hypotheses=[{**hypotheses[0], "name": name}, *hypotheses[1:]]),
+                "hypotheses[2].family": record(
+                    hypotheses=[*hypotheses[:2], {**hypotheses[2], "family": name}],
+                    families={"primary": {"correction": "holm"}, name: {"correction": "benjamini-hochberg"}},
+                ),
+                "experiment": record(experiment=name),
+                "unit": record(unit=name),
+                "order_key": record(order_key=name),
+            }
+
+        for mark in marks:
+            for where, content in named(f"fast{mark}er").items():
+                with self.subTest(where=where, mark=mark):
+                    with self.assertRaisesRegex(PreregError, rf"^{re.escape(where)} must be one line, but "):
+                        load(self.write(content))
+            with self.subTest(where="the file stem", mark=mark):
+                with self.assertRaisesRegex(PreregError, "^the record's file stem must be one line, but "):
+                    load(self.write(record(), name=f"lay{mark}out.json"))
+        # The control: a space where each break was loads, in every field and in the stem.
+        for where, content in named("fast er").items():
+            with self.subTest(where=where, mark=" "):
+                self.assertEqual(load(self.write(content)).experiment, content["experiment"])
+        self.assertTrue(load(self.write(record(), name="lay out.json")).id.startswith("lay out@"))
+
     def test_a_binomial_test_states_p0_and_a_sign_test_does_not(self):
         hypotheses = record()["hypotheses"]
         no_p0 = {k: v for k, v in hypotheses[2].items() if k != "p0"}

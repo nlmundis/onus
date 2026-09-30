@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import sys
+import textwrap
 import time
 import unittest
 from collections.abc import Iterator
@@ -215,26 +216,113 @@ class RenderTest(Reads):
         swept = [{**u, "outcomes": {**u["outcomes"], "clearer": "win"}} for u in sample()]
         self.assertEqual(evaluate(rule, swept).labels()["clearer"], "met")
 
+    def test_an_mde_whose_rounded_gap_would_pass_the_boundary_prints_the_exact_gap(self):
+        # E7: at n = 2400 and alpha 10^-1145, just above p0 to the 2400th power, only the extreme count rejects, so the
+        # MDE lies within 10^-4 of the boundary; its gap rounded up to four digits, 0.6667, would print 1.00000001
+        # above p0 = 0.33330001, and -0.00000001 below p0 = 0.66669999. The exact gap is printed instead.
+        alpha = "0." + "0" * 1144 + "1"
+        gap = "0.6666070179300212860107421875"
+        for p0, alternative, outcome, printed in (
+            ("0.33330001", "greater", "failure", f"0.33330001 + {gap}"),
+            ("0.66669999", "less", "success", f"0.66669999 - {gap}"),
+        ):
+            with self.subTest(alternative=alternative):
+                completes = {**record()["hypotheses"][2], "alternative": alternative, "alpha": alpha, "p0": p0}
+                content = record(
+                    hypotheses=[completes],
+                    families={"guard": {"correction": "benjamini-hochberg"}},
+                    horizon={"kind": "count", "n": 2400},
+                    looks=[2400],
+                )
+                rule = self.rule(content, name=f"boundary-{alternative}.json")
+                data = [
+                    {"participant": f"p{i}", "enrolled": i, "outcomes": {"completes": outcome}} for i in range(2400)
+                ]
+                self.reads = self.folder / f"boundary-{alternative}.jsonl"
+                receipt = self.read(rule, data)
+                sentence = render(rule, data, "completes", receipt=receipt, reads_path=self.reads)
+                self.assertIn(f"(a Bonferroni bound): success probability {printed}; no warnings; ", sentence)
+                mde = binomial_mde(2400, p0=p0, alpha=alpha, power=MDE_POWER, alternative=alternative)
+                assert mde is not None
+                away = 1 if alternative == "greater" else -1
+                # The printed gap is the MDE's own, so the effect is a probability and reaches the power; four digits
+                # rounded up would not be a probability.
+                self.assertEqual(Fraction(p0) + away * Fraction(gap), Fraction(mde))
+                self.assertTrue(0 <= Fraction(mde) <= 1)
+                self.assertFalse(0 <= Fraction(p0) + away * Fraction("0.6667") <= 1)
+                self.assertGreaterEqual(
+                    binomial_power(2400, p0=p0, p_alt=Fraction(mde), alpha=alpha, alternative=alternative), MDE_POWER
+                )
+
     def test_a_met_verdict_carries_no_mde(self):
         rule = self.rule()
         receipt = self.read(rule, sample())
         self.assertNotIn("MDE", render(rule, sample(), "faster", receipt=receipt, reads_path=self.reads))
 
-    def test_an_early_read_states_no_verdict_and_no_mde(self):
-        rule = self.rule(days_record())
-        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T11:00:00+00:00")):
-            early = self.read(rule, days_sample(), as_of=date(2026, 1, 8))
+    def test_an_early_read_reveals_nothing_about_the_result(self):
+        # E8: an early read's sentence carries the name, when it was read and when its window closed everywhere, and
+        # the provenance, and nothing else; the same data read once the window has closed carries all the rest.
+        rule, window = self.rule(days_record()), date(2026, 1, 8)
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T11:59:59.999999+00:00")):
+            early = self.read(rule, days_sample(), as_of=window)
         with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T12:00:00+00:00")):
-            closed = self.read(rule, days_sample(), as_of=date(2026, 1, 8))
-        for receipt, verdict in ((early, "read early"), (closed, "not met")):
-            with self.subTest(verdict=verdict):
-                sentence = render(
-                    rule, days_sample(), "faster", receipt=receipt, reads_path=self.reads, as_of=date(2026, 1, 8)
+            closed = self.read(rule, days_sample(), as_of=window)
+        tail = f"prereg {rule.id}, data sha256 {early.data_sha256[:12]} over 3 units; onus {VERSION}."
+        # What the result would give away: each is in a sentence read once the window has closed, never in an early one.
+        revealing = (
+            "met;",
+            "test, method exact",
+            "null 0.5",
+            "ties ",
+            "missing ",
+            "p = ",
+            "-adjusted p = ",
+            'in family "',
+            "α",
+            "MDE at 80% power",
+            "warnings",
+        )
+        for name in ("faster", "clearer", "completes"):
+            with self.subTest(name=name):
+                sentence = render(rule, days_sample(), name, receipt=early, reads_path=self.reads, as_of=window)
+                self.assertEqual(
+                    sentence,
+                    f"{name}: read early (read at 2026-01-08T11:59:59.999999+00:00; window closed at"
+                    f" 2026-01-08T12:00:00+00:00); {tail}",
                 )
-                self.assertTrue(sentence.startswith(f"faster: {verdict}; one-sided (greater) sign test"), sentence)
-                self.assertEqual(sentence.count(" met;"), int(verdict == "not met"))
-                # Only a not-met verdict carries the MDE, so on an early read it would give the verdict away.
-                self.assertEqual("MDE at 80% power" in sentence, verdict == "not met", sentence)
+                decided = render(rule, days_sample(), name, receipt=closed, reads_path=self.reads, as_of=window)
+                self.assertTrue(decided.startswith(f"{name}: not met; "), decided)
+                for text in revealing:
+                    self.assertIn(text, decided)
+                    self.assertNotIn(text, sentence)
+
+    def test_an_early_re_read_says_no_more_than_an_early_read(self):
+        # E8 lists all an early read's sentence carries, and the first read a re-read superseded is not among it; the
+        # reads line still records it, and a re-read once the window has closed names it.
+        rule, window = self.rule(days_record()), date(2026, 1, 8)
+        corrected = [
+            unit("b", "2026-01-06", "loss", "win", "failure") if u["participant"] == "b" else u for u in days_sample()
+        ]
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T10:00:00+00:00")):
+            first = self.read(rule, days_sample(), as_of=window)
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T11:00:00+00:00")):
+            again = self.read(
+                rule, corrected, as_of=window, supersedes=first.line_sha256, reason="b was recorded wrongly"
+            )
+        self.assertEqual(
+            json.loads(self.reads.read_text(encoding="utf-8").splitlines()[1])["supersedes"], first.line_sha256
+        )
+        self.assertEqual(
+            render(rule, corrected, "faster", receipt=again, reads_path=self.reads, as_of=window),
+            f"faster: read early (read at 2026-01-08T11:00:00+00:00; window closed at 2026-01-08T12:00:00+00:00);"
+            f" prereg {rule.id}, data sha256 {again.data_sha256[:12]} over 3 units; onus {VERSION}.",
+        )
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T12:00:00+00:00")):
+            late = self.read(rule, corrected, as_of=window, supersedes=first.line_sha256, reason="read once closed")
+        self.assertIn(
+            f"; re-read on different data; first read {first.line_sha256[:12]}; ",
+            render(rule, corrected, "faster", receipt=late, reads_path=self.reads, as_of=window),
+        )
 
     def test_a_re_read_on_different_data_names_the_first_read(self):
         rule = self.rule()
@@ -356,6 +444,32 @@ class RenderTest(Reads):
                 with self.assertRaisesRegex(PreregError, rf"its \['{field}'\] differ"):
                     render(rule, sample(), "faster", receipt=forged, reads_path=self.reads)
 
+    def test_a_hand_edited_early_flag_is_refused(self):
+        # A line's early flag is the one its read time gives under the rule's horizon. Flipped by hand, it would have
+        # render state the verdict of a read made before its window closed, call a read early that was not, or call
+        # early a count horizon's read, which never is.
+        days, window = self.rule(days_record(), name="window.json"), date(2026, 1, 8)
+        cases = [
+            ("a count horizon's read", self.rule(), sample(), None, "2026-01-08T11:00:00+00:00"),
+            ("a read before noon UTC on the end day", days, days_sample(), window, "2026-01-08T11:00:00+00:00"),
+            ("a read at noon UTC on the end day", days, days_sample(), window, "2026-01-08T12:00:00+00:00"),
+        ]
+        for i, (label, rule, data, as_of, when) in enumerate(cases):
+            with self.subTest(label):
+                self.reads = self.folder / f"flag{i}.jsonl"
+                with mock.patch("onus.prereg._evaluate._now", return_value=at(when)):
+                    receipt = self.read(rule, data, as_of=as_of)
+                render(
+                    rule, data, "faster", receipt=receipt, reads_path=self.reads, as_of=as_of
+                )  # the flag as recorded
+                good = json.loads(self.reads.read_text(encoding="utf-8"))
+                self.assertIs(good["early"], i == 1)
+                text = json.dumps({**good, "early": not good["early"]}, sort_keys=True, separators=(",", ":"))
+                self.reads.write_text(text + "\n", encoding="utf-8")
+                forged = receipt_from_line(self.reads, hashlib.sha256(text.encode()).hexdigest())
+                with self.assertRaisesRegex(PreregError, r"its \['early'\] differ"):
+                    render(rule, data, "faster", receipt=forged, reads_path=self.reads, as_of=as_of)
+
     def test_a_malformed_line_anywhere_in_the_reads_file_refuses(self):
         rule = self.rule()
         receipt = self.read(rule, sample())
@@ -365,9 +479,12 @@ class RenderTest(Reads):
             render(rule, sample(), "faster", receipt=receipt, reads_path=self.reads)
 
     def test_a_sentence_that_would_span_lines_is_refused(self):
-        # E1: the sentence stays one line, and load accepts any name that is not blank, so render refuses a name, a
-        # family, or a file stem holding any break str.splitlines makes, which is where assert_quoted splits a document.
+        # E1: the sentence stays one line. load refuses a name, a family, or a file stem holding any break that
+        # str.splitlines makes (E10, in RecordTest), and render refuses the sentence too, as a second check, which is
+        # seen here with load's check switched off.
         marks = ("\n", "\r", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+        with self.assertRaisesRegex(PreregError, r"^hypotheses\[0\]\.name must be one line"):
+            self.rule(renamed({"faster": "fast\u2028er"})[0])
         families = {"pri\u2028mary": {"correction": "holm"}, "guard": {"correction": "benjamini-hochberg"}}
         family = record(
             hypotheses=[
@@ -378,7 +495,10 @@ class RenderTest(Reads):
         cases = [(f"fast{mark}er", *renamed({"faster": f"fast{mark}er"}), "layout.json") for mark in marks]
         cases += [("faster", family, sample(), "family.json"), ("faster", record(), sample(), "lay\u2028out.json")]
         for i, (name, content, data, file_name) in enumerate(cases):
-            with self.subTest(name=name, file_name=file_name):
+            with (
+                self.subTest(name=name, file_name=file_name),
+                mock.patch("onus.prereg._rule._one_line", side_effect=lambda value, where: value),
+            ):
                 rule = self.rule(content, name=file_name)
                 self.reads = self.folder / f"broken{i}.jsonl"
                 receipt = self.read(rule, data)
@@ -531,6 +651,18 @@ class NumberTextTest(unittest.TestCase):
         self.assertEqual(mde_text(Fraction(1, 2), 0.75), "0.5 + 0.25")
         self.assertEqual(mde_text(Fraction(1, 3), 0.5), "1/3 + 0.1667")
 
+    def test_an_mde_whose_rounded_gap_would_pass_zero_or_one_is_printed_with_its_exact_gap(self):
+        # E7: rounded up, the gap 2/3 prints 0.6667, which past 1/3 is above 1 and short of 2/3 is below 0; the exact
+        # gap, written as the null is, keeps the printed effect the MDE itself.
+        self.assertEqual(mde_text(Fraction(1, 3), 1.0), "1/3 + 2/3")
+        self.assertEqual(mde_text(Fraction(2, 3), 0.0), "2/3 - 2/3")
+        self.assertEqual(mde_text(Fraction(1, 2), 1.0), "0.5 + 0.5")
+        # On the boundary, not past it, the four digits stand: 0.3333 + 0.6667 is 1, and 0.6667 - 0.6667 is 0, though
+        # the exact gap is 2^-30 short of each.
+        self.assertEqual(mde_text(Fraction("0.3333"), 1 - 2**-30), "0.3333 + 0.6667")
+        self.assertEqual(mde_text(Fraction("0.6667"), 2**-30), "0.6667 - 0.6667")
+        self.assertNotEqual(Fraction(1 - 2**-30) - Fraction("0.3333"), Fraction("0.6667"))
+
 
 # Words every sentence of the record holds outside its hypothesis's name: the template's, and a family's.
 TEMPLATE_WORDS = ("warnings", "power", "data", "sign", "exact", "units", "prereg", "onus", "Holm", "primary")
@@ -563,6 +695,7 @@ class QuoteTest(Reads):
             self.sentences["completes"],
             f"The same question in another experiment: {elsewhere}",
             "Prose about the faster layout, which names no record.",
+            "The faster layout was tried under draft@0123456789ab too, a record no sentence here quotes.",
         ]
         for newline in ("\n", "\r\n"):
             doc = newline.join(lines) + newline
@@ -585,8 +718,14 @@ class QuoteTest(Reads):
             render(self.layout, sample_b(), "faster", receipt=again, reads_path=self.reads),
             *self.sentences.values(),
         ]
-        self.assertEqual([s.split(";")[0] for s in sentences[:2]], ["faster: read early", "faster: met"])
-        self.assertIn("; re-read on different data; first read ", sentences[1])
+        self.assertTrue(
+            sentences[0].startswith(
+                "faster: read early (read at 2026-01-08T11:00:00+00:00; window closed at 2026-01-08T12:00:00+00:00);"
+                f" prereg {days.id}, "
+            ),
+            sentences[0],
+        )
+        self.assertTrue(sentences[1].startswith("faster: met; re-read on different data; first read "), sentences[1])
         for sentence in sentences:
             with self.subTest(sentence=sentence[:40]):
                 assert_quoted(f"- {sentence}\n", sentence)
@@ -617,19 +756,46 @@ class QuoteTest(Reads):
                 for sentence in sentences.values():
                     assert_quoted(doc, sentence)
 
+    def test_a_word_of_an_early_read_s_sentence_does_not_name_this_hypothesis(self):
+        # An early read's sentence holds "read early (read at ...; window closed at ...)" between its name and its
+        # provenance, and none of those words names a hypothesis, though here each hypothesis is named with one.
+        names = {"faster": "read", "clearer": "early", "completes": "window"}
+        hypotheses = [{**h, "name": names[h["name"]]} for h in days_record()["hypotheses"]]
+        data = [{**u, "outcomes": {names[k]: v for k, v in u["outcomes"].items()}} for u in days_sample()]
+        rule, window = self.rule(days_record(hypotheses=hypotheses), name="diary.json"), date(2026, 1, 8)
+        self.reads = self.folder / "diary.jsonl"
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T11:00:00+00:00")):
+            receipt = self.read(rule, data, as_of=window)
+        sentences = [
+            render(rule, data, name, receipt=receipt, reads_path=self.reads, as_of=window) for name in names.values()
+        ]
+        self.assertTrue(all(": read early (read at " in sentence for sentence in sentences))
+        doc = "\n".join(f"- {sentence}" for sentence in sentences) + "\n"
+        for sentence in sentences:
+            with self.subTest(sentence=sentence[:10]):
+                assert_quoted(doc, sentence)
+
     def test_a_prereg_id_inside_another_names_another_record(self):
-        # The same record under two file names, layout@X and old_layout@X, whose id holds the first as text.
-        older = self.rule(name="old_layout.json")
-        self.reads = self.folder / "old_layout.jsonl"
-        old = render(older, sample(), "faster", receipt=self.read(older, sample()), reads_path=self.reads)
-        self.assertIn(self.layout.id, older.id)
-        doc = "\n".join([f"- {self.sentence}", f"- {old}", f"The older record, {older.id}, found faster too.", ""])
-        assert_quoted(doc, self.sentence)
-        # The prose names old_layout's "faster" beside its id, so it is that record's result in other words.
-        with self.assertRaisesRegex(
-            AssertionError, f"^line 3 of the document quotes 'faster' of {re.escape(older.id)}"
-        ):
-            assert_quoted(doc, old)
+        # The same record under two file names, layout@X and <stem>@X, whose id holds the first as text: after a word
+        # character, "_", or after one that is not, where the older record's sentence in the document names its id.
+        ids = {}
+        for stem in ("old_layout", "old-layout", "old.layout", "old layout"):
+            with self.subTest(stem=stem):
+                older = self.rule(name=f"{stem}.json")
+                self.reads = self.folder / f"{stem}.jsonl"
+                old = render(older, sample(), "faster", receipt=self.read(older, sample()), reads_path=self.reads)
+                self.assertEqual(older.id, f"old{stem[3]}{self.layout.id}")
+                ids[stem] = older.id
+                prose = f"The older record, {older.id}, found faster too."
+                doc = "\n".join([f"- {self.sentence}", f"- {old}", prose, ""])
+                assert_quoted(doc, self.sentence)
+                # The prose names the older record's "faster" beside its id: that record's result in other words.
+                with self.assertRaisesRegex(
+                    AssertionError, f"^line 3 of the document quotes 'faster' of {re.escape(older.id)}"
+                ):
+                    assert_quoted(doc, old)
+        # With no sentence of the older record in the document, the "_" before layout@X still keeps it unnamed there.
+        assert_quoted(f"- {self.sentence}\nThe older record, {ids['old_layout']}, found faster too.\n", self.sentence)
 
     def test_a_verdict_in_prose_does_not_hide_what_follows_it(self):
         # A body runs from a verdict to the next provenance only when no other verdict comes between, so a verdict-like
@@ -638,6 +804,88 @@ class QuoteTest(Reads):
         doc = "\n".join([f"- {self.sentence}", line, ""])
         with self.assertRaisesRegex(AssertionError, "^line 2 of the document quotes 'faster'"):
             assert_quoted(doc, self.sentence)
+        assert_quoted(doc, self.sentences["clearer"])
+
+    def test_a_body_s_prereg_id_runs_into_no_other_sentence_or_provenance(self):
+        # A body's prereg id stops at a verdict and at a "; prereg ", so neither a stale copy that lost its "; prereg ",
+        # after one in prose, nor one whose provenance opens twice, is read as naming another id, and each fails.
+        stale = self.sentence.replace("p = 0.01562", "p = 0.016")
+        cases = {
+            "an opening in prose, then a copy that lost its own": (
+                f"Status: met; checks; prereg pending, then {stale.replace('; prereg ', '; record ')}"
+            ),
+            "a copy whose provenance opens twice": stale.replace("; prereg ", "; prereg to be confirmed; prereg "),
+        }
+        for label, line in cases.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(
+                    AssertionError, rf"^line 1 of the document quotes 'faster' of {re.escape(self.layout.id)} other"
+                ):
+                    assert_quoted("\n".join([line, f"- {self.sentence}", ""]), self.sentence)
+
+    def test_a_provenance_cut_short_runs_on_into_no_line_below_it(self):
+        # A copy whose provenance is cut short, in its id or its data hash, is not a body, so it is read on its own
+        # line: it neither swallows the lines below it, hiding a stale copy among them, nor the exact sentence.
+        pid, stale = self.layout.id, self.sentence.replace("p = 0.01562", "p = 0.016")
+        data = self.sentence.split("data sha256 ")[1][:12]
+        abridged = f"- clearer: not met; abridged, see below; prereg {pid}."
+        fails = {
+            "a stale copy with its data hash cut short, above another sentence": (
+                [f"- {stale.replace(data, data[:8])}", f"- {self.sentences['clearer']}", f"- {self.sentence}"],
+                1,
+            ),
+            "another result with its id cut short, above a stale copy": (
+                [f"- {self.sentences['clearer'].replace(pid, pid[:-4])}", f"- {stale}", f"- {self.sentence}"],
+                2,
+            ),
+            "an abridged line, then blank lines and headings, then a stale copy": (
+                [abridged, "", "## Earlier draft", f"- {stale}", "", "## Now", f"- {self.sentence}"],
+                4,
+            ),
+        }
+        for label, (lines, number) in fails.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(AssertionError, rf"^line {number} of the document quotes 'faster'"):
+                    assert_quoted("\n".join([*lines, ""]), self.sentence)
+        # The abridged line is itself another wording of clearer's result, on a line of its own.
+        with self.subTest("the abridged line, for clearer"):
+            with self.assertRaisesRegex(AssertionError, "^line 1 of the document quotes 'clearer'"):
+                doc = "\n".join([abridged, "", f"- {self.sentences['clearer']}", ""])
+                assert_quoted(doc, self.sentences["clearer"])
+        passes = {
+            "prose holding a verdict and an opening": [
+                "Summary: met; see below; prereg ids as listed",
+                f"- {self.sentence}",
+            ],
+            "an abridged line of another result": [abridged, "", f"- {self.sentence}"],
+        }
+        for label, lines in passes.items():
+            with self.subTest(label):
+                assert_quoted("\n".join([*lines, ""]), self.sentence)
+
+    def test_a_stale_copy_below_a_verdict_in_prose_is_still_read_on_its_own_line(self):
+        # A verdict-like phrase in prose opens a read that runs, lines below, to the provenance a stale copy carries,
+        # so the copy lies inside that read's body; E1 still reads each line of a read that is not the sentence on its
+        # own, so the copy fails, however many lines, blank lines, or headings stand between.
+        tail = self.sentence[self.sentence.index("prereg ") :]
+        stale = f"faster: stated earlier at p = 0.02, adjusted p = 0.04; {tail}"
+        for between in ([], ["", "## Appendix", ""]):
+            with self.subTest(between=between):
+                lines = ["# Results", "Criterion 2: met; details below.", *between, stale, f"- {self.sentence}", ""]
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    rf"^line {3 + len(between)} of the document quotes 'faster' of {re.escape(self.layout.id)} other "
+                    rf"than as rendered: {re.escape(repr(stale))}",
+                ):
+                    assert_quoted("\n".join(lines), self.sentence)
+
+    def test_a_correct_copy_wrapped_after_its_prereg_id_passes(self):
+        # Its first line names the hypothesis and the prereg id and is not the sentence, but read as one with the line
+        # below it is the sentence, so neither line is held to the sentence on its own.
+        head, rest = self.sentence.split(" data sha256 ")
+        self.assertTrue(head.endswith(f"prereg {self.layout.id},"), head)
+        doc = "\n".join([f"- {head}", f"  data sha256 {rest}", f"- {self.sentences['clearer']}", ""])
+        assert_quoted(doc, self.sentence)
         assert_quoted(doc, self.sentences["clearer"])
 
     def test_a_stale_copy_of_the_result_anywhere_in_the_document_fails(self):
@@ -672,10 +920,14 @@ class QuoteTest(Reads):
                     assert_quoted(doc, sentence)
 
     def test_a_changed_figure_a_wrapped_line_or_a_missing_sentence_fails(self):
+        # A wrap reads as one space only with the break (E9), so a space left before the break is a second space.
         cases = {
             "a rounded figure": (self.sentence.replace("0.01562", "0.016"), "line 1 of the document quotes 'faster'"),
             "an older rendering": (self.sentence.replace(f"onus {VERSION}.", "onus 0.0.0-dev."), "line 1 of"),
-            "a wrapped line": (self.sentence.replace("sign test, ", "sign test,\n"), "the document does not quote"),
+            "a wrapped line": (
+                self.sentence.replace("sign test, ", "sign test, \n"),
+                "lines 1 to 2, read as one, of the document quotes 'faster'",
+            ),
             "another hypothesis only": (self.sentences["clearer"], "the document does not quote the rendered sentence"),
             "nothing": ("", "the document does not quote the rendered sentence: no line of it names both 'faster' and"),
         }
@@ -685,6 +937,60 @@ class QuoteTest(Reads):
                 self.assertNotEqual(doc, self.sentence)
                 with self.assertRaisesRegex(AssertionError, f"^{re.escape(message)}"):
                     assert_quoted(doc, self.sentence)
+
+    def test_a_quote_hard_wrapped_across_lines_is_read_as_one_line(self):
+        # E9: a line break, with the indentation and any '>' markers that open the next line, reads as one space, so a
+        # correct copy wrapped across lines passes and a stale copy wrapped across lines fails, wherever it stands.
+        def wrapped(sentence: str, first: str, opening: str, newline: str = "\n") -> str:
+            lines = textwrap.wrap(sentence, width=48, break_long_words=False, break_on_hyphens=False)
+            self.assertEqual(" ".join(lines), sentence)
+            self.assertGreater(len(lines), 3)
+            return newline.join([first + lines[0], *(opening + line for line in lines[1:])])
+
+        stale = self.sentence.replace("p = 0.01562", "p = 0.016")
+        styles = {
+            "a list item": ("- ", "  "),
+            "a blockquote": ("> ", "> "),
+            "a nested blockquote, indented": ("  > > ", " >\t> "),
+            "a tab": ("", "\t"),
+        }
+        others = [f"- {self.sentences['clearer']}", f"- {self.sentences['completes']}", "Prose about faster."]
+        for style, (first, opening) in styles.items():
+            for newline in ("\n", "\r\n", "\u2028"):
+                with self.subTest(style=style, newline=repr(newline)):
+                    quote = wrapped(self.sentence, first, opening, newline)
+                    doc = newline.join(["# Results", quote, *others, ""])
+                    for sentence in self.sentences.values():
+                        assert_quoted(doc, sentence)
+                    copy = wrapped(stale, first, opening, newline)
+                    for before in (True, False):
+                        lines = [copy, quote] if before else [quote, copy]
+                        start = 2 if before else 3 + quote.count(newline)
+                        end = start + copy.count(newline)
+                        with self.assertRaisesRegex(
+                            AssertionError,
+                            rf"^lines {start} to {end}, read as one, of the document quotes 'faster' of "
+                            rf"{re.escape(self.layout.id)} other than as rendered: ",
+                        ):
+                            assert_quoted(newline.join(["# Results", *lines, ""]), self.sentence)
+
+    def test_a_quote_wrapped_inside_its_hypothesis_s_name_is_read_as_one_line(self):
+        # A name of two words can be wrapped between them, before its verdict; the quote still starts at the name.
+        content, data = renamed({"faster": "fast er"})
+        _, sentences = self.quote_each(content, data, "two-words.json")
+        sentence = sentences["fast er"]
+        stale = sentence.replace("p = 0.01562", "p = 0.016")
+        self.assertTrue(sentence.startswith("fast er: met; "), sentence)
+        for text, passes in ((sentence, True), (stale, False)):
+            with self.subTest(passes=passes):
+                doc = "\n".join([f"- {sentences['clearer']}", "- fast", f"  {text.removeprefix('fast ')}", ""])
+                if passes:
+                    assert_quoted(doc, sentence)
+                    continue
+                with self.assertRaisesRegex(
+                    AssertionError, "^lines 2 to 3, read as one, of the document quotes 'fast er'"
+                ):
+                    assert_quoted(doc + f"- {sentence}\n", sentence)
 
     def test_only_text_and_a_rendered_sentence_are_compared(self):
         with self.assertRaisesRegex(TypeError, "compares text, not bytes and str"):

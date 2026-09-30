@@ -15,6 +15,7 @@ from onus.prereg._reads import FIELDS, READ_SCHEMA, ReadLine, parse_reads
 from onus.prereg._rule import (
     OUTCOMES,
     OUTCOMES_FIELD,
+    Horizon,
     HorizonNotReachedError,
     PreregError,
     Rule,
@@ -267,6 +268,16 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def read_early(horizon: Horizon, at: datetime) -> bool:
+    """Return whether a read at ``at`` came before ``horizon``'s days window had closed in every time zone.
+
+    That moment is noon UTC on the window's end day; a count horizon's read is never early. ``record_read`` writes
+    this into each line as ``early``, and ``render`` refuses a line whose ``early`` is not the one its time gives.
+    """
+    end = horizon.end
+    return end is not None and at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)
+
+
 def _seal(rule: Rule, evaluation: Evaluation, earlier: list[ReadLine], supersedes: str | None) -> None:
     """Refuse a re-read on different data unless it names the first read it supersedes.
 
@@ -368,7 +379,7 @@ def record_read(
         reads.seek(0)
         _seal(rule, evaluation, parse_reads(reads.read(), reads_path), supersedes)
         at = _now().astimezone(UTC)
-        early = end is not None and at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)
+        early = read_early(rule.horizon, at)
         line = json.dumps(
             {
                 "schema": READ_SCHEMA,

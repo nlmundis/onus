@@ -1,14 +1,24 @@
 """The sentence that quotes a pre-registered verdict, and the one that quotes an exploratory result."""
 
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_EVEN, ROUND_UP, Context, Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 import onus
-from onus.prereg import Evaluation, Hypothesis, HypothesisResult, PreregError, ReadReceipt, Rule, evaluate
+from onus.prereg import (
+    Evaluation,
+    Horizon,
+    Hypothesis,
+    HypothesisResult,
+    PreregError,
+    ReadReceipt,
+    Rule,
+    evaluate,
+)
+from onus.prereg._evaluate import CLOSED_EVERYWHERE
 from onus.report._receipts import bound_read
 from onus.stats import TestResult, binomial_mde, binomial_power, rejection_region
 
@@ -57,10 +67,16 @@ def mde_text(null: Fraction, mde: float) -> str:
     exact value. So the printed effect lies no nearer the null than the MDE and still reaches the power, since
     power is monotone in the effect; and the gap keeps its precision wherever the null sits, even at p0 = 0.999,
     where the whole gap is below 0.001.
+
+    Where that rounded gap would print an effect outside [0, 1], as when the MDE lies within one rounding step of
+    1 (or of 0, below the null), the gap is printed exactly instead, as the null is: "1/3 + 2/3". There no gap of
+    four significant digits both reaches the power and names a probability, so the digits give way (E7).
     """
     gap = Fraction(mde) - null
     digits = Context(prec=MDE_DIGITS, rounding=ROUND_UP).divide(Decimal(abs(gap.numerator)), Decimal(gap.denominator))
-    return f"{exact_text(null)} {'+' if gap > 0 else '-'} {digits:f}"
+    effect = null + Fraction(digits) if gap > 0 else null - Fraction(digits)
+    text = f"{digits:f}" if 0 <= effect <= 1 else exact_text(abs(gap))
+    return f"{exact_text(null)} {'+' if gap > 0 else '-'} {text}"
 
 
 def describe(result: TestResult) -> str:
@@ -81,6 +97,21 @@ def describe(result: TestResult) -> str:
 
 def _warnings(result: TestResult) -> str:
     return "; ".join(f"warning: {warning}" for warning in result.warnings) or "no warnings"
+
+
+def _members(rule: Rule, hypothesis: Hypothesis) -> int:
+    """Return m, the number of hypotheses in ``hypothesis``'s family, itself included."""
+    return sum(1 for other in rule.hypotheses if other.family == hypothesis.family)
+
+
+def _p_values(rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult) -> str:
+    """Return the p-value clause: the exact p, the family's adjusted p with its correction and m, and alpha."""
+    correction = CORRECTION_NAMES[rule.families[hypothesis.family]]
+    return (
+        f"p = {significant_text(outcome.result.p_exact)}, {correction}-adjusted p = "
+        f'{significant_text(outcome.adjusted_p)} in family "{hypothesis.family}" (m = {_members(rule, hypothesis)}) at '
+        f"α = {exact_text(outcome.alpha)}"
+    )
 
 
 def _mde(hypothesis: Hypothesis, result: TestResult, m: int) -> str:
@@ -110,28 +141,41 @@ def _mde(hypothesis: Hypothesis, result: TestResult, m: int) -> str:
     return f"{head}: {what} probability {mde_text(result.null, mde)}"
 
 
-def _sentence(rule: Rule, evaluation: Evaluation, index: int, early: bool, supersedes: str | None) -> str:
-    hypothesis, outcome = rule.hypotheses[index], evaluation.hypotheses[index]
-    result = outcome.result
-    m = sum(1 for other in rule.hypotheses if other.family == hypothesis.family)
-    verdict = "read early" if early else outcome.label
+def _early(horizon: Horizon, read_at: datetime) -> str:
+    """Return an early read's verdict: that it was read early, when, and when its days window closed everywhere."""
+    assert horizon.end is not None  # only a days horizon's read is ever early
+    closed = datetime.combine(horizon.end, CLOSED_EVERYWHERE, tzinfo=UTC)
+    return f"read early (read at {read_at.isoformat()}; window closed at {closed.isoformat()})"
+
+
+def _decided(rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult, supersedes: str | None) -> list[str]:
+    """Return the clauses of a read that is not early: verdict, test and counts, p-values, MDE if not met, warnings."""
+    verdict = outcome.label
     if supersedes is not None:
         verdict += f"; re-read on different data; first read {supersedes[:12]}"
-    correction = CORRECTION_NAMES[rule.families[hypothesis.family]]
-    clauses = [
-        f"{hypothesis.name}: {verdict}",
-        describe(result),
-        f"p = {significant_text(result.p_exact)}, {correction}-adjusted p = {significant_text(outcome.adjusted_p)} "
-        f'in family "{hypothesis.family}" (m = {m}) at α = {exact_text(outcome.alpha)}',
-    ]
-    # Only a not-met verdict carries the MDE, so on an early read, which states none, it would give the verdict away.
-    if not early and not outcome.met:
-        clauses.append(_mde(hypothesis, result, m))
-    clauses.append(_warnings(result))
+    clauses = [f"{hypothesis.name}: {verdict}", describe(outcome.result), _p_values(rule, hypothesis, outcome)]
+    if not outcome.met:
+        clauses.append(_mde(hypothesis, outcome.result, _members(rule, hypothesis)))
+    clauses.append(_warnings(outcome.result))
+    return clauses
+
+
+def _sentence(
+    rule: Rule, evaluation: Evaluation, index: int, *, read_early_at: datetime | None, supersedes: str | None
+) -> str:
+    """Return the sentence for hypothesis ``index``; ``read_early_at`` is the read time of an early read, else None."""
+    hypothesis, outcome = rule.hypotheses[index], evaluation.hypotheses[index]
+    if read_early_at is not None:
+        # E8: an early read reveals nothing about the result, so it states no verdict, count, p-value, α, family, MDE,
+        # test, or warning; only when it was read, when the window closed everywhere, and the provenance.
+        clauses = [f"{hypothesis.name}: {_early(rule.horizon, read_early_at)}"]
+    else:
+        clauses = _decided(rule, hypothesis, outcome, supersedes)
     clauses.append(f"prereg {rule.id}, data sha256 {evaluation.data_sha256[:12]} over {evaluation.n} units")
     clauses.append(f"onus {onus.__version__}")
     sentence = "; ".join(clauses) + "."
-    # A document quotes the sentence on one line (assert_quoted reads line by line), so one that spans lines cannot be.
+    # The sentence is one line. load refuses a name, family, or file stem holding a line break (E10); this is the
+    # second check, so no sentence that spans lines is ever returned.
     if sentence.splitlines() != [sentence]:
         raise PreregError(
             f"{hypothesis.name!r} of {rule.id!r} cannot be quoted on one line: its name, its family, or the record's "
@@ -153,28 +197,35 @@ def render(
 
     ``render`` runs ``evaluate`` itself, then requires that ``reads_path``, the file the receipt names once both
     are resolved, holds the line whose sha256 is ``receipt.line_sha256``, and that the line records this
-    evaluation: its prereg, experiment, data_sha256, n, and labels, and the receipt's read time. Every number in
-    the sentence comes from ``data``, so a hand-built receipt or a hand-edited evaluation cannot be rendered.
+    evaluation: its prereg, experiment, data_sha256, n, and labels, the receipt's read time, and the early flag
+    that time gives under the rule's horizon. Every number in the sentence comes from ``data``, and whether the
+    read was early from its recorded time, so a hand-built receipt, a hand-edited evaluation, or a hand-edited
+    early flag cannot be rendered.
 
-    The sentence is one line. It carries the verdict ("met" or "not met"; "read early" in its place when the read
-    was recorded before a days window closed everywhere; and "re-read on different data; first read <hash>" when
-    the read superseded another), the test and its counts, the exact p-value and the family's adjusted one, the
-    minimum detectable effect whenever a read that is not early is not met, and the prereg id, a data hash, and
-    the onus version. It reads no clock. p-values have four significant digits; alphas are exact; the MDE is the
-    null plus a gap of four significant digits, rounded away from the null.
+    The sentence is one line. A read that is not early carries its verdict ("met" or "not met", then "re-read on
+    different data; first read <hash>" when the read superseded another), the test and its counts, the exact
+    p-value and the family's adjusted one, the minimum detectable effect when it is not met, and any warnings. A
+    read recorded before its days window closed everywhere reveals nothing about the result: in their place it
+    carries only "read early (read at <the read time>; window closed at <the window's end day, 12:00 UTC>)".
+    Every sentence ends with the prereg id, a data hash, the number of units used, and the onus version. It
+    reads no clock: the read time it prints is the one the reads file records. p-values have four significant
+    digits; alphas are exact; the MDE is the null plus a gap of four significant digits, rounded away from the
+    null, or the exact gap where those digits would print an effect outside [0, 1].
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
         PreregError: ``rule`` has no hypothesis ``name``; ``evaluate`` refuses; the receipt does not bind this
             evaluation, as above; or the sentence would span lines, since the hypothesis's name, its family, or
-            the record's file stem holds a line break.
+            the record's file stem holds a line break, which load refuses first.
     """
     names = [hypothesis.name for hypothesis in rule.hypotheses]
     if name not in names:
         raise PreregError(f"{rule.id!r} has no hypothesis named {name!r}; it has {names}")
     evaluation = evaluate(rule, data, as_of=as_of)
-    read = bound_read(evaluation, receipt=receipt, reads_path=reads_path)
-    return _sentence(rule, evaluation, names.index(name), read.early, read.supersedes)
+    read = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)
+    return _sentence(
+        rule, evaluation, names.index(name), read_early_at=read.at if read.early else None, supersedes=read.supersedes
+    )
 
 
 def render_exploratory(result: TestResult) -> str:

@@ -1686,8 +1686,8 @@ name = "an_early_read_not_flagged"
 why = "A read recorded while its window was still open somewhere would carry early false, and render would state its verdict."
 suites = ["tests.test_prereg.ReadTest"]
 file = "onus/prereg/_evaluate.py"
-find = "        early = end is not None and at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)\n"
-replace = "        early = False\n"
+find = "    return end is not None and at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)\n"
+replace = "    return False\n"
 
 [[mutant]]
 name = "early_measured_from_utc_midnight"
@@ -1798,8 +1798,8 @@ name = "render_without_a_receipt"
 why = "render would quote a verdict from the data alone, with no recorded read behind it: a hand-built receipt, or none, would render."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    read = bound_read(evaluation, receipt=receipt, reads_path=reads_path)\n    return _sentence(rule, evaluation, names.index(name), read.early, read.supersedes)\n"
-replace = "    return _sentence(rule, evaluation, names.index(name), False, None)\n"
+find = "    read = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)\n    return _sentence(\n        rule, evaluation, names.index(name), read_early_at=read.at if read.early else None, supersedes=read.supersedes\n    )\n"
+replace = "    return _sentence(rule, evaluation, names.index(name), read_early_at=None, supersedes=None)\n"
 
 [[mutant]]
 name = "render_reads_a_file_the_receipt_does_not_name"
@@ -1862,7 +1862,7 @@ name = "the_mde_left_out_of_a_verdict_not_met"
 why = "A result that is not significant would be quoted with nothing to say how weak the test was."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    if not early and not outcome.met:\n"
+find = "    if not outcome.met:\n"
 replace = "    if False:\n"
 
 [[mutant]]
@@ -1894,8 +1894,8 @@ name = "an_early_read_given_its_verdict"
 why = "A read recorded before its window closed everywhere would be quoted as met or not met."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    verdict = \"read early\" if early else outcome.label\n"
-replace = "    verdict = outcome.label\n"
+find = "    if read_early_at is not None:\n"
+replace = "    if False:\n"
 
 [[mutant]]
 name = "a_re_read_not_disclosed"
@@ -2090,12 +2090,12 @@ name = "the_mde_on_an_early_read"
 why = "Only a not-met verdict carries the MDE clause, so an early read that is not met would give away the verdict its sentence withholds."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    if not early and not outcome.met:\n"
-replace = "    if not outcome.met:\n"
+find = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\"]\n"
+replace = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\", *([] if outcome.met else [_mde(hypothesis, outcome.result, _members(rule, hypothesis))])]\n"
 
 [[mutant]]
 name = "assert_quoted_accepts_a_document_that_never_quotes_it"
-why = "A document holding no line with the sentence's hypothesis name and prereg id, such as one that wraps the sentence across lines, would pass."
+why = "A document holding no line with the sentence's hypothesis name and prereg id, such as one quoting only another hypothesis, or nothing, would pass."
 suites = ["tests.test_report.QuoteTest"]
 file = "onus/report/_quote.py"
 find = "    if not quoting:\n"
@@ -2153,7 +2153,7 @@ replace = "    parts = [line]\n"
 
 [[mutant]]
 name = "assert_quoted_finds_a_name_inside_a_longer_word"
-why = "'fast' would be named by the line quoting 'faster', and 'layout@...' by one naming 'old_layout@...', so a document quoting each hypothesis, or each record, exactly once would fail."
+why = "'fast' would be named by the line quoting 'faster', and 'layout@...' by prose naming 'old_layout@...', a record no sentence in the document names, so a document quoting each hypothesis, or each record, exactly once would fail."
 suites = ["tests.test_report.QuoteTest"]
 file = "onus/report/_quote.py"
 find = "    return re.compile(left + re.escape(text) + right)\n"
@@ -2164,8 +2164,8 @@ name = "assert_quoted_reads_the_name_inside_the_prereg_id"
 why = "A record whose file stem is a hypothesis's name would name that hypothesis wherever its id stands, so prose naming the record alone would be read as a quote of the result."
 suites = ["tests.test_report.QuoteTest"]
 file = "onus/report/_quote.py"
-find = "for rest in _word(prereg).split(text))"
-replace = "for rest in [text])"
+find = "for text in between)"
+replace = "for text in outside)"
 
 [[mutant]]
 name = "assert_quoted_reads_a_body_s_prereg_id_as_text"
@@ -2177,19 +2177,19 @@ replace = "any(prereg in each for each in named) or"
 
 [[mutant]]
 name = "assert_quoted_reads_a_prereg_id_in_prose_as_text"
-why = "Prose naming old_layout@X would be read as naming layout@X, which that id holds as text, so a document quoting layout's sentence exactly would fail."
+why = "Prose naming old_layout@X, a record no sentence in the document names, would be read as naming layout@X, which that id holds as text after a word character, so a document quoting layout's sentence exactly would fail."
 suites = ["tests.test_report.QuoteTest"]
 file = "onus/report/_quote.py"
-find = "any(_word(prereg).search(text) for text in outside)"
-replace = "any(prereg in text for text in outside)"
+find = "found == prereg and word.match(text, begin) is not None"
+replace = "found == prereg"
 
 [[mutant]]
 name = "assert_quoted_lets_a_verdict_in_prose_hide_what_follows"
 why = "A body could run from a verdict-like phrase in prose to another sentence's provenance, hiding a stale mention of the result between them, so that document would pass."
 suites = ["tests.test_report.QuoteTest"]
 file = "onus/report/_quote.py"
-find = "\"(?:(?!\" + _VERDICT + \").)*?\""
-replace = "\".*?\""
+find = "\"(?:(?!\" + _VERDICT + \").)+?; )\""
+replace = "\".+?; )\""
 
 [[mutant]]
 name = "assert_quoted_accepts_a_sentence_that_spans_lines"
@@ -2201,7 +2201,7 @@ replace = "    if False:\n"
 
 [[mutant]]
 name = "render_returns_a_sentence_that_spans_lines"
-why = "A name, family, or file stem holding a line break would give a sentence of two lines, which no one line of a document can quote, so assert_quoted would reject the sentence render returned."
+why = "render's one-line check is the second, behind load's (E10); without it, a name, family, or file stem holding a line break that got past load would give a sentence of two lines, which no one line of a document can quote."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
 find = "    if sentence.splitlines() != [sentence]:\n"
@@ -2222,3 +2222,215 @@ suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
 find = "    if path.resolve() != Path(receipt.reads_path).resolve():\n"
 replace = "    if path.resolve() != Path(receipt.reads_path).resolve() and not (path.exists() and __import__(\"os\").path.samefile(path, receipt.reads_path)):\n"
+
+# --- the maintainer's decisions of 2026-09-30 (Amendment 3, E7 to E10) ---
+
+[[mutant]]
+name = "the_mde_past_the_boundary_printed_rounded"
+why = "Where the MDE lies within one rounding step of 1, the gap rounded up to four digits would print an effect above 1, such as 1/3 + 0.6667, where E7 prints the exact gap."
+suites = ["tests.test_report.NumberTextTest", "tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    text = f\"{digits:f}\" if 0 <= effect <= 1 else exact_text(abs(gap))\n"
+replace = "    text = f\"{digits:f}\"\n"
+
+[[mutant]]
+name = "the_mde_below_zero_printed_rounded"
+why = "Only the top of [0, 1] would be checked, so below the null a gap rounded up past the null's own distance from 0 would print a negative effect, such as 2/3 - 0.6667."
+suites = ["tests.test_report.NumberTextTest", "tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "if 0 <= effect <= 1 else"
+replace = "if effect <= 1 else"
+
+[[mutant]]
+name = "the_mde_on_the_boundary_printed_exactly"
+why = "An effect of exactly 1, or 0, is a probability, so E2's four digits stand there; with the boundary excluded, 0.3333 + 0.6667 would print the exact gap, 0.66669999906..., instead."
+suites = ["tests.test_report.NumberTextTest"]
+file = "onus/report/_render.py"
+find = "if 0 <= effect <= 1 else"
+replace = "if 0 < effect < 1 else"
+
+[[mutant]]
+name = "an_early_read_quoted_with_its_test_and_counts"
+why = "An early read's sentence would carry the test, its counts, ties, and missing values, from which its verdict can be worked out, where E8 has it carry nothing about the result."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\"]\n"
+replace = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\", describe(outcome.result)]\n"
+
+[[mutant]]
+name = "an_early_read_quoted_with_its_p_values"
+why = "An early read's sentence would carry p, the family's adjusted p, its correction, and alpha, from which a reader works the verdict out: E3's residual, which E8 closes."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\"]\n"
+replace = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\", _p_values(rule, hypothesis, outcome)]\n"
+
+[[mutant]]
+name = "an_early_read_quoted_with_its_warnings"
+why = "An early read's sentence would carry the test's warnings, which E8 withholds with everything else about the result."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\"]\n"
+replace = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\", _warnings(outcome.result)]\n"
+
+[[mutant]]
+name = "an_early_re_read_names_the_read_it_superseded"
+why = "E8 lists all an early read's sentence carries, and the first read a re-read superseded is not among it."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\"]\n"
+replace = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_early_at)}\", *([f\"re-read on different data; first read {supersedes[:12]}\"] if supersedes is not None else [])]\n"
+
+[[mutant]]
+name = "the_window_closed_at_midnight"
+why = "The sentence would say the window closed at midnight UTC on its end day, though it has closed in every time zone only at noon UTC, the moment a read's early flag is set against."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    closed = datetime.combine(horizon.end, CLOSED_EVERYWHERE, tzinfo=UTC)\n"
+replace = "    closed = datetime.combine(horizon.end, CLOSED_EVERYWHERE.replace(hour=0), tzinfo=UTC)\n"
+
+[[mutant]]
+name = "assert_quoted_refuses_the_early_sentence_shape"
+why = "An early read's sentence, whose verdict holds its read time and its window's close and which no test clauses follow, would be refused as one render did not return, so no document could be checked against it."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "RENDERED = re.compile(\"(?P<name>.+?)(?:\" + _EARLY + \"|\""
+replace = "RENDERED = re.compile(\"(?P<name>.+?)(?:\" + \": read early; \" + \"|\""
+
+[[mutant]]
+name = "assert_quoted_reads_a_name_inside_an_early_sentence"
+why = "The words of an early read's verdict, such as 'read', 'early', and 'window', would name a hypothesis of that name wherever another's early sentence stands, so a document quoting each sentence exactly once would fail."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "BODY = re.compile(\"(?:\" + _EARLY + \"|\""
+replace = "BODY = re.compile(\"(?:\" + _DECIDED + \"|\""
+
+[[mutant]]
+name = "assert_quoted_reads_a_wrapped_quote_line_by_line"
+why = "A quote hard-wrapped across lines would be read line by line, so a correct copy wrapped across lines would fail as never quoted, and a stale copy wrapped so that no one line names both would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    for body in BODY.finditer(whole):\n"
+replace = "    for body in BODY.finditer(\"\"):\n"
+
+[[mutant]]
+name = "a_wrapped_line_s_indentation_kept"
+why = "The indentation that opens a wrapped line, as under a list item, would be read as more spaces, so a correct copy wrapped under a list item would not hold the sentence."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    return \" \" + line[opening.end() :]\n"
+replace = "    return \" \" + line\n"
+
+[[mutant]]
+name = "a_wrapped_line_s_blockquote_markers_kept"
+why = "A '>' marker opening a wrapped line inside a blockquote would be read as text, so a correct copy wrapped inside a blockquote would not hold the sentence."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "_OPENING = re.compile(r\"[ \\t]*(?:>[ \\t]*)*\")"
+replace = "_OPENING = re.compile(r\"[ \\t]*\")"
+
+[[mutant]]
+name = "a_line_break_read_as_no_space"
+why = "A line break would join the words on either side of it, so a copy wrapped at a space, as a hard wrap is, would not hold the sentence."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    return \" \" + line[opening.end() :]\n"
+replace = "    return line[opening.end() :]\n"
+
+[[mutant]]
+name = "a_quote_wrapped_inside_its_name_starts_at_its_verdict"
+why = "A quote wrapped between the words of its hypothesis's name would start at its verdict, so a correct copy wrapped there would fail as never quoted, and a stale copy wrapped there would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "            start = before.start()\n"
+replace = "            pass\n"
+
+[[mutant]]
+name = "a_name_holding_a_line_break_loaded"
+why = "A hypothesis name, family, experiment, or unit or order_key field holding a line break would load, a record that could be read but never rendered on one line."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if value.splitlines() != [value]:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "only_a_line_feed_refused_as_a_line_break"
+why = "Only LF would be refused, so a name holding CR, FF, NEL, or U+2028, each a break str.splitlines makes, would load and split the sentence in any document."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    if value.splitlines() != [value]:\n"
+replace = "    if \"\\n\" in value:\n"
+
+[[mutant]]
+name = "a_file_stem_holding_a_line_break_loaded"
+why = "A record whose file stem holds a line break would load, and its prereg id, which every sentence names, would split the sentence."
+suites = ["tests.test_prereg.RecordTest"]
+file = "onus/prereg/_rule.py"
+find = "    _one_line(path.stem, "
+replace = "    (path.stem, "
+
+# --- the report's third review: E9's read bounded, E1 held line by line, ids read whole, the early flag checked ---
+
+[[mutant]]
+name = "a_body_s_prereg_id_runs_on_unbounded"
+why = "A body's prereg id could run on over verdicts, provenances, and line breaks to the next complete provenance: a stale copy after an opening in prose, or one whose provenance opens twice, would be read inside a body naming no record and pass; and a line cut short in its provenance would be joined with the exact sentence below it into one read naming no record, so a correct document would fail."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "\"prereg (?P<prereg>(?:(?!\" + _VERDICT + \"|; prereg ).)+?@[0-9a-f]{12})\""
+replace = "r\"prereg (?P<prereg>.+?@[0-9a-f]{12})\""
+
+[[mutant]]
+name = "a_body_s_prereg_id_runs_over_a_verdict"
+why = "A body's prereg id could run from an opening in prose over a stale copy's verdict to that copy's provenance, so a copy that lost its '; prereg ' would be read inside that body, naming no record, and pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "\"prereg (?P<prereg>(?:(?!\" + _VERDICT + \"|; prereg ).)+?@[0-9a-f]{12})\""
+replace = "\"prereg (?P<prereg>(?:(?!; prereg ).)+?@[0-9a-f]{12})\""
+
+[[mutant]]
+name = "a_body_s_prereg_id_runs_over_another_provenance"
+why = "A body's prereg id could run from one '; prereg ' over the next, so a stale copy whose provenance opens twice would be read as naming an id that is no record's, and pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "\"prereg (?P<prereg>(?:(?!\" + _VERDICT + \"|; prereg ).)+?@[0-9a-f]{12})\""
+replace = "\"prereg (?P<prereg>(?:(?!\" + _VERDICT + \").)+?@[0-9a-f]{12})\""
+
+[[mutant]]
+name = "a_line_inside_a_wrapped_read_not_read_on_its_own"
+why = "A read that a verdict-like phrase in prose opens and a stale copy's provenance closes, lines below, would be read only as one line, with the copy inside its body, so a stale copy on a line of its own would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "            readings += [(number, number, lines[number - 1]) for number in range(first, last + 1)]\n"
+replace = "            pass\n"
+
+[[mutant]]
+name = "each_line_of_a_wrapped_exact_copy_held_to_the_sentence"
+why = "Each line of a correct copy wrapped across lines would also be held to the sentence on its own, so a copy wrapped after its prereg id, whose first line names both, would fail."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "        if first < last and sentence not in text:"
+replace = "        if first < last:"
+
+[[mutant]]
+name = "a_longer_prereg_id_in_the_document_not_read_whole"
+why = "Only this sentence's id would be looked for, so prose naming old-layout@X, old.layout@X, or 'old layout@X' beside that record's sentence would be read as naming layout@X, which those ids hold after a character that is not a word character, and a document quoting layout's sentence exactly would fail."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    ids = {prereg} | {body[\"prereg\"] for *_, text in read for body in BODY.finditer(text)}\n"
+replace = "    ids = {prereg}\n"
+
+[[mutant]]
+name = "a_shorter_prereg_id_found_before_a_longer_one"
+why = "At the end of old-layout@X the shorter layout@X would be taken, so prose naming the older record would be read as naming layout@X and not the older record: a document quoting layout's sentence exactly would fail, and the prose, the older record's result in other words, would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "sorted(ids, key=lambda each: (-len(each), each))"
+replace = "sorted(ids, key=lambda each: (len(each), each))"
+
+[[mutant]]
+name = "render_trusts_the_line_s_early_flag"
+why = "A reads line whose early flag was edited by hand would be rendered by the flag: a read made before its window closed with its verdict, counts, and p-values, a read made after as early, and a count horizon's read as early, which render cannot word."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        \"early\": (line.early, read_early(horizon, line.at)),\n"
+replace = ""
