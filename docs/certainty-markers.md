@@ -113,7 +113,7 @@ over time instead of a single snapshot.
 **It is not a quality score.** The ratio of open to resolved markers mixes a flag written this morning with
 one written months ago, and a note no one has needed since with one in daily use. The trend over time is, I think, the only part that means much.
 
-**It does not cover every write.** The reminder will be matched to two, and no more, known tools. A write made through a shell
+**It does not cover every write.** The reminder is matched to two, and no more, known tools. A write made through a shell
 command, or through any other tool, never triggers it; the weekly scan finds the result later, although not
 at the moment of writing.
 
