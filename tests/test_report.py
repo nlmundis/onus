@@ -869,6 +869,8 @@ class QuoteTest(Reads):
         # The same sentence marked twice is quoted twice, and an exploratory sentence is quoted like any other.
         assert_quoted(doc + marked(sentences[0]) + marked(exploratory), [*sentences, exploratory])
         assert_quoted(marked(sentences[0]), [sentences[0], sentences[0]])
+        # A sentence's own whitespace is read as a span's is: handed over wrapped, it is the same sentence.
+        assert_quoted(marked(sentences[0]), [sentences[0].replace("; ", ";\n")])
 
     def test_a_marked_quote_may_be_wrapped_and_indented_and_nothing_else(self):
         words = self.FASTER.split(" ")
@@ -880,6 +882,9 @@ class QuoteTest(Reads):
             "indented and wrapped": "    " + wrapped.replace("\n", "\n    "),
             "tabs, CRLF, and spaces left at line ends": wrapped.replace("\n", " \t\r\n"),
             "a blank line inside": wrapped.replace("\n", "\n\n", 1),
+            "a no-break space and a line separator, which str.split reads as whitespace": wrapped.replace(
+                "\n", "\u00a0\u2028"
+            ),
         }.items():
             with self.subTest(label):
                 doc = f"- {OPEN}{self.FASTER}{CLOSE}\n" if text is None else marked(text)
@@ -887,6 +892,10 @@ class QuoteTest(Reads):
         for label, text in {
             "a rounded figure": self.FASTER.replace("8 units", "about 8 units"),
             "a changed character": self.FASTER.replace("met;", "met:"),
+            "another letter case": self.FASTER.replace("faster: met", "Faster: Met"),
+            "a zero-width space, which str.split does not read as whitespace": self.FASTER.replace(
+                "met;", "met;\u200b"
+            ),
             "a blockquote marker opening a wrapped line": wrapped.replace("\n", "\n> "),
             "a list marker inside the span": "- " + self.FASTER,
             "a word split by the wrap": self.FASTER.replace("greater", "grea\nter"),
@@ -924,6 +933,7 @@ class QuoteTest(Reads):
         assert_quoted(f"- {self.FASTER} (stale, unmarked)\n" + marked(self.FASTER), [self.FASTER])
 
     def test_a_marker_that_is_not_exact_fails_instead_of_marking_nothing(self):
+        stale = self.FASTER.replace("ba5eba11", "0ddba11")
         for label, opening in {
             "no spaces": "<!--onus:quote-->",
             "two spaces": "<!--  onus:quote -->",
@@ -937,11 +947,21 @@ class QuoteTest(Reads):
                     AssertionError, "line 2 of the document mentions .* outside an exact marker"
                 ):
                     assert_quoted(f"# Results\n{opening}\n{self.FASTER}\n{CLOSE}\n", [self.FASTER])
-        with self.assertRaisesRegex(AssertionError, "line 3 of the document mentions 'onus:quote' outside an exact"):
-            assert_quoted(f"{OPEN}\n{self.FASTER}\n<!-- / onus:quote -->\n", [self.FASTER])
+        # The closing marker is held to its exact text as the opening one is.
+        for label, closing in {
+            "a space after the slash": "<!-- / onus:quote -->",
+            "no spaces": "<!--/onus:quote-->",
+            "another case": "<!-- /ONUS:QUOTE -->",
+            "never finished": "<!-- /onus:quote",
+        }.items():
+            with self.subTest(closing=label):
+                with self.assertRaisesRegex(AssertionError, "line 3 of the document mentions .* outside an exact"):
+                    assert_quoted(f"{OPEN}\n{self.FASTER}\n{closing}\n", [self.FASTER])
+        # Known limit: a slip inside the ten characters is not seen, so such a pair marks nothing, and what stands
+        # between it is as unchecked as any unmarked text.
+        assert_quoted(f"<!-- onus: quote -->{stale}<!-- /onus: quote -->\n" + marked(self.FASTER), [self.FASTER])
         # A pair of inexact markers round a stale copy marks nothing, so the copy must not pass unchecked beside a
         # good quote: with other spacing, and in another case.
-        stale = self.FASTER.replace("ba5eba11", "0ddba11")
         for label, (opening, closing) in {
             "no spaces": ("<!--onus:quote-->", "<!--/onus:quote-->"),
             "another case": ("<!-- ONUS:QUOTE -->", "<!-- /ONUS:QUOTE -->"),

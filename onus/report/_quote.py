@@ -25,7 +25,7 @@ def _stands(doc: str, marker: str, mention: int) -> bool:
 
 
 def _spans(doc: str) -> list[tuple[int, str]]:
-    """Return each marked span of ``doc``: the line of its opening marker, and the text between its two markers.
+    """Return each marked span of ``doc``: where its opening marker starts, and the text between its two markers.
 
     Raises:
         AssertionError: "onus:quote" stands, in any case, anywhere but in an exact marker; a closing marker has no
@@ -35,25 +35,25 @@ def _spans(doc: str) -> list[tuple[int, str]]:
     spans: list[tuple[int, str]] = []
     opened: tuple[int, int] | None = None  # where the open span's opening marker starts and ends
     for mention in _MENTION.finditer(doc):
-        where = f"line {_line(doc, mention.start())} of the document"
         marker = next((each for each in (OPEN, CLOSE) if _stands(doc, each, mention.start())), None)
         if marker is None:
             raise AssertionError(
-                f"{where} mentions {mention[0]!r} outside an exact marker, {OPEN!r} or {CLOSE!r}: a marker that is "
-                "not exact marks nothing, and its quote would go unchecked"
+                f"line {_line(doc, mention.start())} of the document mentions {mention[0]!r} outside an exact "
+                f"marker, {OPEN!r} or {CLOSE!r}: a marker that is not exact marks nothing, and its quote would go "
+                "unchecked; and prose or an example that names the marker cannot stand in a checked document"
             )
         start = mention.start() - marker.index("onus:quote")
         if marker == OPEN:
             if opened is not None:
                 raise AssertionError(
-                    f"{where} opens a quote inside the one opened at line {_line(doc, opened[0])}, which has no "
-                    f"{CLOSE!r} yet"
+                    f"line {_line(doc, start)} of the document opens a quote inside the one opened at line "
+                    f"{_line(doc, opened[0])}, which has no {CLOSE!r} yet"
                 )
             opened = (start, start + len(OPEN))
         else:
             if opened is None:
-                raise AssertionError(f"{where} closes a quote that no {OPEN!r} opened")
-            spans.append((_line(doc, opened[0]), doc[opened[1] : start]))
+                raise AssertionError(f"line {_line(doc, start)} of the document closes a quote that no {OPEN!r} opened")
+            spans.append((opened[0], doc[opened[1] : start]))
             opened = None
     if opened is not None:
         raise AssertionError(f"the quote opened at line {_line(doc, opened[0])} of the document is never closed")
@@ -74,17 +74,20 @@ def assert_quoted(doc: str, sentences: list[str] | tuple[str, ...]) -> None:
     differ: not a character, and not a ``>`` that a wrapped line inside a blockquote would open with.
 
     Only marked text is checked. A copy of a result outside any markers is not found, and is not this function's to
-    find: mark every quote. So that no quote goes unmarked by a slip, "onus:quote" may stand in the document only
-    inside an exact marker: a marker with other spacing, in another case, or left unfinished fails, and so does
-    prose that names the marker, or shows it as an example outside a span.
+    find: mark every quote. Against the commonest slips, the ten characters "onus:quote", in any case, may stand in
+    the document only inside an exact marker: a marker with other spacing round those characters, in capitals, or
+    left unfinished fails, and so does prose that names the marker, or shows it as an example. A slip inside those
+    characters ("onus: quote", "onus-quote") is not caught: such a pair marks nothing, like any other comment.
+    The document is read as plain text, so a marker pair inside a code block or a longer comment marks a quote too.
 
     Raises:
-        AssertionError: a span holds none of the sentences; a sentence stands in no span; or the markers are
-            malformed: "onus:quote" outside an exact marker, a closing marker with no opening one, an opening
-            marker inside a span, or a span never closed. The message names the line.
+        AssertionError: a span holds none of the sentences, or the markers are malformed ("onus:quote" outside an
+            exact marker, a closing marker with no opening one, an opening marker inside a span, or a span never
+            closed), and the message names the line; or a sentence stands in no span, and it names the sentence.
         TypeError: ``doc`` is not a string, or ``sentences`` is not a list or tuple of strings; a single string is
             refused, not read as its characters.
-        ValueError: ``sentences`` is empty, or one of them is empty, is only whitespace, or holds "onus:quote".
+        ValueError: ``sentences`` is empty, or one of them is empty, is only whitespace, or holds "onus:quote" in
+            any case.
     """
     if not isinstance(doc, str):
         raise TypeError(f"assert_quoted reads a document's text, not {type(doc).__name__}")
@@ -101,11 +104,12 @@ def assert_quoted(doc: str, sentences: list[str] | tuple[str, ...]) -> None:
             )
         wanted[_one_spaced(sentence)] = sentence
     found: set[str] = set()
-    for line, text in _spans(doc):
+    for start, text in _spans(doc):
         quote = _one_spaced(text)
         if quote not in wanted:
             raise AssertionError(
-                f"the quote marked at line {line} of the document is none of the rendered sentences: {quote!r}"
+                f"the quote marked at line {_line(doc, start)} of the document is none of the rendered sentences: "
+                f"{quote!r}"
             )
         found.add(quote)
     missing = [sentence for quote, sentence in wanted.items() if quote not in found]

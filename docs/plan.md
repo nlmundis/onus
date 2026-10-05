@@ -290,7 +290,7 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
   `<!-- onus:quote -->` before it and `<!-- /onus:quote -->` after it, which Markdown and HTML do not show.
   `assert_quoted(doc, sentences)` takes the document's text and a list or tuple of rendered sentences. Every
   marked span must hold one of the sentences, and every sentence must stand in at least one span; otherwise it
-  raises AssertionError naming the line. Nothing is parsed: not a sentence, and not a marker beyond its exact
+  raises AssertionError, naming the span's line or the sentence that is missing. Nothing is parsed: not a sentence, and not a marker beyond its exact
   text, so `render`'s and `render_exploratory`'s sentences are checked alike, and a stale copy inside markers
   fails whatever record or read it came from, because it is none of the sentences.
   - The marker carries no key. A record id and hypothesis name in the marker were considered and set aside:
@@ -299,16 +299,20 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
   - **Whitespace only.** A span is compared with a sentence after the ends of each are stripped and every run of
     whitespace in each, as `str.split` reads it, is read as one space. So a quote may be hard-wrapped or
     indented. Nothing else may differ: a `>` opening a wrapped line inside a blockquote fails.
-  - **A marker must be exact.** "onus:quote" may stand in the document, in any case, only inside one of the two
-    markers. A marker with other spacing, in capitals, with anything added, or left unfinished raises
-    AssertionError, where it would otherwise mark nothing and leave its quote unchecked. So does a closing marker
-    with no opening one, an opening marker inside a span, and a span never closed.
+  - **A marker must be exact.** The ten characters "onus:quote" may stand in the document, in any case, only
+    inside one of the two markers. A marker with other spacing round them, in capitals, with anything added, or
+    left unfinished raises AssertionError, where it would otherwise mark nothing and leave its quote unchecked. So
+    does a closing marker with no opening one, an opening marker inside a span, and a span never closed.
   - It raises TypeError for a document that is not a string and for sentences that are not a list or tuple of
     strings, a single string included; and ValueError for no sentences, and for a sentence that is empty, only
     whitespace, or holds "onus:quote", which could stand in no span.
-  - Known limits: a copy of a result outside any markers is not found; prose that names the marker, or shows it
-    as an example, fails the check; and a sentence that differs from another only in its whitespace is the same
-    sentence to this check.
+  - Known limits, after this step's review: a copy of a result outside any markers is not found. A slip inside
+    the ten characters ("onus: quote", "onus-quote") is not caught: such a pair marks nothing, so a stale copy
+    between it passes when the sentence is also marked exactly elsewhere, and when it is not, the check fails
+    for the sentence, naming no line. Catching more would mean guessing which comments were meant as markers.
+    Prose that names the marker, or shows it as an example, fails the check. The document is read as plain
+    text, so a marker pair inside a code block or a longer comment marks a quote too. And a sentence that
+    differs from another only in its whitespace is the same sentence to this check.
 
 ## The library
 
@@ -486,7 +490,7 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
    cross-check (PR #3, merged). **Open, no owner yet:** the plan also named parity scripts here, comparing
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
 3. `prereg` (PR #5, merged), then `report` to Amendments 2, 3, and 4 (PR #8, merged), then
-   `report.assert_quoted` on explicit quote markers, as its own pull request (Amendment 5; **next**).
+   `report.assert_quoted` on explicit quote markers, as its own pull request (Amendment 5).
 4. `baseline`, `signoff`, and `scrub`, plus the prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
    Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
