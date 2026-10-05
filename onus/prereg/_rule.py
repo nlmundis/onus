@@ -171,10 +171,30 @@ def _object(value: object, where: str, required: tuple[str, ...], optional: tupl
     return value
 
 
+def _one_line(value: str, where: str) -> str:
+    """Return ``value`` when it holds no character ``str.splitlines`` splits a line at (E10).
+
+    render's sentence names the hypothesis, its family, and the record's file stem, and a document quotes it on
+    one line, so a record naming any of them with a line break could be read but never rendered; load refuses it,
+    and holds the experiment and the unit and order_key fields to the same rule.
+
+    Raises:
+        PreregError: it holds one, such as LF, CR, FF, NEL, or U+2028.
+    """
+    if value.splitlines() != [value]:
+        raise PreregError(f"{where} must be one line, but {value!r} holds a line break")
+    return value
+
+
 def _text(value: object, where: str) -> str:
+    """Return ``value``, a name the record gives: text that is not blank, on one line.
+
+    Raises:
+        PreregError: it is not.
+    """
     if not isinstance(value, str) or not value.strip():
         raise PreregError(f"{where} must be a non-empty string, not {value!r}")
-    return value
+    return _one_line(value, where)
 
 
 def _positive(value: object, where: str) -> int:
@@ -380,11 +400,13 @@ def load(path: str | Path) -> Rule:
     """Load and check the prereg/1 record at ``path``; bound artifacts are read relative to its folder.
 
     Raises:
-        PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires.
+        PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires; or it,
+            or its file stem, gives a name holding a line break.
         BoundArtifactError: a bound file is missing or has changed.
     """
     path = Path(path)
     raw = path.read_bytes()
+    _one_line(path.stem, "the record's file stem")  # the stem begins its prereg id, which every sentence names
     return _parse(raw, rule_id=_id(path.stem, raw), root=path.parent)
 
 

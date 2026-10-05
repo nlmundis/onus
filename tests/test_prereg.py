@@ -2,13 +2,19 @@
 
 import copy
 import dataclasses
+import fcntl
 import hashlib
+import inspect
 import json
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
-from datetime import UTC, date, datetime, timedelta, timezone
+from collections.abc import Iterator, Mapping
+from datetime import UTC, date, datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -29,6 +35,8 @@ from onus.prereg import (
     status,
 )
 from onus.stats import binomial_test, holm, sign_test
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def record(**changes: object) -> dict[str, Any]:
@@ -100,6 +108,34 @@ def sample() -> list[dict[str, Any]]:
         unit("p5", 5, "win", "win", "failure"),
         unit("p4", 4, "win", "win", "success"),
     ]
+
+
+def sample_b() -> list[dict[str, Any]]:
+    """sample() with one used unit corrected: another data hash, the same n, and the same labels."""
+    return [unit("p6", 6, "win", "loss", "success") if u["participant"] == "p6" else u for u in sample()]
+
+
+def sample_c() -> list[dict[str, Any]]:
+    """sample() with another used unit corrected, so it differs from both sample() and sample_b()."""
+    return [unit("p5", 5, "win", "loss", "failure") if u["participant"] == "p5" else u for u in sample()]
+
+
+def days_record(**changes: object) -> dict[str, Any]:
+    """record() with a three-day window, 2026-01-05 to 2026-01-07, whose end is 2026-01-08."""
+    return record(horizon={"kind": "days", "days": 3, "start": "2026-01-05"}, looks=[3], **changes)
+
+
+def days_sample() -> list[dict[str, Any]]:
+    return [
+        unit("a", "2026-01-05", "win", "win", "success"),
+        unit("b", "2026-01-06", "win", "win", "failure"),
+        unit(7, "2026-01-07", "win", "loss", "success"),
+    ]
+
+
+def at(text: str) -> datetime:
+    """A patched clock's reading, from an ISO 8601 timestamp with its offset."""
+    return datetime.fromisoformat(text)
 
 
 class Folder(unittest.TestCase):
@@ -244,6 +280,39 @@ class RecordTest(Folder):
             with self.subTest(message=message):
                 with self.assertRaisesRegex(PreregError, message):
                     load(self.write(content))
+
+    def test_a_name_holding_a_line_break_is_refused(self):
+        # E10: render's sentence names the hypothesis, its family, and the file stem, and a document quotes it on one
+        # line, so load refuses any of them, and the experiment and the unit and order_key fields, holding a break
+        # str.splitlines makes; every record that loads renders on one line.
+        marks = ("\n", "\r", "\r\n", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+        hypotheses = record()["hypotheses"]
+
+        def named(name: str) -> dict[str, dict[str, Any]]:
+            return {
+                "hypotheses[0].name": record(hypotheses=[{**hypotheses[0], "name": name}, *hypotheses[1:]]),
+                "hypotheses[2].family": record(
+                    hypotheses=[*hypotheses[:2], {**hypotheses[2], "family": name}],
+                    families={"primary": {"correction": "holm"}, name: {"correction": "benjamini-hochberg"}},
+                ),
+                "experiment": record(experiment=name),
+                "unit": record(unit=name),
+                "order_key": record(order_key=name),
+            }
+
+        for mark in marks:
+            for where, content in named(f"fast{mark}er").items():
+                with self.subTest(where=where, mark=mark):
+                    with self.assertRaisesRegex(PreregError, rf"^{re.escape(where)} must be one line, but "):
+                        load(self.write(content))
+            with self.subTest(where="the file stem", mark=mark):
+                with self.assertRaisesRegex(PreregError, "^the record's file stem must be one line, but "):
+                    load(self.write(record(), name=f"lay{mark}out.json"))
+        # The control: a space where each break was loads, in every field and in the stem.
+        for where, content in named("fast er").items():
+            with self.subTest(where=where, mark=" "):
+                self.assertEqual(load(self.write(content)).experiment, content["experiment"])
+        self.assertTrue(load(self.write(record(), name="lay out.json")).id.startswith("lay out@"))
 
     def test_a_binomial_test_states_p0_and_a_sign_test_does_not(self):
         hypotheses = record()["hypotheses"]
@@ -440,6 +509,8 @@ class EvaluateTest(Folder):
             evaluate(self.rule(), [unit("\ud800", 0, "win", "win", "success"), *self.data()])
         with self.assertRaisesRegex(PreregError, "as a mapping by hypothesis name"):
             evaluate(self.rule(), [{**unit("p0", 0, "win", "win", "success"), "outcomes": {1: "win"}}, *self.data()])
+        with self.assertRaisesRegex(PreregError, "unit 'p0' must record its outcomes as a mapping"):
+            evaluate(self.rule(), [{**unit("p0", 0, "win", "win", "success"), "outcomes": ["win"]}, *self.data()])
         rule = self.rule(horizon={"kind": "days", "days": 3, "start": "2026-01-05"}, looks=[3])
         with self.assertRaisesRegex(PreregError, "as_of must be a date"):
             evaluate(rule, [], as_of=datetime(2026, 1, 9, tzinfo=UTC))
@@ -454,6 +525,36 @@ class EvaluateTest(Folder):
         forward = evaluate(rule, data, as_of=date(2026, 1, 6))
         self.assertEqual(evaluate(rule, list(reversed(data)), as_of=date(2026, 1, 6)), forward)
 
+    def test_the_evaluation_keeps_the_as_of_it_was_given(self):
+        rule = self.rule(horizon={"kind": "days", "days": 3, "start": "2026-01-05"}, looks=[3])
+        self.assertEqual(evaluate(rule, days_sample(), as_of=date(2026, 1, 9)).as_of, date(2026, 1, 9))
+        self.assertIsNone(evaluate(self.rule(), self.data()).as_of)
+        self.assertEqual(evaluate(self.rule(), self.data(), as_of=date(2026, 2, 1)).as_of, date(2026, 2, 1))
+        with self.assertRaisesRegex(PreregError, "as_of must be a date, not '2026-02-01'"):
+            evaluate(self.rule(), self.data(), as_of="2026-02-01")  # type: ignore[arg-type]
+
+    def test_each_used_unit_s_outcomes_are_read_once_so_the_counts_and_the_hash_agree(self):
+        class TwoFaced(Mapping[str, str]):
+            """p6's outcomes, answering "loss" for clearer on its first two reads and "tie", the truth, after."""
+
+            def __init__(self) -> None:
+                self.real, self.reads = {"faster": "win", "clearer": "tie", "completes": "success"}, 0
+
+            def __getitem__(self, key: str) -> str:
+                self.reads += key == "clearer"
+                return "loss" if key == "clearer" and self.reads <= 2 else self.real[key]
+
+            def __iter__(self) -> Iterator[str]:
+                return iter(self.real)
+
+            def __len__(self) -> int:
+                return len(self.real)
+
+        rule = self.rule()
+        data = [{**u, "outcomes": TwoFaced()} if u["participant"] == "p6" else u for u in sample()]
+        # Whichever answer was read, the counts and the data hash both come from it: sample_b() records the loss.
+        self.assertIn(evaluate(rule, data), (evaluate(rule, sample()), evaluate(rule, sample_b())))
+
     def test_evaluate_changes_nothing_it_is_given_and_writes_nothing(self):
         rule, data = self.rule(), self.data()
         before, files = copy.deepcopy(data), sorted(self.folder.iterdir())
@@ -463,71 +564,384 @@ class EvaluateTest(Folder):
 
 
 class ReadTest(Folder):
-    """record_read appends one line per read and returns its receipt."""
+    """record_read appends one read/2 line per read, timed by its own clock, and returns its receipt."""
+
+    def setUp(self):
+        super().setUp()
+        self.reads = self.folder / "reads.jsonl"
+
+    def lines(self) -> list[str]:
+        return self.reads.read_text(encoding="utf-8").splitlines()
 
     def test_a_reads_file_whose_last_write_was_cut_short_is_not_appended_to(self):
         rule = load(self.write(record()))
         result = evaluate(rule, sample())
-        reads = self.folder / "reads.jsonl"
-        reads.write_text('{"schema":"read/1","prereg":', encoding="utf-8")
+        self.reads.write_text('{"schema":"read/2","prereg":', encoding="utf-8")
         with self.assertRaisesRegex(PreregError, "does not end in a newline"):
-            record_read(rule, result, reads_path=reads)
-        self.assertEqual(reads.read_text(encoding="utf-8"), '{"schema":"read/1","prereg":')
+            record_read(rule, result, reads_path=self.reads)
+        self.assertEqual(self.reads.read_text(encoding="utf-8"), '{"schema":"read/2","prereg":')
 
     def test_each_read_appends_a_line_and_its_receipt_names_it(self):
         rule = load(self.write(record()))
         result = evaluate(rule, sample())
-        reads = self.folder / "reads.jsonl"
-        when = datetime(2026, 1, 20, 9, 30, tzinfo=timezone(timedelta(hours=2)))
-        first = record_read(rule, result, reads_path=reads, now=when)
-        second = record_read(rule, result, reads_path=reads, now=when + timedelta(days=1))
-        lines = reads.read_text(encoding="utf-8").splitlines()
+        before = datetime.now(UTC)
+        first = record_read(rule, result, reads_path=self.reads)
+        after = datetime.now(UTC)
+        second = record_read(rule, result, reads_path=self.reads)
+        lines = self.lines()
         self.assertEqual(len(lines), 2)
+        line = json.loads(lines[0])
+        recorded = datetime.fromisoformat(line.pop("at"))
+        self.assertTrue(before <= recorded <= after, (before, recorded, after))
+        self.assertEqual(recorded.utcoffset(), timedelta(0))
         self.assertEqual(
-            json.loads(lines[0]),
+            line,
             {
-                "schema": "read/1",
+                "schema": "read/2",
                 "prereg": rule.id,
                 "experiment": rule.experiment,
                 "data_sha256": result.data_sha256,
                 "n": 6,
                 "labels": {"faster": "met", "clearer": "not met", "completes": "not met"},
-                "at": "2026-01-20T07:30:00+00:00",
+                "as_of": None,
+                "early": False,
+                "supersedes": None,
+                "reason": None,
                 "onus": onus.__version__,
             },
         )
         self.assertEqual(first.line_sha256, hashlib.sha256(lines[0].encode()).hexdigest())
         self.assertEqual(second.line_sha256, hashlib.sha256(lines[1].encode()).hexdigest())
-        self.assertEqual((first.prereg, first.data_sha256, first.reads_path), (rule.id, result.data_sha256, reads))
-        self.assertEqual(first.at, datetime(2026, 1, 20, 7, 30, tzinfo=UTC))
+        self.assertEqual(
+            (first.prereg, first.data_sha256, first.reads_path), (rule.id, result.data_sha256, self.reads.resolve())
+        )
+        self.assertEqual((first.at, first.at.tzinfo), (recorded, UTC))
 
-    def test_a_read_is_recorded_only_against_its_own_rule_and_a_timezone(self):
+    def test_the_read_time_is_not_the_callers_to_choose(self):
+        self.assertEqual(list(inspect.signature(record_read).parameters)[2:], ["reads_path", "supersedes", "reason"])
+        rule = load(self.write(record()))
+        with self.assertRaises(TypeError):
+            record_read(rule, evaluate(rule, sample()), reads_path=self.reads, now=datetime.now(UTC))  # type: ignore[call-arg]
+        self.assertFalse(self.reads.exists())
+
+    def test_a_read_is_recorded_only_against_its_own_rule(self):
         rule = load(self.write(record()))
         result = evaluate(rule, sample())
         other = load(self.write(record(experiment="another synthetic experiment"), name="other.json"))
-        reads = self.folder / "reads.jsonl"
         with self.assertRaisesRegex(PreregError, rf"the evaluation is of '{rule.id}', not of '{other.id}'"):
-            record_read(other, result, reads_path=reads)
-        with self.assertRaisesRegex(ValueError, "must carry its timezone"):
-            record_read(rule, result, reads_path=reads, now=datetime(2026, 1, 20, 9, 30))
-        self.assertFalse(reads.exists())
+            record_read(other, result, reads_path=self.reads)
         tampered = dataclasses.replace(rule, experiment="a different synthetic experiment")
         with self.assertRaisesRegex(PreregError, "no longer matches the record"):
-            record_read(tampered, result, reads_path=reads)
+            record_read(tampered, result, reads_path=self.reads)
         forged = Evaluation(rule.id, rule.experiment, 0, "0" * 64, ())
         with self.assertRaisesRegex(PreregError, "does not hold a result for each"):
-            record_read(rule, forged, reads_path=reads)
+            record_read(rule, forged, reads_path=self.reads)
         flipped = dataclasses.replace(
             result, hypotheses=tuple(dataclasses.replace(h, met=not h.met) for h in result.hypotheses)
         )
         with self.assertRaisesRegex(PreregError, "'faster' is labelled 'not met', which its adjusted p-value"):
-            record_read(rule, flipped, reads_path=reads)
+            record_read(rule, flipped, reads_path=self.reads)
         moved = dataclasses.replace(
             result, hypotheses=(dataclasses.replace(result.hypotheses[0], alpha=Fraction(1, 2)), *result.hypotheses[1:])
         )
         with self.assertRaisesRegex(PreregError, "'faster' states a family or alpha"):
-            record_read(rule, moved, reads_path=reads)
-        self.assertFalse(reads.exists())
-        receipt = record_read(rule, result, reads_path=reads)
+            record_read(rule, moved, reads_path=self.reads)
+        self.assertFalse(self.reads.exists())
+        receipt = record_read(rule, result, reads_path=self.reads)
         self.assertEqual(receipt.at.tzinfo, UTC)
         self.assertLess(abs(datetime.now(UTC) - receipt.at), timedelta(minutes=5))
+
+    def test_a_days_read_needs_the_as_of_it_was_evaluated_at(self):
+        rule = load(self.write(days_record()))
+        result = evaluate(rule, days_sample(), as_of=date(2026, 1, 8))
+        cases: dict[str, Any] = {
+            "needs the as_of evaluate was given, on or after 2026-01-08; the evaluation's is None": None,
+            "needs the as_of evaluate was given, on or after 2026-01-08; the evaluation's is 2026-01-07": date(
+                2026, 1, 7
+            ),
+            "the evaluation's as_of must be a date, not datetime": datetime(2026, 1, 9, tzinfo=UTC),
+        }
+        for message, as_of in cases.items():
+            with self.subTest(as_of=as_of):
+                with self.assertRaisesRegex(PreregError, re.escape(message)):
+                    record_read(rule, dataclasses.replace(result, as_of=as_of), reads_path=self.reads)
+        self.assertFalse(self.reads.exists())
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-10T00:00:00+00:00")):
+            record_read(rule, result, reads_path=self.reads)
+        self.assertEqual(json.loads(self.lines()[0])["as_of"], "2026-01-08")
+
+    def test_a_count_read_s_as_of_must_be_a_date_too(self):
+        # A count horizon has no window end to compare as_of with, so only the type check stands between a datetime
+        # and a line that every later read of the file would refuse.
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample(), as_of=date(2026, 1, 9))
+        wrong: tuple[Any, ...] = (datetime(2026, 1, 9, tzinfo=UTC), "2026-01-09")
+        for as_of in wrong:
+            with self.subTest(as_of=as_of):
+                with self.assertRaisesRegex(PreregError, "the evaluation's as_of must be a date, not"):
+                    record_read(rule, dataclasses.replace(result, as_of=as_of), reads_path=self.reads)
+        self.assertFalse(self.reads.exists())
+        record_read(rule, result, reads_path=self.reads)
+        self.assertEqual(json.loads(self.lines()[0])["as_of"], "2026-01-09")
+
+    def test_a_read_before_the_window_closed_in_every_time_zone_is_flagged_early(self):
+        rule = load(self.write(days_record()))
+        result = evaluate(rule, days_sample(), as_of=date(2026, 1, 8))
+        # The window's last day is 2026-01-07; it has ended everywhere at 2026-01-08T00:00 in UTC-12, noon UTC.
+        cases = {
+            "2026-01-07T23:00:00+00:00": True,
+            "2026-01-08T06:00:00+00:00": True,
+            "2026-01-08T11:59:59.999999+00:00": True,
+            "2026-01-08T13:30:00+02:00": True,
+            "2026-01-08T12:00:00+00:00": False,
+            "2026-01-09T00:00:00+00:00": False,
+        }
+        for i, (clock, early) in enumerate(cases.items()):
+            with self.subTest(clock=clock), mock.patch("onus.prereg._evaluate._now", return_value=at(clock)):
+                receipt = record_read(rule, result, reads_path=self.reads)
+                line = json.loads(self.lines()[i])
+                self.assertEqual(line["early"], early)
+                self.assertEqual(datetime.fromisoformat(line["at"]), at(clock))
+                self.assertEqual((receipt.at, line["at"][-6:]), (at(clock), "+00:00"))
+        count = load(self.write(record(), name="count.json"))
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2000-01-01T00:00:00+00:00")):
+            record_read(count, evaluate(count, sample()), reads_path=self.folder / "count.jsonl")
+        self.assertIs(json.loads((self.folder / "count.jsonl").read_text(encoding="utf-8"))["early"], False)
+
+    def test_a_re_read_on_different_data_is_sealed_until_it_names_the_first_read(self):
+        rule = load(self.write(record()))
+        first = record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        record_read(rule, evaluate(rule, sample()), reads_path=self.reads)  # the same data again is not a re-read
+        corrected = evaluate(rule, sample_b())
+        with self.assertRaisesRegex(PreregError, rf"pass supersedes='{first.line_sha256}', the first read"):
+            record_read(rule, corrected, reads_path=self.reads)
+        self.assertEqual(len(self.lines()), 2)
+        second = record_read(
+            rule, corrected, reads_path=self.reads, supersedes=first.line_sha256, reason="p6 was recorded wrongly"
+        )
+        line = json.loads(self.lines()[2])
+        self.assertEqual((line["supersedes"], line["reason"]), (first.line_sha256, "p6 was recorded wrongly"))
+        self.assertEqual(second.line_sha256, hashlib.sha256(self.lines()[2].encode()).hexdigest())
+        with self.assertRaisesRegex(PreregError, f"must name the first read .*'{first.line_sha256}'"):
+            record_read(
+                rule, evaluate(rule, sample_c()), reads_path=self.reads, supersedes=second.line_sha256, reason="x"
+            )
+        with self.assertRaisesRegex(PreregError, "nothing to supersede"):
+            fresh = self.folder / "fresh.jsonl"
+            once = record_read(rule, evaluate(rule, sample()), reads_path=fresh)
+            record_read(rule, evaluate(rule, sample()), reads_path=fresh, supersedes=once.line_sha256, reason="x")
+        self.assertEqual(len(fresh.read_text(encoding="utf-8").splitlines()), 1)
+        record_read(rule, evaluate(rule, sample_c()), reads_path=self.reads, supersedes=first.line_sha256, reason="x")
+        self.assertEqual(len(self.lines()), 4)
+
+    def test_a_read_that_matches_the_first_read_but_not_a_later_one_is_sealed(self):
+        rule = load(self.write(record()))
+        first = record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        record_read(rule, evaluate(rule, sample_b()), reads_path=self.reads, supersedes=first.line_sha256, reason="x")
+        re_read = hashlib.sha256(self.lines()[1].encode()).hexdigest()
+        # The original data again: the same as the first read, but not the re-read, which it would silently undo.
+        with self.assertRaisesRegex(PreregError, f"line sha256 {re_read}"):
+            record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        self.assertEqual(len(self.lines()), 2)
+
+    def test_the_corrected_data_read_again_names_the_first_read_again(self):
+        # E4: after an override every read that differs from the first read needs supersedes and reason again, the
+        # corrected data read a second time included, though it equals the re-read that last superseded.
+        rule = load(self.write(record()))
+        first = record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        record_read(rule, evaluate(rule, sample_b()), reads_path=self.reads, supersedes=first.line_sha256, reason="x")
+        with self.assertRaisesRegex(
+            PreregError,
+            rf"at line sha256 {first.line_sha256}\); to record a re-read, pass supersedes='{first.line_sha256}'",
+        ):
+            record_read(rule, evaluate(rule, sample_b()), reads_path=self.reads)
+        self.assertEqual(len(self.lines()), 2)
+        record_read(
+            rule, evaluate(rule, sample_b()), reads_path=self.reads, supersedes=first.line_sha256, reason="again"
+        )
+        self.assertEqual(json.loads(self.lines()[2])["supersedes"], first.line_sha256)
+
+    def test_supersedes_and_reason_come_together_and_well_formed(self):
+        rule = load(self.write(record()))
+        first = record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        corrected = evaluate(rule, sample_b())
+        cases: dict[str, tuple[Any, Any]] = {
+            "given together": (first.line_sha256, None),
+            "or not at all": (None, "a reason with nothing superseded"),
+            "must be a line sha256": (first.line_sha256.upper(), "x"),
+            "reason non-blank text": (first.line_sha256, "  "),
+            "and '\\\\ud800'": (first.line_sha256, "\ud800"),
+        }
+        for message, (supersedes, reason) in cases.items():
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(PreregError, message):
+                    record_read(rule, corrected, reads_path=self.reads, supersedes=supersedes, reason=reason)
+        self.assertEqual(len(self.lines()), 1)
+
+    def test_the_seal_spans_the_experiment_and_the_record_stem(self):
+        rule = load(self.write(record()))
+        record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        # An edited record keeps its file's stem but gets a new id; a record in another file may share the experiment.
+        renamed = load(self.write(record(experiment="synthetic layout comparison, renamed")))
+        elsewhere = load(self.write(record(), name="copy.json"))
+        for other in (renamed, elsewhere):
+            with self.subTest(other=other.id):
+                self.assertNotEqual(other.id, rule.id)
+                with self.assertRaisesRegex(PreregError, "was already read on other data or with other labels"):
+                    record_read(other, evaluate(other, sample_b()), reads_path=self.reads)
+        unrelated = load(self.write(record(experiment="another synthetic experiment"), name="other.json"))
+        record_read(unrelated, evaluate(unrelated, sample_b()), reads_path=self.reads)
+        self.assertEqual(len(self.lines()), 2)
+
+    def test_the_seal_compares_the_data_hash_and_the_labels(self):
+        rule = load(self.write(record()))
+        record_read(rule, evaluate(rule, sample()), reads_path=self.reads)
+        corrected = evaluate(rule, sample_b())
+        self.assertEqual((corrected.n, corrected.labels()), (6, evaluate(rule, sample()).labels()))
+        with self.assertRaisesRegex(PreregError, "was already read on other data"):
+            record_read(rule, corrected, reads_path=self.reads)
+        # The same data under an edited alpha: the same hash and n, but faster's adjusted 1/32 is not met at 0.01.
+        stricter_hypotheses = [
+            {**h, "alpha": "0.01"} if h["family"] == "primary" else h for h in record()["hypotheses"]
+        ]
+        stricter = load(self.write(record(hypotheses=stricter_hypotheses)))
+        relabelled = evaluate(stricter, sample())
+        self.assertEqual(relabelled.data_sha256, evaluate(rule, sample()).data_sha256)
+        self.assertEqual(relabelled.labels()["faster"], "not met")
+        with self.assertRaisesRegex(PreregError, "was already read on other data or with other labels"):
+            record_read(stricter, relabelled, reads_path=self.reads)
+        self.assertEqual(len(self.lines()), 1)
+
+    def test_a_malformed_earlier_line_refuses_every_read(self):
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample())
+        scratch = self.folder / "scratch.jsonl"
+        record_read(rule, result, reads_path=scratch)
+        good = json.loads(scratch.read_text(encoding="utf-8"))
+        edits: dict[str, object] = {
+            "schema": "read/1",
+            "prereg": "layout",
+            "experiment": " ",
+            "data_sha256": "ABC",
+            "n": True,
+            "labels": {"faster": "pending"},
+            "at": "2026-01-20T09:30:00+02:00",
+            "as_of": "2026-02-30",
+            "early": "no",
+            "supersedes": "0" * 63,
+            "reason": "a reason with nothing superseded",
+            "onus": 7,
+        }
+        cases: dict[str, bytes] = {
+            f"field {key}": json.dumps({**good, key: value}).encode() for key, value in edits.items()
+        }
+        cases["a naive at"] = json.dumps({**good, "at": "2026-01-20T09:30:00"}).encode()
+        cases["an at that is not a time"] = json.dumps({**good, "at": "yesterday"}).encode()
+        cases["an at that is not text"] = json.dumps({**good, "at": 1768901400}).encode()
+        cases["a lone surrogate"] = json.dumps({**good, "experiment": "\ud800"}).encode()
+        cases["no labels"] = json.dumps({**good, "labels": {}}).encode()
+        cases["supersedes without reason"] = json.dumps({**good, "supersedes": "0" * 64}).encode()
+        cases["a missing key"] = json.dumps({k: v for k, v in good.items() if k != "early"}).encode()
+        cases["an extra key"] = json.dumps({**good, "note": "x"}).encode()
+        cases["a repeated key"] = json.dumps(good).encode()[:-1] + b',"n":6}'
+        cases["n zero"] = json.dumps({**good, "n": 0}).encode()
+        cases["a prereg hash of 13 hex digits"] = json.dumps({**good, "prereg": good["prereg"] + "0"}).encode()
+        cases["a prereg hash of 11 hex digits"] = json.dumps({**good, "prereg": good["prereg"][:-1]}).encode()
+        cases["not an object"] = b"[]"
+        cases["not JSON"] = b"{"
+        cases["a blank line"] = b""
+        cases["not UTF-8"] = b"\xff"
+        for label, bad in cases.items():
+            with self.subTest(label):
+                self.reads.write_bytes(bad + b"\n")
+                with self.assertRaisesRegex(PreregError, "is not a read/2 line|is not UTF-8"):
+                    record_read(rule, result, reads_path=self.reads)
+                self.assertEqual(self.reads.read_bytes(), bad + b"\n")
+        # Each with its partner well formed, so only the field's own check can refuse it.
+        paired: dict[str, dict[str, object]] = {
+            "supersedes": {"supersedes": "0" * 63, "reason": "a reason"},
+            "reason": {"supersedes": "0" * 64, "reason": " "},
+        }
+        for field, edit in paired.items():
+            with self.subTest(field=field):
+                bad = json.dumps({**good, **edit}).encode() + b"\n"
+                self.reads.write_bytes(bad)
+                with self.assertRaisesRegex(PreregError, rf"is not a read/2 line: it holds malformed \['{field}'\]$"):
+                    record_read(rule, result, reads_path=self.reads)
+                self.assertEqual(self.reads.read_bytes(), bad)
+
+    def test_the_check_and_the_append_hold_the_reads_file_lock(self):
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample())
+        self.reads.touch()
+        receipts: list[object] = []
+        with self.reads.open("rb") as holder:
+            fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+            writer = threading.Thread(
+                target=lambda: receipts.append(record_read(rule, result, reads_path=self.reads)), daemon=True
+            )
+            writer.start()
+            writer.join(timeout=0.5)
+            self.assertTrue(writer.is_alive(), "record_read appended while another writer held the lock")
+            self.assertEqual(self.reads.read_bytes(), b"")
+            fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        writer.join(timeout=30)
+        self.assertFalse(writer.is_alive())
+        self.assertEqual((len(receipts), len(self.lines())), (1, 1))
+
+    def test_the_seal_is_checked_only_once_the_lock_is_held(self):
+        # A second writer appends another read while this one waits; checked under the lock, the seal sees it.
+        rule = load(self.write(record()))
+        other = self.folder / "other.jsonl"
+        record_read(rule, evaluate(rule, sample()), reads_path=other)
+        corrected = evaluate(rule, sample_b())
+        self.reads.touch()
+        flock, waiting = fcntl.flock, threading.Event()
+
+        def watched(fd: int, operation: int) -> None:
+            if operation == fcntl.LOCK_EX:
+                waiting.set()
+            flock(fd, operation)
+
+        outcome: list[object] = []
+
+        def write() -> None:
+            try:
+                outcome.append(record_read(rule, corrected, reads_path=self.reads))
+            except PreregError as error:
+                outcome.append(error)
+
+        with self.reads.open("ab") as holder, mock.patch("fcntl.flock", watched):
+            flock(holder.fileno(), fcntl.LOCK_EX)
+            writer = threading.Thread(target=write, daemon=True)
+            writer.start()
+            self.assertTrue(waiting.wait(timeout=30), "record_read never asked for the reads file's lock")
+            holder.write(other.read_bytes())
+            holder.flush()
+            flock(holder.fileno(), fcntl.LOCK_UN)
+            writer.join(timeout=30)
+        self.assertFalse(writer.is_alive())
+        self.assertEqual(len(outcome), 1)
+        self.assertIsInstance(outcome[0], PreregError)
+        self.assertRegex(str(outcome[0]), "was already read on other data")
+        self.assertEqual(self.reads.read_bytes(), other.read_bytes())
+
+    def test_where_there_is_no_fcntl_record_read_names_the_missing_lock_and_writes_nothing(self):
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample())
+        with mock.patch.dict(sys.modules, {"fcntl": None}):
+            with self.assertRaisesRegex(NotImplementedError, "holds fcntl.flock on the reads file .* has no fcntl"):
+                record_read(rule, result, reads_path=self.reads)
+        self.assertFalse(self.reads.exists())
+
+    def test_onus_prereg_and_onus_report_import_where_there_is_no_fcntl(self):
+        # A fresh interpreter in which fcntl cannot be imported, as on Windows; it first shows that the block holds.
+        probe = (
+            "import sys; sys.modules['fcntl'] = None; sys.path.insert(0, sys.argv[1])\n"
+            "try:\n    import fcntl\nexcept ImportError:\n    print('no fcntl')\n"
+            "import onus.prereg, onus.report; print(onus.report.render.__module__)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-S", "-B", "-c", probe, str(ROOT)], capture_output=True, text=True, timeout=60
+        )
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "no fcntl\nonus.report._render\n", ""))

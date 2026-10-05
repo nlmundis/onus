@@ -4,8 +4,10 @@ A rule is a ``prereg/1`` JSON record, named by ``prereg_id``: its file's stem an
 its sha256, so any edit gives it a new id. ``load`` refuses a key the schema does not define, a float where an
 exact number belongs, and a bound artifact whose content has changed. ``evaluate`` is pure: it refuses before
 the horizon, uses exactly the units the horizon names, and adjusts each declared family. ``record_read`` is the
-write, appending to a reads file and returning a receipt. Amendments, bound by sign-offs, arrive with
-``onus.signoff``.
+write: under a lock, it appends a ``read/2`` line to a reads file, with the read time from onus's own clock and
+a flag for a read made before a days window closed everywhere, and returns a receipt. It refuses a re-read on
+different data unless the line names the first read it supersedes and why. Amendments, bound by sign-offs,
+arrive with ``onus.signoff``.
 """
 
 from onus.prereg._evaluate import Evaluation, HypothesisResult, ReadReceipt, evaluate, record_read, status
