@@ -56,6 +56,9 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
   every such read. Neither half of the rule for which earlier reads count was pinned in render's copy of it;
   the seal and render now share `related_reads`, which the seal's two mutants pin. Render's docstring named only
   reads of the experiment, and now names those of a record with the same file stem too.
+- **A test now pins that `render` is idempotent:** asked again for a recorded read it gives the same sentence,
+  and it writes nothing. `record_read` is not, by D5: every read is recorded, so the same data read again
+  appends a second line, needs no `supersedes`, and is refused one ("nothing to supersede").
 
 ## Open
 

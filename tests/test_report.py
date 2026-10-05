@@ -624,6 +624,20 @@ class RenderTest(Reads):
         self.assertEqual(seen, [])
         self.assertTrue(sentence.startswith("faster: met"))
 
+    def test_rendering_a_read_again_gives_the_same_sentence_and_writes_nothing(self):
+        # render is idempotent: it only reads the reads file, so a second call records no read and changes no line,
+        # and its sentence for a recorded read is the same however often it is asked for.
+        rule = self.rule()
+        first = self.read(rule, sample())
+        again = self.read(rule, sample_b(), supersedes=first.line_sha256, reason="p6 was recorded wrongly")
+        before = self.reads.read_bytes()
+        for receipt, data in ((first, sample()), (again, sample_b())):
+            with self.subTest(read=receipt.line_sha256[:12]):
+                sentence = render(rule, data, "faster", receipt=receipt, reads_path=self.reads)
+                self.assertEqual(render(rule, data, "faster", receipt=receipt, reads_path=self.reads), sentence)
+        self.assertEqual(self.reads.read_bytes(), before)
+        self.assertEqual(sorted(path.name for path in self.folder.iterdir()), ["layout.json", "reads.jsonl"])
+
 
 class ReceiptTest(Reads):
     """receipt_from_line rebuilds a recorded read's receipt from its line, and from nothing else."""
