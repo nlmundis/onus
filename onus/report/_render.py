@@ -249,7 +249,8 @@ def render(
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
         PreregError: ``rule`` has no hypothesis ``name``; ``evaluate`` refuses; the receipt does not bind this
-            evaluation, as above; or the sentence would span lines, since the hypothesis's name, its family, or
+            evaluation, as above; the read superseded another and the reads file no longer shows why
+            (``re_read_kind``); or the sentence would span lines, since the hypothesis's name, its family, or
             the record's file stem holds a line break, which load refuses first.
     """
     names = [hypothesis.name for hypothesis in rule.hypotheses]

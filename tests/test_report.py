@@ -392,6 +392,50 @@ class RenderTest(Reads):
         )
         self.assertEqual(render(edited, sample(), "faster", receipt=second, reads_path=self.reads), sentence)
 
+    def test_a_re_read_counts_the_reads_the_seal_held_it_to_by_experiment_and_by_record_stem(self):
+        # An edited record keeps its file's stem and may rename its experiment; a copy under another file name keeps
+        # the experiment. The seal holds a read under either to the first read, and render sorts it by that read too.
+        first = self.read(self.rule(), sample())
+        renamed = self.rule(record(experiment="synthetic layout comparison, renamed"))
+        copied = self.rule(record(), name="copy.json")
+        for other in (renamed, copied):
+            with self.subTest(other=other.id):
+                again = self.read(other, sample_b(), supersedes=first.line_sha256, reason="p6 was recorded wrongly")
+                sentence = render(other, sample_b(), "faster", receipt=again, reads_path=self.reads)
+                self.assertTrue(
+                    sentence.startswith(
+                        f"faster: met; re-read on different data; first read {first.line_sha256[:12]}; one-sided"
+                    ),
+                    sentence,
+                )
+
+    def test_a_re_read_the_reads_file_no_longer_explains_is_refused(self):
+        rule = self.rule()
+        first = self.read(rule, sample())
+        second = self.read(rule, sample_b(), supersedes=first.line_sha256, reason="p6 was recorded wrongly")
+        self.assertIn(
+            "re-read on different data", render(rule, sample_b(), "faster", receipt=second, reads_path=self.reads)
+        )
+        # The first read's line removed by hand: the re-read names a read the file does not hold.
+        lines = self.reads.read_text(encoding="utf-8").splitlines(keepends=True)
+        self.reads.write_text("".join(lines[1:]), encoding="utf-8")
+        with self.assertRaisesRegex(PreregError, "is not the first read of its experiment in this reads file"):
+            render(rule, sample_b(), "faster", receipt=second, reads_path=self.reads)
+        # A first line recording labels its data does not give: the same record and data, read again, superseded it.
+        self.reads.unlink()
+        result = evaluate(rule, sample())
+        forged = dataclasses.replace(
+            result,
+            hypotheses=(
+                dataclasses.replace(result.hypotheses[0], adjusted_p=Fraction(1), met=False),
+                *result.hypotheses[1:],
+            ),
+        )
+        wrong = record_read(rule, forged, reads_path=self.reads)
+        honest = self.read(rule, sample(), supersedes=wrong.line_sha256, reason="the labels were recorded wrongly")
+        with self.assertRaisesRegex(PreregError, "supersedes a read of the same data under the same record"):
+            render(rule, sample(), "faster", receipt=honest, reads_path=self.reads)
+
     def test_the_first_record_read_again_after_an_edited_one_does_not_claim_to_differ_from_the_first_read(self):
         # The record is edited, read, and put back: the third read is of the first read's own record, data, and
         # labels, and was sealed by the read in between, so its clause speaks of that read and not of its own record.

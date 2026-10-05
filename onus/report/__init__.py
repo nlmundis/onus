@@ -4,8 +4,8 @@
 the reads file holds the line its receipt names and that line records this very evaluation, so a hand-built
 receipt or a hand-edited evaluation cannot be rendered. Its sentence carries the counts, the sidedness, the
 family correction, the minimum detectable effect whenever a read that is not early is not met, and the
-provenance; an early read's says only when it was read and when its window closed, beside the provenance. A re-
-read on different data, early or not, names the first read; one of the same data after a read under a different
+provenance; an early read's says only when it was read and when its window closed, beside the provenance. A
+re-read on different data, early or not, names the first read; one of the same data after a read under a different
 record does once it is not early. It reads no clock. ``receipt_from_line`` gives a second process the receipt of
 a recorded read. ``render_exploratory`` quotes a test result no rule registered, with no verdict.
 """

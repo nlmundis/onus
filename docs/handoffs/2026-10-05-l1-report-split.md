@@ -57,8 +57,16 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
   the seal and render now share `related_reads`, which the seal's two mutants pin. Render's docstring named only
   reads of the experiment, and now names those of a record with the same file stem too.
 - **A test now pins that `render` is idempotent:** asked again for a recorded read it gives the same sentence,
-  and it writes nothing. `record_read` is not, by D5: every read is recorded, so the same data read again
-  appends a second line, needs no `supersedes`, and is refused one ("nothing to supersede").
+  and it writes nothing. `record_read` is not, by D5: every read is recorded, so a read that matches every
+  earlier read of its experiment appends a second line, needs no `supersedes`, and is refused one ("nothing to
+  supersede"); once any earlier read differs, the same data read again needs `supersedes` too (E4).
+- **A third targeted review, of those fixes** (commits `e1b8801` and the test after it): two of the three
+  findings closed, one in part, and three new ones confirmed, all minor, none called merge-blocking. Fixed here:
+  `re_read_kind` now finds "record" positively, by a related earlier read under another prereg id, and refuses
+  with PreregError a re-read the reads file no longer explains (its first read's line removed, or an earlier
+  line recording labels its data does not give), where it fell through to "record"; two tests and four mutants
+  pin that and both halves of the related-reads rule on render's side; and this note's sentence above about
+  `supersedes`, which was wrong. These last fixes have had no review.
 
 ## Open
 

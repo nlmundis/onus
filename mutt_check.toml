@@ -2198,8 +2198,8 @@ name = "a_re_read_under_a_different_record_called_one_on_different_data"
 why = "A re-read of the same data under an edited record would say 're-read on different data' beside the very data hash the first read printed, and an early one would give its changed label away."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
-find = "        return \"data\"\n    return \"record\"\n"
-replace = "        return \"data\"\n    return \"data\"\n"
+find = "    if any(line.data_sha256 != read.data_sha256 for line in related):\n"
+replace = "    if True:\n"
 
 [[mutant]]
 name = "a_re_read_compared_with_the_first_read_alone"
@@ -2216,6 +2216,38 @@ suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
 find = "    related = related_reads(earlier, read.experiment, read.stem)\n"
 replace = "    related = earlier\n"
+
+[[mutant]]
+name = "a_re_read_sorted_by_its_experiment_s_reads_alone"
+why = "An edited record that renamed its experiment, read on other data, would be sorted without the read it superseded: render would refuse it, where the seal had held it to that read by the record's file stem."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    related = related_reads(earlier, read.experiment, read.stem)\n"
+replace = "    related = related_reads(earlier, read.experiment, \"\")\n"
+
+[[mutant]]
+name = "a_re_read_sorted_by_its_record_stem_s_reads_alone"
+why = "A copy of the record under another file name, read on other data, would be sorted without the read it superseded: render would refuse it, where the seal had held it to that read by its experiment."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    related = related_reads(earlier, read.experiment, read.stem)\n"
+replace = "    related = related_reads(earlier, \"\", read.stem)\n"
+
+[[mutant]]
+name = "a_re_read_naming_a_read_its_file_does_not_hold_rendered"
+why = "With the first read's line removed from the reads file, a re-read on different data would be rendered as one after a read under a different record, naming a read the file does not hold."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    if not related or related[0].sha256 != read.supersedes:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_re_read_called_one_after_a_different_record_unchecked"
+why = "A re-read that superseded only reads of its own record on its own data would say 're-read after a read under a different record' though no such read stands in the file: the clause would be a catch-all, not a finding."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    if any(line.prereg != read.prereg for line in related):\n"
+replace = "    if True:\n"
 
 [[mutant]]
 name = "the_reads_after_a_read_counted_with_those_before_it"
