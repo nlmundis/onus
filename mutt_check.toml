@@ -1798,8 +1798,8 @@ name = "render_without_a_receipt"
 why = "render would quote a verdict from the data alone, with no recorded read behind it: a hand-built receipt, or none, would render."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    read = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)\n    return _sentence(\n        rule, evaluation, names.index(name), read_early_at=read.at if read.early else None, supersedes=read.supersedes\n    )\n"
-replace = "    return _sentence(rule, evaluation, names.index(name), read_early_at=None, supersedes=None)\n"
+find = "    read, earlier = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)\n    return _sentence(\n        rule,\n        evaluation,\n        names.index(name),\n        read_early_at=read.at if read.early else None,\n        kind=re_read_kind(read, earlier),\n        first=read.supersedes,\n    )\n"
+replace = "    return _sentence(rule, evaluation, names.index(name), read_early_at=None, kind=None, first=None)\n"
 
 [[mutant]]
 name = "render_reads_a_file_the_receipt_does_not_name"
@@ -1902,15 +1902,15 @@ name = "a_re_read_not_disclosed"
 why = "A verdict re-read on different data would be quoted as if it were the first read."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    if supersedes is not None:\n"
-replace = "    if False:\n"
+find = "    return [f\"{_RE_READ[kind]}; first read {first[:12]}\"]\n"
+replace = "    return []\n"
 
 [[mutant]]
 name = "a_decided_re_read_not_disclosed"
-why = "A verdict re-read on different data once its window had closed would be quoted as if it were the first read, though an early re-read still said so."
+why = "A verdict re-read once its window had closed would be quoted as if it were the first read, though an early re-read on different data still said so."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    clauses = [f\"{hypothesis.name}: {outcome.label}\", *_re_read(supersedes)]\n"
+find = "    clauses = [f\"{hypothesis.name}: {outcome.label}\", *_re_read(kind, first, early=False)]\n"
 replace = "    clauses = [f\"{hypothesis.name}: {outcome.label}\"]\n"
 
 [[mutant]]
@@ -2179,11 +2179,51 @@ replace = "        clauses = [f\"{hypothesis.name}: {_early(rule.horizon, read_e
 
 [[mutant]]
 name = "an_early_re_read_not_disclosed"
-why = "An early re-read on different data would be quoted as if it were the first read (E12); the clause is the read's history, and gives nothing of the result away."
+why = "An early re-read on different data would be quoted as if it were the first read (E12); that it is one is the read's history, and gives nothing of the result away."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "        clauses += _re_read(supersedes)\n"
+find = "        clauses += _re_read(kind, first, early=True)\n"
 replace = ""
+
+[[mutant]]
+name = "an_early_re_read_under_a_different_record_disclosed"
+why = "The same data read early again under an edited record needed supersedes only because a label differs, so the clause beside an unchanged data hash would tell a reader that a verdict changed: E12 as first built, which its review refused."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    if kind is None or (early and kind != \"data\"):\n"
+replace = "    if kind is None:\n"
+
+[[mutant]]
+name = "a_re_read_under_a_different_record_called_one_on_different_data"
+why = "A re-read of the same data under an edited record would say 're-read on different data' beside the very data hash the first read printed, and an early one would give its changed label away."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "        return \"data\"\n    return \"record\"\n"
+replace = "        return \"data\"\n    return \"data\"\n"
+
+[[mutant]]
+name = "a_re_read_compared_with_the_first_read_alone"
+why = "After a re-read on corrected data, the first data read again matches the first read, and would be called a re-read under a different record, though no record changed (E4)."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    if any(line.data_sha256 != read.data_sha256 for line in related):\n"
+replace = "    if any(line.data_sha256 != read.data_sha256 for line in related[:1]):\n"
+
+[[mutant]]
+name = "another_experiment_s_reads_counted_as_this_one_s"
+why = "A reads file shared with another experiment would make every re-read here one on different data, the other experiment's, and an early re-read under an edited record would carry the clause that gives its label away."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    related = [line for line in earlier if line.experiment == read.experiment or line.stem == read.stem]\n"
+replace = "    related = earlier\n"
+
+[[mutant]]
+name = "the_reads_after_a_read_counted_with_those_before_it"
+why = "A read's sentence would change once a later read on other data was recorded: a re-read under a different record would turn into one on different data, and no copy of the earlier sentence would match a fresh render."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_receipts.py"
+find = "    return line, lines[: lines.index(line)]\n"
+replace = "    return line, lines\n"
 
 [[mutant]]
 name = "the_window_closed_at_midnight"

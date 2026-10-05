@@ -22,8 +22,27 @@ def receipt_from_line(reads_path: str | Path, line_sha256: str) -> ReadReceipt:
     return ReadReceipt(line.prereg, line.data_sha256, line.at, line.sha256, path)
 
 
-def bound_read(evaluation: Evaluation, *, horizon: Horizon, receipt: ReadReceipt, reads_path: str | Path) -> ReadLine:
-    """Return the recorded read that ``receipt`` names, once its line is shown to record ``evaluation``.
+def re_read_kind(read: ReadLine, earlier: list[ReadLine]) -> str | None:
+    """Return what the recorded ``read`` differed in when it superseded another: "data", "record", or None.
+
+    ``earlier`` are the lines before it in its reads file. Those that count are the ones the seal held it to: reads
+    of its experiment, or of a record with its file stem. It is "data" when any of them used other data, by its
+    hash, whatever the labels; and "record" when none did, so the same data was given other labels, which only a
+    different record can do. Which of the two it is says nothing about any label, since a read
+    on other data needed ``supersedes`` whatever its labels were. It is None for a read that superseded none.
+    """
+    if read.supersedes is None:
+        return None
+    related = [line for line in earlier if line.experiment == read.experiment or line.stem == read.stem]
+    if any(line.data_sha256 != read.data_sha256 for line in related):
+        return "data"
+    return "record"
+
+
+def bound_read(
+    evaluation: Evaluation, *, horizon: Horizon, receipt: ReadReceipt, reads_path: str | Path
+) -> tuple[ReadLine, list[ReadLine]]:
+    """Return the recorded read ``receipt`` names, once its line is shown to record ``evaluation``, and those before it.
 
     The line's ``early`` must be the one its read time gives under ``horizon``, the rule's (``read_early``), so a
     hand-edited flag can neither state the verdict of a read made before its window closed nor withhold one.
@@ -40,7 +59,8 @@ def bound_read(evaluation: Evaluation, *, horizon: Horizon, receipt: ReadReceipt
     path = Path(reads_path)
     if path.resolve() != Path(receipt.reads_path).resolve():
         raise PreregError(f"the receipt names the reads file {receipt.reads_path}, not {path}")
-    line = find_line(read_file(path), receipt.line_sha256, path)
+    lines = read_file(path)
+    line = find_line(lines, receipt.line_sha256, path)
     # Each field as the line records it, then what it must equal: the evaluation re-derived here, the receipt, and
     # the flag the line's own read time gives.
     fields: dict[str, tuple[object, ...]] = {
@@ -57,4 +77,4 @@ def bound_read(evaluation: Evaluation, *, horizon: Horizon, receipt: ReadReceipt
         raise PreregError(
             f"the read at line sha256 {line.sha256} does not record this evaluation of this data: its {wrong} differ"
         )
-    return line
+    return line, lines[: lines.index(line)]

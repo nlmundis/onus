@@ -90,8 +90,9 @@ class ReadLine:
         at: when the read was recorded, from ``record_read``'s own clock.
         as_of: the day the evaluation was made as of, for a days horizon; None when none was given.
         early: whether the read was recorded before its days window had closed in every time zone.
-        supersedes: for a re-read on different data, the line sha256 of the first read it supersedes.
-        reason: why a re-read on different data was recorded; None when ``supersedes`` is.
+        supersedes: for a re-read on different data or with other labels, the line sha256 of the first read it
+            supersedes.
+        reason: why such a re-read was recorded; None when ``supersedes`` is.
         onus: the onus version that recorded the read.
     """
 

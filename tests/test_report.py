@@ -74,6 +74,14 @@ def renamed(names: dict[str, str]) -> tuple[dict[str, Any], list[dict[str, Any]]
     return record(hypotheses=hypotheses), data
 
 
+def loosened(content: dict[str, Any]) -> dict[str, Any]:
+    """``content`` with its primary family read at alpha 0.5, under which one more of its hypotheses is met."""
+    for hypothesis in content["hypotheses"]:
+        if hypothesis.get("family") == "primary":
+            hypothesis["alpha"] = "0.5"
+    return content
+
+
 class Reads(Folder):
     """A folder with a record and a reads file, and a way to record a read in it."""
 
@@ -326,6 +334,64 @@ class RenderTest(Reads):
             render(rule, corrected, "faster", receipt=late, reads_path=self.reads, as_of=window),
         )
 
+    def test_an_early_re_read_under_a_different_record_gives_no_label_away(self):
+        # E12, after its review: the same data read early again under an edited record needed supersedes only because
+        # a label differs, so a clause on that read would tell a reader holding both sentences that one did.
+        window = date(2026, 1, 8)
+        rule = self.rule(days_record())
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T10:00:00+00:00")):
+            first = self.read(rule, days_sample(), as_of=window)
+        edited = self.rule(loosened(days_record()))
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T11:00:00+00:00")):
+            with self.assertRaisesRegex(PreregError, "with other labels"):
+                self.read(edited, days_sample(), as_of=window)
+            again = self.read(
+                edited, days_sample(), as_of=window, supersedes=first.line_sha256, reason="alpha was recorded wrongly"
+            )
+        self.assertEqual(again.data_sha256, first.data_sha256)
+        for name in ("faster", "clearer", "completes"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    render(edited, days_sample(), name, receipt=again, reads_path=self.reads, as_of=window),
+                    f"{name}: read early (read at 2026-01-08T11:00:00+00:00; window closed at"
+                    f" 2026-01-08T12:00:00+00:00); prereg {edited.id}, data sha256 {again.data_sha256[:12]} over 3"
+                    f" units; onus {VERSION}.",
+                )
+        # Once the window has closed the verdict is stated, and so is what the re-read differed in.
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T12:00:00+00:00")):
+            late = self.read(
+                edited, days_sample(), as_of=window, supersedes=first.line_sha256, reason="read once closed"
+            )
+        self.assertTrue(
+            render(edited, days_sample(), "faster", receipt=late, reads_path=self.reads, as_of=window).startswith(
+                f"faster: met; re-read under a different record; first read {first.line_sha256[:12]}; one-sided"
+            )
+        )
+
+    def test_a_re_read_of_the_same_data_under_a_different_record_is_not_called_one_on_different_data(self):
+        # Another experiment's read of other data stands first in the reads file, and is none of this one's.
+        other = self.rule(record(experiment="another synthetic comparison"), name="other.json")
+        self.read(other, sample_b())
+        first = self.read(self.rule(), sample())
+        edited = self.rule(loosened(record()))
+        second = self.read(edited, sample(), supersedes=first.line_sha256, reason="alpha was recorded wrongly")
+        self.assertEqual(second.data_sha256, first.data_sha256)
+        sentence = render(edited, sample(), "faster", receipt=second, reads_path=self.reads)
+        self.assertTrue(
+            sentence.startswith(
+                f"faster: met; re-read under a different record; first read {first.line_sha256[:12]}; one-sided"
+            ),
+            sentence,
+        )
+        # A later read on other data is one on different data, and changes nothing the earlier read's sentence says.
+        third = self.read(edited, sample_b(), supersedes=first.line_sha256, reason="p6 was recorded wrongly")
+        self.assertTrue(
+            render(edited, sample_b(), "faster", receipt=third, reads_path=self.reads).startswith(
+                f"faster: met; re-read on different data; first read {first.line_sha256[:12]}; one-sided"
+            )
+        )
+        self.assertEqual(render(edited, sample(), "faster", receipt=second, reads_path=self.reads), sentence)
+
     def test_a_re_read_on_different_data_names_the_first_read(self):
         rule = self.rule()
         first = self.read(rule, sample())
@@ -344,6 +410,13 @@ class RenderTest(Reads):
         third = self.read(rule, sample_b(), supersedes=first.line_sha256, reason="the corrected data, read again")
         self.assertTrue(
             render(rule, sample_b(), "faster", receipt=third, reads_path=self.reads).startswith(
+                f"faster: met; re-read on different data; first read {first.line_sha256[:12]}; one-sided (greater)"
+            )
+        )
+        # The first data read again matches the first read and differs from the re-reads: on different data still.
+        fourth = self.read(rule, sample(), supersedes=first.line_sha256, reason="the first data, read again")
+        self.assertTrue(
+            render(rule, sample(), "faster", receipt=fourth, reads_path=self.reads).startswith(
                 f"faster: met; re-read on different data; first read {first.line_sha256[:12]}; one-sided (greater)"
             )
         )

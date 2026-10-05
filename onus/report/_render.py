@@ -19,7 +19,7 @@ from onus.prereg import (
     evaluate,
 )
 from onus.prereg._evaluate import CLOSED_EVERYWHERE
-from onus.report._receipts import bound_read
+from onus.report._receipts import bound_read, re_read_kind
 from onus.stats import TestResult, binomial_mde, binomial_power, rejection_region
 
 # The power a minimum detectable effect is stated at. Frozen once released: documents quote the sentences.
@@ -148,16 +148,27 @@ def _early(horizon: Horizon, read_at: datetime) -> str:
     return f"read early (read at {read_at.isoformat()}; window closed at {closed.isoformat()})"
 
 
-def _re_read(supersedes: str | None) -> list[str]:
-    """Return the clause naming the first read a re-read on different data superseded; none for any other read."""
-    if supersedes is not None:
-        return [f"re-read on different data; first read {supersedes[:12]}"]
-    return []
+# How a re-read's clause opens, by what the read differed in from those before it (``re_read_kind``).
+_RE_READ = {"data": "re-read on different data", "record": "re-read under a different record"}
 
 
-def _decided(rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult, supersedes: str | None) -> list[str]:
-    """Return the clauses of a read that is not early: verdict, test and counts, p-values, MDE if not met, warnings."""
-    clauses = [f"{hypothesis.name}: {outcome.label}", *_re_read(supersedes)]
+def _re_read(kind: str | None, first: str | None, *, early: bool) -> list[str]:
+    """Return the clause naming the ``first`` read a re-read superseded; none for a read that superseded none.
+
+    ``kind`` is ``re_read_kind``'s. An early read carries the clause only for a re-read on different data (E12): one
+    under a different record on the same data was sealed because a label differs, so there the clause would say so.
+    """
+    if kind is None or (early and kind != "data"):
+        return []
+    assert first is not None  # a read that superseded another names it
+    return [f"{_RE_READ[kind]}; first read {first[:12]}"]
+
+
+def _decided(
+    rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult, kind: str | None, first: str | None
+) -> list[str]:
+    """Return a decided read's clauses: verdict, re-read if any, test and counts, p-values, MDE if not met, warnings."""
+    clauses = [f"{hypothesis.name}: {outcome.label}", *_re_read(kind, first, early=False)]
     clauses += [describe(outcome.result), _p_values(rule, hypothesis, outcome)]
     if not outcome.met:
         clauses.append(_mde(hypothesis, outcome.result, _members(rule, hypothesis)))
@@ -166,18 +177,28 @@ def _decided(rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult, supe
 
 
 def _sentence(
-    rule: Rule, evaluation: Evaluation, index: int, *, read_early_at: datetime | None, supersedes: str | None
+    rule: Rule,
+    evaluation: Evaluation,
+    index: int,
+    *,
+    read_early_at: datetime | None,
+    kind: str | None,
+    first: str | None,
 ) -> str:
-    """Return the sentence for hypothesis ``index``; ``read_early_at`` is the read time of an early read, else None."""
+    """Return the sentence for hypothesis ``index``.
+
+    ``read_early_at`` is the read time of an early read, else None; ``kind`` is ``re_read_kind``'s, and ``first`` the
+    line sha256 of the first read a re-read superseded.
+    """
     hypothesis, outcome = rule.hypotheses[index], evaluation.hypotheses[index]
     if read_early_at is not None:
         # E8: an early read reveals nothing about the result, so it states no verdict, count, p-value, α, family, MDE,
-        # test, or warning; only when it was read, when the window closed everywhere, and the provenance. E12: a
-        # re-read's clause is the read's history, not its result, so an early re-read carries it too.
+        # test, or warning; only when it was read, when the window closed everywhere, and the provenance. E12: that a
+        # read was a re-read on different data is its history, not its result, so an early re-read says that too.
         clauses = [f"{hypothesis.name}: {_early(rule.horizon, read_early_at)}"]
-        clauses += _re_read(supersedes)
+        clauses += _re_read(kind, first, early=True)
     else:
-        clauses = _decided(rule, hypothesis, outcome, supersedes)
+        clauses = _decided(rule, hypothesis, outcome, kind, first)
     clauses.append(f"prereg {rule.id}, data sha256 {evaluation.data_sha256[:12]} over {evaluation.n} units")
     clauses.append(f"onus {onus.__version__}")
     sentence = "; ".join(clauses) + "."
@@ -213,11 +234,14 @@ def render(
     counts, the exact p-value and the family's adjusted one, the minimum detectable effect when it is not met, and
     any warnings. A read recorded before its days window closed everywhere reveals nothing about the result: in
     their place it carries only "read early (read at <the read time>; window closed at <the window's end day,
-    12:00 UTC>)". Either is followed by "re-read on different data; first read <hash>" when the read superseded
-    another. Every sentence ends with the prereg id, a data hash, the number of units used, and the onus version. It
-    reads no clock: the read time it prints is the one the reads file records. p-values have four significant
-    digits; alphas are exact; the MDE is the null plus a gap of four significant digits, rounded away from the
-    null, or the exact gap where those digits would print an effect outside [0, 1].
+    12:00 UTC>)". A read that superseded another says so just after its verdict or its "read early (...)": "re-read
+    on different data; first read <hash>" when an earlier read of the experiment used other data, and otherwise, on
+    a read that is not early, "re-read under a different record; first read <hash>", since there the same data was
+    given another label. An early read says nothing in that second case, where saying it would give away that a
+    label changed. Every sentence ends with the prereg id, a data hash, the number of units used, and the onus
+    version. It reads no clock: the read time it prints is the one the reads file records. p-values have four
+    significant digits; alphas are exact; the MDE is the null plus a gap of four significant digits, rounded away
+    from the null, or the exact gap where those digits would print an effect outside [0, 1].
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
@@ -229,9 +253,14 @@ def render(
     if name not in names:
         raise PreregError(f"{rule.id!r} has no hypothesis named {name!r}; it has {names}")
     evaluation = evaluate(rule, data, as_of=as_of)
-    read = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)
+    read, earlier = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)
     return _sentence(
-        rule, evaluation, names.index(name), read_early_at=read.at if read.early else None, supersedes=read.supersedes
+        rule,
+        evaluation,
+        names.index(name),
+        read_early_at=read.at if read.early else None,
+        kind=re_read_kind(read, earlier),
+        first=read.supersedes,
     )
 
 

@@ -105,7 +105,8 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
   days-horizon `Evaluation` without `as_of`. Each line records `as_of` and `early`, which is true when the read
   time is before `horizon.end` 12:00 UTC, the moment the window has closed in every time zone. render states
   no met / not met for an early read and shows "read early", beside the post hoc label; Amendment 3 drops its MDE
-  clause (E3), then all else about the result (E8), so it shows only when it was read and when the window closed.
+  clause (E3), then all else about the result (E8), so it shows only when it was read and when the window closed,
+  and, since Amendment 4's E12, that it was a re-read on different data when it was.
 - **D6, re-read on different data: seal, with a recorded override.** `record_read` refuses a read whose
   data_sha256, n, or labels differ from an earlier read in the same reads file with the same experiment or
   record stem. It allows one only when `supersedes=<the first read's line sha256>` and `reason=` are passed,
@@ -197,7 +198,7 @@ marked "as built" too:
   no clock, and the data hash is cut to 12 hex digits as in every sentence. E8's list holds no re-read clause, so
   an early re-read's sentence does not name the read it superseded, though its line records `supersedes` and a
   re-read once the window has closed names it: D6's "re-read on different data" is shown only on a read that is
-  not early; Amendment 4's E12 reverses this, and an early re-read names it too. As built after the third review
+  not early; Amendment 4's E12 reverses this for a re-read on different data, which names it early too. As built after the third review
   (its R3-REG-4): render requires the line's `early` to be the one
   its `at` gives under the rule's horizon (`read_early`, which `record_read` uses to write it), beside D1's
   fields, and refuses a hand-edited flag with PreregError. Before, a flag flipped by hand had render state the
@@ -234,10 +235,10 @@ marked "as built" too:
   - `read/2` labels hold only "met" and "not met", so the post hoc label (L1 step 4) needs a `read/3` or a
     widening of `read/2` then.
 
-## Amendment 4 (2026-10-05): `assert_quoted` leaves the report step; an early re-read is labelled
+## Amendment 4 (2026-10-05): `assert_quoted` leaves the report step; a re-read says what it differed in
 
 After the third review the maintainer chose between four ways on for `assert_quoted`, and answered the question
-E8 left about an early re-read. Each choice binds v0.1:
+E8 left about an early re-read; a review of that build then put two more choices to them. Each choice binds v0.1:
 
 - **E11, `assert_quoted` is split out and rebuilt on explicit quote markers.** `assert_quoted` produced the worst
   finding of each of the three reviews (F3; the second review's C1 and R1; the third's R3-REG-1 and two majors),
@@ -248,13 +249,26 @@ E8 left about an early re-read. Each choice binds v0.1:
   withdrawn with it, and E8's and E10's remarks about what `assert_quoted` recognises or raises no longer
   describe anything built. What stands of E1: the rendered sentence is one line, held by `load` (E10) and by
   render's own refusal.
-- **E12, an early re-read names the first read.** An early read that superseded another carries "re-read on
-  different data; first read <12 hex>" after its "read early (...)" clause, as a read that is not early carries
-  it after its verdict. The clause is the read's history, which its reads line already records, and says nothing
-  about the result, so E8's rule that an early read reveals nothing about the result stands. As built: "faster:
-  read early (read at 2026-01-08T11:00:00+00:00; window closed at 2026-01-08T12:00:00+00:00); re-read on
-  different data; first read <12 hex>; prereg layout@<12 hex>, data sha256 <12 hex> over 3 units; onus
-  <version>."
+- **E12, an early re-read on different data names the first read.** An early read that superseded another on
+  different data carries "re-read on different data; first read <12 hex>" after its "read early (...)" clause,
+  as a read that is not early carries it after its verdict. That a read was a re-read on different data is its
+  history, which its reads line already records, and says nothing about the result, so E8's rule that an early
+  read reveals nothing about the result stands. As built: "faster: read early (read at
+  2026-01-08T11:00:00+00:00; window closed at 2026-01-08T12:00:00+00:00); re-read on different data; first read
+  <12 hex>; prereg layout@<12 hex>, data sha256 <12 hex> over 3 units; onus <version>."
+  - As built after this amendment's review, on the maintainer's choice of 2026-10-05: the seal requires
+    `supersedes` when the labels differ as well as when the data does, so the same data read again under an
+    edited record needs it only because a label changed. As first built, that early read carried the clause too,
+    and beside an unchanged data hash it told a reader that some verdict differed between the two records. Now
+    render sorts a re-read by the reads before it in its file that the seal held it to (those of its experiment,
+    or of a record with its file stem): it is one on different data when any of them has another data hash,
+    whatever the labels, and otherwise one under a different record. An early read carries the clause only for
+    the first kind. Whether it does depends on the data hashes alone, since a read on other data needed
+    `supersedes` whatever its labels were.
+- **E13, a re-read says what it differed in.** A read that is not early and superseded another on the same data
+  carries "re-read under a different record; first read <12 hex>" in place of "re-read on different data",
+  which its own data hash contradicted there. D6's and E4's wording stands wherever an earlier read of the
+  experiment used other data, the first data read again after a re-read included.
 
 ## The library
 
@@ -337,7 +351,7 @@ E8 left about an early re-read. Each choice binds v0.1:
   correction, **the MDE whenever a read that is not early is not met** (D2, D3; Amendment 3, E2, E3, and E7), the
   prereg id, a data hash, and the library version. An early read's sentence carries only the name, when it was
   read and when its window closed, and that provenance (E8). A re-read on different data, early or not, names
-  the first read (D6; Amendment 4, E12). It reads no wall clock.
+  the first read, and one under a different record does once it is not early (D6; Amendment 4, E12 and E13). It reads no wall clock.
 - **`report.assert_quoted`** is not part of this step: it is rebuilt on explicit quote markers in its own pull
   request (Amendment 4, E11).
 

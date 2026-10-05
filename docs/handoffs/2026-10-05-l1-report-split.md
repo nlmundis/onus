@@ -1,9 +1,9 @@
 ---
 date: 2026-10-05
-scope: "L1 step 3, part 2: the maintainer's two decisions of 2026-10-05 on onus.report (Amendment 4): assert_quoted leaves this pull request, and an early re-read names the first read"
+scope: "L1 step 3, part 2: the maintainer's decisions of 2026-10-05 on onus.report (Amendment 4): assert_quoted leaves this pull request, an early re-read on different data names the first read, and, after one review of that build, a re-read says what it differed in"
 state: in-progress
 prs: []
-next: one targeted review of this session's delta; if it closes clean, run the leak scan, push, and open the pull request, each on the maintainer's word
+next: a review of the fix to this session's first build, on the maintainer's word; if it closes clean, run the leak scan, push, and open the pull request, each on the maintainer's word
 ---
 
 # Handoff: onus.report without assert_quoted (2026-10-05)
@@ -18,12 +18,14 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
 - **`onus.report` now exports** `render`, `render_exploratory`, `receipt_from_line`, and `MDE_POWER`.
   `assert_quoted` is gone from this branch: `onus/report/_quote.py`, `QuoteTest`, and the 27 mutants that named
   either.
-- **An early re-read names the first read.** Its sentence carries "re-read on different data; first read
-  <12 hex>" between "read early (...)" and the provenance. A first early read's sentence is unchanged.
-- **`docs/plan.md` has Amendment 4** (E11 and E12), and marks E1 and E9 withdrawn where they stand.
-- **Gate:** `make -f Makefile check` exit 0 on this change before this note was written, read from the run's own
-  exit line: 232 tests, 100% branch coverage, 267 of 267 mutants caught with none stale, and the no-op spec's
-  mutant survived, as it must. The run on the commit itself goes in the pull request.
+- **An early re-read on different data names the first read.** Its sentence carries "re-read on different
+  data; first read <12 hex>" between "read early (...)" and the provenance. A first early read's sentence is
+  unchanged, and so is that of the same data read early again under an edited record.
+- **A re-read says what it differed in.** One that is not early, of the same data under a different record,
+  carries "re-read under a different record; first read <12 hex>".
+- **`docs/plan.md` has Amendment 4** (E11 to E13), and marks E1 and E9 withdrawn where they stand.
+- **Gate:** the raw result of `make -f Makefile check` on each commit goes in the pull request; this note is
+  part of the commit it would describe.
 
 ## Done this session
 
@@ -36,11 +38,21 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
   opposite, and `a_decided_re_read_not_disclosed` pins the other call, since `a_re_read_not_disclosed` now
   switches the helper off for both.
 - The README and the package docstring no longer describe `assert_quoted`.
+- **One targeted review of that build** (commit `af20ccc`): three findings, all confirmed, none refuted. The
+  major one: the seal requires `supersedes` when labels differ as well as when data does, so E12's clause on an
+  early read of the same data under an edited record told a reader holding both sentences that a verdict had
+  changed. The two minor ones: "on different data" was printed where the data hash was the same, and render's
+  docstring put the clause after the warnings.
+- **The fix, on the maintainer's two choices.** `re_read_kind` sorts a re-read by the reads before it that the
+  seal held it to: "data" when any has another data hash, else "record". An early read carries the clause only
+  for "data" (E12 as rebuilt); a read that is not early words the two apart (E13). Two tests and five mutants
+  pin it: the early read under an edited record, the wording, the first data read again after a re-read,
+  another experiment's reads in the same file, and a later read leaving an earlier sentence as it was.
 
 ## Open
 
-- **This delta is unreviewed.** The three review rounds of the earlier note are spent, and they did not see
-  it. One targeted review of it comes before the branch is called ready.
+- **The fix is unreviewed.** The review above saw the first build only. Whether the fix gets a review of its
+  own before the branch is called ready is the maintainer's call.
 - **The marker's form is undecided.** E11 leaves it to the pull request that rebuilds `assert_quoted`: what
   marks a quote in a document, whether a marked quote may be wrapped, and what an unmarked copy of a result
   means.
@@ -52,7 +64,7 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
 
 ## Next actions
 
-1. Review this delta, and fix what it confirms.
+1. Review the fix, on the maintainer's word, and fix what it confirms.
 2. Run the leak scan over the tree, the commit messages, the commit metadata, and the pull request body, with
    a positive control; push and open the pull request on the maintainer's word.
 3. Then `assert_quoted` on explicit quote markers, as its own branch from main once this merges: propose the
