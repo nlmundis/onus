@@ -23,37 +23,27 @@ def receipt_from_line(reads_path: str | Path, line_sha256: str) -> ReadReceipt:
 
 
 def re_read_kind(read: ReadLine, earlier: list[ReadLine]) -> str | None:
-    """Return what the recorded ``read`` differed in when it superseded another: "data", "record", or None.
+    """Return what the recorded ``read`` differed in when it superseded another: "data", "record", or "unknown".
 
     ``earlier`` are the lines before it in its reads file. Those that count are the ones the seal held it to:
     reads of its experiment, or of a record with its file stem. It is "data" when any of them used other data, by
     its hash, whatever the labels; and "record" when none did and one of them was read under another record,
     which is how the same data comes to be given other labels; that read need not be the first one, which
     ``supersedes`` names. Which of the two it is says nothing about any label, since a read on other data needed
-    ``supersedes`` whatever its labels were. It is None for a read that superseded none.
+    ``supersedes`` whatever its labels were.
 
-    Raises:
-        PreregError: the read superseded another, and the reads file no longer shows why: the first of the reads
-            that count is not the one it names, or all of them used its data under its own record, which gives
-            the same labels. ``record_read`` writes no such file; a line was removed, or one records labels its
-            data does not give.
+    It is "unknown" when the lines before it show neither, which no reads file written from honest evaluations
+    does: a line was removed, or one records labels its data does not give. The read is then still a re-read, and
+    is quoted as one, with nothing said about why. It is None for a read that superseded none.
     """
     if read.supersedes is None:
         return None
     related = related_reads(earlier, read.experiment, read.stem)
-    if not related or related[0].sha256 != read.supersedes:
-        raise PreregError(
-            f"the read at line sha256 {read.sha256} supersedes {read.supersedes}, which is not the first read of "
-            "its experiment in this reads file: a line before it was removed or changed"
-        )
     if any(line.data_sha256 != read.data_sha256 for line in related):
         return "data"
     if any(line.prereg != read.prereg for line in related):
         return "record"
-    raise PreregError(
-        f"the read at line sha256 {read.sha256} supersedes a read of the same data under the same record, "
-        f"{read.prereg}, which gives the same labels: an earlier line records labels its data does not give"
-    )
+    return "unknown"
 
 
 def bound_read(

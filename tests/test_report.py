@@ -409,20 +409,10 @@ class RenderTest(Reads):
                     sentence,
                 )
 
-    def test_a_re_read_the_reads_file_no_longer_explains_is_refused(self):
+    def test_a_re_read_the_reads_file_does_not_explain_is_quoted_as_one_and_no_more(self):
+        # No reads file written from honest evaluations holds such a read. One that does is still rendered, so an
+        # honest correction stays quotable, and its clause claims neither different data nor a different record.
         rule = self.rule()
-        first = self.read(rule, sample())
-        second = self.read(rule, sample_b(), supersedes=first.line_sha256, reason="p6 was recorded wrongly")
-        self.assertIn(
-            "re-read on different data", render(rule, sample_b(), "faster", receipt=second, reads_path=self.reads)
-        )
-        # The first read's line removed by hand: the re-read names a read the file does not hold.
-        lines = self.reads.read_text(encoding="utf-8").splitlines(keepends=True)
-        self.reads.write_text("".join(lines[1:]), encoding="utf-8")
-        with self.assertRaisesRegex(PreregError, "is not the first read of its experiment in this reads file"):
-            render(rule, sample_b(), "faster", receipt=second, reads_path=self.reads)
-        # A first line recording labels its data does not give: the same record and data, read again, superseded it.
-        self.reads.unlink()
         result = evaluate(rule, sample())
         forged = dataclasses.replace(
             result,
@@ -433,8 +423,44 @@ class RenderTest(Reads):
         )
         wrong = record_read(rule, forged, reads_path=self.reads)
         honest = self.read(rule, sample(), supersedes=wrong.line_sha256, reason="the labels were recorded wrongly")
-        with self.assertRaisesRegex(PreregError, "supersedes a read of the same data under the same record"):
-            render(rule, sample(), "faster", receipt=honest, reads_path=self.reads)
+        self.assertEqual(honest.data_sha256, wrong.data_sha256)
+        sentence = render(rule, sample(), "faster", receipt=honest, reads_path=self.reads)
+        self.assertTrue(
+            sentence.startswith(f"faster: met; re-read; first read {wrong.line_sha256[:12]}; one-sided"), sentence
+        )
+        # The first read's line removed by hand, from a file whose re-read was on different data: the same.
+        self.reads.unlink()
+        first = self.read(rule, sample())
+        second = self.read(rule, sample_b(), supersedes=first.line_sha256, reason="p6 was recorded wrongly")
+        lines = self.reads.read_text(encoding="utf-8").splitlines(keepends=True)
+        self.reads.write_text("".join(lines[1:]), encoding="utf-8")
+        self.assertTrue(
+            render(rule, sample_b(), "faster", receipt=second, reads_path=self.reads).startswith(
+                f"faster: met; re-read; first read {first.line_sha256[:12]}; one-sided"
+            )
+        )
+
+    def test_an_early_re_read_the_reads_file_does_not_explain_carries_no_clause(self):
+        rule, window = self.rule(days_record()), date(2026, 1, 8)
+        result = evaluate(rule, days_sample(), as_of=window)
+        forged = dataclasses.replace(
+            result,
+            hypotheses=(
+                dataclasses.replace(result.hypotheses[0], adjusted_p=Fraction(0), met=True),
+                *result.hypotheses[1:],
+            ),
+        )
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T10:00:00+00:00")):
+            wrong = record_read(rule, forged, reads_path=self.reads)
+        with mock.patch("onus.prereg._evaluate._now", return_value=at("2026-01-08T11:00:00+00:00")):
+            honest = self.read(
+                rule, days_sample(), as_of=window, supersedes=wrong.line_sha256, reason="the labels were wrong"
+            )
+        self.assertEqual(
+            render(rule, days_sample(), "faster", receipt=honest, reads_path=self.reads, as_of=window),
+            f"faster: read early (read at 2026-01-08T11:00:00+00:00; window closed at 2026-01-08T12:00:00+00:00);"
+            f" prereg {rule.id}, data sha256 {honest.data_sha256[:12]} over 3 units; onus {VERSION}.",
+        )
 
     def test_the_first_record_read_again_after_an_edited_one_does_not_claim_to_differ_from_the_first_read(self):
         # The record is edited, read, and put back: the third read is of the first read's own record, data, and

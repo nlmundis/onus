@@ -149,7 +149,11 @@ def _early(horizon: Horizon, read_at: datetime) -> str:
 
 
 # How a re-read's clause opens, by what the read differed in from those before it (``re_read_kind``).
-_RE_READ = {"data": "re-read on different data", "record": "re-read after a read under a different record"}
+_RE_READ = {
+    "data": "re-read on different data",
+    "record": "re-read after a read under a different record",
+    "unknown": "re-read",
+}
 
 
 def _re_read(kind: str | None, first: str | None, *, early: bool) -> list[str]:
@@ -157,7 +161,7 @@ def _re_read(kind: str | None, first: str | None, *, early: bool) -> list[str]:
 
     ``kind`` is ``re_read_kind``'s. An early read carries the clause only for a re-read on different data (E12): one
     of the same data after a read under a different record was sealed because a label differs, so there the clause
-    would say so.
+    would say so, and one the reads file does not explain is treated the same way.
     """
     if kind is None or (early and kind != "data"):
         return []
@@ -237,20 +241,20 @@ def render(
     their place it carries only "read early (read at <the read time>; window closed at <the window's end day, 12:00
     UTC>)". A read that superseded another says so just after its verdict or its "read early (...)": "re-read on
     different data; first read <hash>" when an earlier read of the experiment, or of a record with the same file
-    stem, used other data, and otherwise, on a read that is not early, "re-read after a read under a different
-    record; first read <hash>", since there one of those earlier reads gave the same data another label, under
-    another record; the first read named may itself be of this record. An early read says nothing in that second
-    case, where saying it would give away that a label changed. Every sentence ends with the prereg id, a data hash,
-    the number of units used, and the onus version. It reads no clock: the read time it prints is the one the reads
-    file records. p-values have four significant digits; alphas are exact; the MDE is the null plus a gap of four
-    significant digits, rounded away from the null, or the exact gap where those digits would print an effect
-    outside [0, 1].
+    stem, used other data, and, on a read that is not early, "re-read after a read under a different record; first
+    read <hash>" when none did and one of them was read under another record, which gave the same data another
+    label; the first read named may itself be of this record. An early read says nothing in that second case, where
+    saying it would give away that a label changed. Where the lines before a re-read show neither, as in no reads
+    file written from honest evaluations, a read that is not early says only "re-read; first read <hash>". Every
+    sentence ends with the prereg id, a data hash, the number of units used, and the onus version. It reads no
+    clock: the read time it prints is the one the reads file records. p-values have four significant digits; alphas
+    are exact; the MDE is the null plus a gap of four significant digits, rounded away from the null, or the exact
+    gap where those digits would print an effect outside [0, 1].
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
         PreregError: ``rule`` has no hypothesis ``name``; ``evaluate`` refuses; the receipt does not bind this
-            evaluation, as above; the read superseded another and the reads file no longer shows why
-            (``re_read_kind``); or the sentence would span lines, since the hypothesis's name, its family, or
+            evaluation, as above; or the sentence would span lines, since the hypothesis's name, its family, or
             the record's file stem holds a line break, which load refuses first.
     """
     names = [hypothesis.name for hypothesis in rule.hypotheses]

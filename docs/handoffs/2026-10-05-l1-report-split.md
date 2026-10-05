@@ -1,9 +1,9 @@
 ---
 date: 2026-10-05
-scope: "L1 step 3, part 2: the maintainer's decisions of 2026-10-05 on onus.report (Amendment 4): assert_quoted leaves this pull request, an early re-read on different data names the first read, and, after one review of that build, a re-read says what it differed in"
+scope: "L1 step 3, part 2: the maintainer's decisions of 2026-10-05 on onus.report (Amendment 4): assert_quoted leaves this pull request, an early re-read on different data names the first read, and, after four targeted reviews of that build, a re-read says what it differed in"
 state: in-progress
 prs: []
-next: one more targeted review, of the second review's fixes; if it closes clean, run the leak scan, push, and open the pull request, each on the maintainer's word
+next: run the leak scan, push, and open the pull request, each on the maintainer's word
 ---
 
 # Handoff: onus.report without assert_quoted (2026-10-05)
@@ -58,19 +58,27 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
   reads of the experiment, and now names those of a record with the same file stem too.
 - **A test now pins that `render` is idempotent:** asked again for a recorded read it gives the same sentence,
   and it writes nothing. `record_read` is not, by D5: every read is recorded, so a read that matches every
-  earlier read of its experiment appends a second line, needs no `supersedes`, and is refused one ("nothing to
+  earlier read the seal holds it to (of its experiment, or of a record with its file stem) appends a second line, needs no `supersedes`, and is refused one ("nothing to
   supersede"); once any earlier read differs, the same data read again needs `supersedes` too (E4).
 - **A third targeted review, of those fixes** (commits `e1b8801` and the test after it): two of the three
-  findings closed, one in part, and three new ones confirmed, all minor, none called merge-blocking. Fixed here:
-  `re_read_kind` now finds "record" positively, by a related earlier read under another prereg id, and refuses
-  with PreregError a re-read the reads file no longer explains (its first read's line removed, or an earlier
-  line recording labels its data does not give), where it fell through to "record"; two tests and four mutants
-  pin that and both halves of the related-reads rule on render's side; and this note's sentence above about
-  `supersedes`, which was wrong. These last fixes have had no review.
+  findings closed, one in part, and three new ones confirmed, all minor. `re_read_kind` had called every
+  superseding read with no other-data read before it "record", checked or not; it now finds "record" by a
+  related earlier read under another prereg id. Two tests and mutants pin both halves of the related-reads rule
+  on render's side.
+- **A fourth, closure-only review** (commit `651c575`): it found no reads file written by `record_read` from
+  honest evaluations that render refused. That commit had made render refuse a re-read the reads file does not
+  explain; the review showed the refusal left the honest correction of a wrong line unquotable, and that half
+  of its condition was pinned by no test. The maintainer chose a neutral label over a refusal: such a read says
+  "re-read; first read <12 hex>" once it is not early, and carries no clause when early. Two tests and two
+  mutants pin it.
+- These reviews' counts are reported here as the session read them; their findings are not kept in the tree.
 
 ## Open
 
-- **The second review's fixes are unreviewed.** The maintainer asked for one more targeted round on them.
+- **The last change is unreviewed.** The neutral label replaced the refusal after the fourth review; the
+  maintainer chose to stop the review rounds there and let review continue on the pull request.
+- **Render is not a tamper check.** A line removed from the middle of a reads file can change which clause a
+  later re-read carries, with no error. `bound_read` binds one line to one evaluation and no more.
 - **The marker's form is undecided.** E11 leaves it to the pull request that rebuilds `assert_quoted`: what
   marks a quote in a document, whether a marked quote may be wrapped, and what an unmarked copy of a result
   means.
@@ -82,8 +90,7 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
 
 ## Next actions
 
-1. Review the second review's fixes, and fix what that confirms.
-2. Run the leak scan over the tree, the commit messages, the commit metadata, and the pull request body, with
+1. Run the leak scan over the tree, the commit messages, the commit metadata, and the pull request body, with
    a positive control; push and open the pull request on the maintainer's word.
-3. Then `assert_quoted` on explicit quote markers, as its own branch from main once this merges: propose the
+2. Then `assert_quoted` on explicit quote markers, as its own branch from main once this merges: propose the
    marker's form to the maintainer first.

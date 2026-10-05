@@ -275,10 +275,12 @@ E8 left about an early re-read; a review of that build then put two more choices
     it, not of the first read it names. As first built it said "re-read under a different record", which was
     false of a record edited, read, and put back: the third read is of the first read's own record. The seal and
     render now share one rule for which earlier reads count (`related_reads`), so the two cannot drift apart.
-  - As built after a third review: render finds that read, a related earlier read under another prereg id, before
-    it says so. A re-read the reads file no longer explains is refused with PreregError: one whose first read's
-    line is gone, or one that superseded only reads of its own data under its own record, which `record_read`
-    never writes from an honest evaluation.
+  - As built after a third and a fourth review, on the maintainer's choice: render finds that read, a related
+    earlier read under another prereg id, before it says so. Where the lines before a re-read show neither other
+    data nor another record, which no reads file written from honest evaluations does (a line was removed, or one
+    records labels its data does not give), a read that is not early says only "re-read; first read <12 hex>",
+    and an early one carries no clause. It is not refused: a refusal there, as first built, left the honest
+    correction of a wrong line unquotable for as long as the line stood in the file.
 
 ## The library
 

@@ -2234,20 +2234,20 @@ find = "    related = related_reads(earlier, read.experiment, read.stem)\n"
 replace = "    related = related_reads(earlier, \"\", read.stem)\n"
 
 [[mutant]]
-name = "a_re_read_naming_a_read_its_file_does_not_hold_rendered"
-why = "With the first read's line removed from the reads file, a re-read on different data would be rendered as one after a read under a different record, naming a read the file does not hold."
-suites = ["tests.test_report.RenderTest"]
-file = "onus/report/_receipts.py"
-find = "    if not related or related[0].sha256 != read.supersedes:\n"
-replace = "    if False:\n"
-
-[[mutant]]
 name = "a_re_read_called_one_after_a_different_record_unchecked"
-why = "A re-read that superseded only reads of its own record on its own data would say 're-read after a read under a different record' though no such read stands in the file: the clause would be a catch-all, not a finding."
+why = "A re-read with no related read under another record before it would say 're-read after a read under a different record' though no such read stands in the file: the clause would be a catch-all, not a finding."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
 find = "    if any(line.prereg != read.prereg for line in related):\n"
 replace = "    if True:\n"
+
+[[mutant]]
+name = "an_early_re_read_the_file_does_not_explain_disclosed"
+why = "An early read's clause would no longer depend on the data hashes alone: one the reads file does not explain, sealed for its labels, would carry a clause where a first early read carries none."
+suites = ["tests.test_report.RenderTest"]
+file = "onus/report/_render.py"
+find = "    if kind is None or (early and kind != \"data\"):\n"
+replace = "    if kind is None or (early and kind == \"record\"):\n"
 
 [[mutant]]
 name = "the_reads_after_a_read_counted_with_those_before_it"
