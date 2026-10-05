@@ -22,7 +22,7 @@ from onus.prereg._evaluate import CLOSED_EVERYWHERE
 from onus.report._receipts import bound_read
 from onus.stats import TestResult, binomial_mde, binomial_power, rejection_region
 
-# The power a minimum detectable effect is stated at. Frozen once released: assert_quoted pins the sentences.
+# The power a minimum detectable effect is stated at. Frozen once released: documents quote the sentences.
 MDE_POWER = Fraction(4, 5)
 CORRECTION_NAMES = {"holm": "Holm", "benjamini-hochberg": "Benjamini-Hochberg"}
 TEST_NAMES = {"sign": "sign test", "binomial": "binomial test", "mcnemar": "McNemar test"}
@@ -148,12 +148,17 @@ def _early(horizon: Horizon, read_at: datetime) -> str:
     return f"read early (read at {read_at.isoformat()}; window closed at {closed.isoformat()})"
 
 
+def _re_read(supersedes: str | None) -> list[str]:
+    """Return the clause naming the first read a re-read on different data superseded; none for any other read."""
+    if supersedes is not None:
+        return [f"re-read on different data; first read {supersedes[:12]}"]
+    return []
+
+
 def _decided(rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult, supersedes: str | None) -> list[str]:
     """Return the clauses of a read that is not early: verdict, test and counts, p-values, MDE if not met, warnings."""
-    verdict = outcome.label
-    if supersedes is not None:
-        verdict += f"; re-read on different data; first read {supersedes[:12]}"
-    clauses = [f"{hypothesis.name}: {verdict}", describe(outcome.result), _p_values(rule, hypothesis, outcome)]
+    clauses = [f"{hypothesis.name}: {outcome.label}", *_re_read(supersedes)]
+    clauses += [describe(outcome.result), _p_values(rule, hypothesis, outcome)]
     if not outcome.met:
         clauses.append(_mde(hypothesis, outcome.result, _members(rule, hypothesis)))
     clauses.append(_warnings(outcome.result))
@@ -167,8 +172,10 @@ def _sentence(
     hypothesis, outcome = rule.hypotheses[index], evaluation.hypotheses[index]
     if read_early_at is not None:
         # E8: an early read reveals nothing about the result, so it states no verdict, count, p-value, α, family, MDE,
-        # test, or warning; only when it was read, when the window closed everywhere, and the provenance.
+        # test, or warning; only when it was read, when the window closed everywhere, and the provenance. E12: a
+        # re-read's clause is the read's history, not its result, so an early re-read carries it too.
         clauses = [f"{hypothesis.name}: {_early(rule.horizon, read_early_at)}"]
+        clauses += _re_read(supersedes)
     else:
         clauses = _decided(rule, hypothesis, outcome, supersedes)
     clauses.append(f"prereg {rule.id}, data sha256 {evaluation.data_sha256[:12]} over {evaluation.n} units")
@@ -202,12 +209,12 @@ def render(
     read was early from its recorded time, so a hand-built receipt, a hand-edited evaluation, or a hand-edited
     early flag cannot be rendered.
 
-    The sentence is one line. A read that is not early carries its verdict ("met" or "not met", then "re-read on
-    different data; first read <hash>" when the read superseded another), the test and its counts, the exact
-    p-value and the family's adjusted one, the minimum detectable effect when it is not met, and any warnings. A
-    read recorded before its days window closed everywhere reveals nothing about the result: in their place it
-    carries only "read early (read at <the read time>; window closed at <the window's end day, 12:00 UTC>)".
-    Every sentence ends with the prereg id, a data hash, the number of units used, and the onus version. It
+    The sentence is one line. A read that is not early carries its verdict ("met" or "not met"), the test and its
+    counts, the exact p-value and the family's adjusted one, the minimum detectable effect when it is not met, and
+    any warnings. A read recorded before its days window closed everywhere reveals nothing about the result: in
+    their place it carries only "read early (read at <the read time>; window closed at <the window's end day,
+    12:00 UTC>)". Either is followed by "re-read on different data; first read <hash>" when the read superseded
+    another. Every sentence ends with the prereg id, a data hash, the number of units used, and the onus version. It
     reads no clock: the read time it prints is the one the reads file records. p-values have four significant
     digits; alphas are exact; the MDE is the null plus a gap of four significant digits, rounded away from the
     null, or the exact gap where those digits would print an effect outside [0, 1].

@@ -90,7 +90,7 @@ review changed three of the recommendations (D1, D5, D7). Each choice binds v0.1
   non-tied n (`TestResult.n`, not `Evaluation.n`), so it is conditional on the observed ties, and the sentence
   says so. With no rejection region, the sentence says "no outcome at this n can reach significance at level
   α". When α is so large that the test already has 80% power, it says "no MDE exists". The constant is frozen
-  once released, because `assert_quoted` pins sentences. An optional per-hypothesis `power` key defaulting to
+  once released, because documents quote the sentences. An optional per-hypothesis `power` key defaulting to
   4/5 may be added later; it is additive.
 - **D3, MDE alpha: α/m**, where m is counted from the rule's family, named in the sentence as a Bonferroni
   bound. With exact fractions, a raw p at or below α/m is met under Holm or Benjamini-Hochberg whatever the
@@ -129,7 +129,9 @@ result. On 2026-09-30 the maintainer answered what that review left open, as E7 
 found where E9's read, E1's reading of an id, and render's check of an early read fell short; its fixes are
 marked "as built" too:
 
-- **E1, `assert_quoted`: every copy must match (F3).** `assert_quoted(doc, sentence)` takes the prereg id and
+- **E1, `assert_quoted`: every copy must match (F3).** Withdrawn from this step by Amendment 4's E11, apart
+  from the one-line rule, which stands; kept here as the record of what three reviews tried.
+  `assert_quoted(doc, sentence)` takes the prereg id and
   the hypothesis name from the rendered sentence. Every line of the document that names both must hold the
   rendered sentence verbatim, after any markdown prefix such as "- " or "> ", and at least one such line must
   exist; otherwise it raises AssertionError naming the offending line. A stale copy of the same result on a line
@@ -195,11 +197,13 @@ marked "as built" too:
   no clock, and the data hash is cut to 12 hex digits as in every sentence. E8's list holds no re-read clause, so
   an early re-read's sentence does not name the read it superseded, though its line records `supersedes` and a
   re-read once the window has closed names it: D6's "re-read on different data" is shown only on a read that is
-  not early. As built after the third review (its R3-REG-4): render requires the line's `early` to be the one
+  not early; Amendment 4's E12 reverses this, and an early re-read names it too. As built after the third review
+  (its R3-REG-4): render requires the line's `early` to be the one
   its `at` gives under the rule's horizon (`read_early`, which `record_read` uses to write it), beside D1's
   fields, and refuses a hand-edited flag with PreregError. Before, a flag flipped by hand had render state the
   verdict of a read made before its window closed, or raise a bare AssertionError for a count horizon's read.
-- **E9, E1 past single lines: a quote may be hard-wrapped (2026-09-30).** When `assert_quoted` looks for quotes,
+- **E9, E1 past single lines: a quote may be hard-wrapped (2026-09-30).** Withdrawn with E1 by Amendment 4's
+  E11. When `assert_quoted` looks for quotes,
   a line break together with the indentation and any '>' blockquote markers that open the next line counts as one
   space, so a stale copy wrapped across lines fails and a correct copy wrapped across lines passes. The rendered
   sentence itself stays one line.
@@ -229,6 +233,28 @@ marked "as built" too:
     to lock it before the seal decides, so a `supersedes=` with no earlier read to supersede leaves it there.
   - `read/2` labels hold only "met" and "not met", so the post hoc label (L1 step 4) needs a `read/3` or a
     widening of `read/2` then.
+
+## Amendment 4 (2026-10-05): `assert_quoted` leaves the report step; an early re-read is labelled
+
+After the third review the maintainer chose between four ways on for `assert_quoted`, and answered the question
+E8 left about an early re-read. Each choice binds v0.1:
+
+- **E11, `assert_quoted` is split out and rebuilt on explicit quote markers.** `assert_quoted` produced the worst
+  finding of each of the three reviews (F3; the second review's C1 and R1; the third's R3-REG-1 and two majors),
+  because it guessed where free text quotes a result, and each fix added guessing. It is removed from the
+  `report` pull request, with its tests and mutants, so `onus.report` ships `render`, `render_exploratory`,
+  `receipt_from_line`, and `MDE_POWER`. It returns in its own pull request, rebuilt so that a document marks each
+  quote explicitly and only marked text is checked; that pull request decides the marker's form. E1 and E9 are
+  withdrawn with it, and E8's and E10's remarks about what `assert_quoted` recognises or raises no longer
+  describe anything built. What stands of E1: the rendered sentence is one line, held by `load` (E10) and by
+  render's own refusal.
+- **E12, an early re-read names the first read.** An early read that superseded another carries "re-read on
+  different data; first read <12 hex>" after its "read early (...)" clause, as a read that is not early carries
+  it after its verdict. The clause is the read's history, which its reads line already records, and says nothing
+  about the result, so E8's rule that an early read reveals nothing about the result stands. As built: "faster:
+  read early (read at 2026-01-08T11:00:00+00:00; window closed at 2026-01-08T12:00:00+00:00); re-read on
+  different data; first read <12 hex>; prereg layout@<12 hex>, data sha256 <12 hex> over 3 units; onus
+  <version>."
 
 ## The library
 
@@ -310,11 +336,10 @@ marked "as built" too:
   a sentence too (Amendment 3, E1 and E10). It carries n, discordant pairs and ties, sidedness, the family
   correction, **the MDE whenever a read that is not early is not met** (D2, D3; Amendment 3, E2, E3, and E7), the
   prereg id, a data hash, and the library version. An early read's sentence carries only the name, when it was
-  read and when its window closed, and that provenance (E8). It reads no wall clock.
-- **`report.assert_quoted(doc, sentence)`** fails a test unless every line of the document that names the
-  sentence's hypothesis and prereg id holds the rendered sentence verbatim, and one line does (Amendment 3, E1),
-  so a document quoting a figure that is not the rendered sentence, or a stale copy on a line of its own, fails. A
-  quote hard-wrapped across lines is read as one line (E9), so a stale copy wrapped across lines fails too.
+  read and when its window closed, and that provenance (E8). A re-read on different data, early or not, names
+  the first read (D6; Amendment 4, E12). It reads no wall clock.
+- **`report.assert_quoted`** is not part of this step: it is rebuilt on explicit quote markers in its own pull
+  request (Amendment 4, E11).
 
 ### baseline, signoff, and scrub (approval testing)
 
@@ -403,7 +428,8 @@ marked "as built" too:
 2. `binomial`, `intervals`, `multiplicity`, and `power`, with the oracles, the reference fixture, and the sims
    cross-check (PR #3, merged). **Open, no owner yet:** the plan also named parity scripts here, comparing
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
-3. `prereg` (PR #5, merged), then `report` to Amendments 2 and 3 (**next**), as its own pull request.
+3. `prereg` (PR #5, merged), then `report` to Amendments 2, 3, and 4 (**next**), as its own pull request, then
+   `report.assert_quoted` on explicit quote markers, as its own (Amendment 4, E11).
 4. `baseline`, `signoff`, and `scrub`, plus the prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
    Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.

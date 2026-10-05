@@ -19,8 +19,7 @@ read made before a days window closed and refusing a re-read on different data u
 its amendments arrive with `onus.signoff`.
 `onus.report` renders a verdict only against the recorded read its receipt names, re-deriving it from the data,
 with the minimum detectable effect whenever a read that is not early is not met, and nothing about the result on
-an early read; quotes exploratory results with no verdict; and checks that every line of a document quoting a
-rendered sentence's result holds it exactly, reading a quote hard-wrapped across lines as one line.
+an early read; and quotes exploratory results with no verdict.
 v0.1.0 brings:
 
 | Subpackage | What it gives a caller |
