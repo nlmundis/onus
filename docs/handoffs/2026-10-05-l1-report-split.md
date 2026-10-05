@@ -3,7 +3,7 @@ date: 2026-10-05
 scope: "L1 step 3, part 2: the maintainer's decisions of 2026-10-05 on onus.report (Amendment 4): assert_quoted leaves this pull request, an early re-read on different data names the first read, and, after one review of that build, a re-read says what it differed in"
 state: in-progress
 prs: []
-next: a review of the fix to this session's first build, on the maintainer's word; if it closes clean, run the leak scan, push, and open the pull request, each on the maintainer's word
+next: one more targeted review, of the second review's fixes; if it closes clean, run the leak scan, push, and open the pull request, each on the maintainer's word
 ---
 
 # Handoff: onus.report without assert_quoted (2026-10-05)
@@ -21,8 +21,8 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
 - **An early re-read on different data names the first read.** Its sentence carries "re-read on different
   data; first read <12 hex>" between "read early (...)" and the provenance. A first early read's sentence is
   unchanged, and so is that of the same data read early again under an edited record.
-- **A re-read says what it differed in.** One that is not early, of the same data under a different record,
-  carries "re-read under a different record; first read <12 hex>".
+- **A re-read says what it differed in.** One that is not early, of the same data after a read under a
+  different record, carries "re-read after a read under a different record; first read <12 hex>".
 - **`docs/plan.md` has Amendment 4** (E11 to E13), and marks E1 and E9 withdrawn where they stand.
 - **Gate:** the raw result of `make -f Makefile check` on each commit goes in the pull request; this note is
   part of the commit it would describe.
@@ -45,14 +45,21 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
   docstring put the clause after the warnings.
 - **The fix, on the maintainer's two choices.** `re_read_kind` sorts a re-read by the reads before it that the
   seal held it to: "data" when any has another data hash, else "record". An early read carries the clause only
-  for "data" (E12 as rebuilt); a read that is not early words the two apart (E13). Two tests and five mutants
-  pin it: the early read under an edited record, the wording, the first data read again after a re-read,
-  another experiment's reads in the same file, and a later read leaving an earlier sentence as it was.
+  for "data" (E12 as rebuilt); a read that is not early words the two apart (E13). Two new tests, an assertion
+  added to an existing one, and five mutants pin it: the early read under an edited record, the wording, the
+  first data read again after a re-read, another experiment's reads in the same file, and a later read leaving
+  an earlier sentence as it was.
+- **A second targeted review, of that fix** (commit `47265cf`): it found the three earlier findings fixed and
+  the early read's rule unbroken, and confirmed three new ones, each rated minor once checked. "Re-read under a
+  different record" was false of a record edited, read, and put back, since the third read is of the first
+  read's own record; the maintainer chose "re-read after a read under a different record", which is true of
+  every such read. Neither half of the rule for which earlier reads count was pinned in render's copy of it;
+  the seal and render now share `related_reads`, which the seal's two mutants pin. Render's docstring named only
+  reads of the experiment, and now names those of a record with the same file stem too.
 
 ## Open
 
-- **The fix is unreviewed.** The review above saw the first build only. Whether the fix gets a review of its
-  own before the branch is called ready is the maintainer's call.
+- **The second review's fixes are unreviewed.** The maintainer asked for one more targeted round on them.
 - **The marker's form is undecided.** E11 leaves it to the pull request that rebuilds `assert_quoted`: what
   marks a quote in a document, whether a marked quote may be wrapped, and what an unmarked copy of a result
   means.
@@ -64,7 +71,7 @@ This note follows `2026-09-29-l1-report.md`, which records the build and its thr
 
 ## Next actions
 
-1. Review the fix, on the maintainer's word, and fix what it confirms.
+1. Review the second review's fixes, and fix what that confirms.
 2. Run the leak scan over the tree, the commit messages, the commit metadata, and the pull request body, with
    a positive control; push and open the pull request on the maintainer's word.
 3. Then `assert_quoted` on explicit quote markers, as its own branch from main once this merges: propose the

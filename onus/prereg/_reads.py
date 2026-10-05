@@ -188,6 +188,16 @@ def read_file(path: Path) -> list[ReadLine]:
     return parse_reads(raw, path)
 
 
+def related_reads(lines: list[ReadLine], experiment: str, stem: str) -> list[ReadLine]:
+    """Return those of ``lines`` that are reads of ``experiment``, or of a record whose file stem is ``stem``.
+
+    These are the reads the seal holds a new read to, and the ones a re-read is sorted by: an edited record, which
+    gets a new id, is related to the one it replaced by its stem even when its experiment was renamed, and a copy
+    of a record under another file name by its experiment.
+    """
+    return [line for line in lines if line.experiment == experiment or line.stem == stem]
+
+
 def find_line(lines: list[ReadLine], line_sha256: str, path: Path) -> ReadLine:
     """Return the line whose sha256 is ``line_sha256``.
 

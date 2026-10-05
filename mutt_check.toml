@@ -1741,16 +1741,16 @@ replace = "    if False:\n"
 name = "the_seal_ignores_the_record_stem"
 why = "An edited record that also renames its experiment would escape the seal of the record it replaced."
 suites = ["tests.test_prereg.ReadTest"]
-file = "onus/prereg/_evaluate.py"
-find = "line.experiment == rule.experiment or line.stem == stem"
-replace = "line.experiment == rule.experiment"
+file = "onus/prereg/_reads.py"
+find = "line.experiment == experiment or line.stem == stem"
+replace = "line.experiment == experiment"
 
 [[mutant]]
 name = "the_seal_ignores_the_experiment"
 why = "A copy of the record under another file name would re-read the experiment on new data unsealed."
 suites = ["tests.test_prereg.ReadTest"]
-file = "onus/prereg/_evaluate.py"
-find = "line.experiment == rule.experiment or line.stem == stem"
+file = "onus/prereg/_reads.py"
+find = "line.experiment == experiment or line.stem == stem"
 replace = "line.stem == stem"
 
 [[mutant]]
@@ -2203,7 +2203,7 @@ replace = "        return \"data\"\n    return \"data\"\n"
 
 [[mutant]]
 name = "a_re_read_compared_with_the_first_read_alone"
-why = "After a re-read on corrected data, the first data read again matches the first read, and would be called a re-read under a different record, though no record changed (E4)."
+why = "After a re-read on corrected data, the first data read again matches the first read, and would be called a re-read after a read under a different record, though no record changed (E4)."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
 find = "    if any(line.data_sha256 != read.data_sha256 for line in related):\n"
@@ -2214,12 +2214,12 @@ name = "another_experiment_s_reads_counted_as_this_one_s"
 why = "A reads file shared with another experiment would make every re-read here one on different data, the other experiment's, and an early re-read under an edited record would carry the clause that gives its label away."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
-find = "    related = [line for line in earlier if line.experiment == read.experiment or line.stem == read.stem]\n"
+find = "    related = related_reads(earlier, read.experiment, read.stem)\n"
 replace = "    related = earlier\n"
 
 [[mutant]]
 name = "the_reads_after_a_read_counted_with_those_before_it"
-why = "A read's sentence would change once a later read on other data was recorded: a re-read under a different record would turn into one on different data, and no copy of the earlier sentence would match a fresh render."
+why = "A read's sentence would change once a later read on other data was recorded: a re-read after a read under a different record would turn into one on different data, and no copy of the earlier sentence would match a fresh render."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
 find = "    return line, lines[: lines.index(line)]\n"

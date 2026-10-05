@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import onus
-from onus.prereg._reads import FIELDS, READ_SCHEMA, ReadLine, parse_reads
+from onus.prereg._reads import FIELDS, READ_SCHEMA, ReadLine, parse_reads, related_reads
 from onus.prereg._rule import (
     OUTCOMES,
     OUTCOMES_FIELD,
@@ -288,8 +288,7 @@ def _seal(rule: Rule, evaluation: Evaluation, earlier: list[ReadLine], supersede
         PreregError: the read's data hash, n, or labels differ from such an earlier read and ``supersedes`` is not
             given; ``supersedes`` is given and no such read differs; or it names a read other than the first.
     """
-    stem = rule.id.rpartition("@")[0]
-    related = [line for line in earlier if line.experiment == rule.experiment or line.stem == stem]
+    related = related_reads(earlier, rule.experiment, rule.id.rpartition("@")[0])
     this = (evaluation.data_sha256, evaluation.n, evaluation.labels())
     differs = [line for line in related if (line.data_sha256, line.n, line.labels) != this]
     if differs and supersedes is None:

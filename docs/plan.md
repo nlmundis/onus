@@ -262,13 +262,19 @@ E8 left about an early re-read; a review of that build then put two more choices
     and beside an unchanged data hash it told a reader that some verdict differed between the two records. Now
     render sorts a re-read by the reads before it in its file that the seal held it to (those of its experiment,
     or of a record with its file stem): it is one on different data when any of them has another data hash,
-    whatever the labels, and otherwise one under a different record. An early read carries the clause only for
+    whatever the labels, and otherwise one after a read under a different record. An early read carries the
+    clause only for
     the first kind. Whether it does depends on the data hashes alone, since a read on other data needed
     `supersedes` whatever its labels were.
 - **E13, a re-read says what it differed in.** A read that is not early and superseded another on the same data
-  carries "re-read under a different record; first read <12 hex>" in place of "re-read on different data",
-  which its own data hash contradicted there. D6's and E4's wording stands wherever an earlier read of the
-  experiment used other data, the first data read again after a re-read included.
+  carries "re-read after a read under a different record; first read <12 hex>" in place of "re-read on different
+  data", which its own data hash contradicted there. D6's and E4's wording stands wherever an earlier read of the
+  experiment, or of a record with the same file stem, used other data, the first data read again after a re-read
+  included.
+  - As built after a second review, on the maintainer's choice of wording: the clause speaks of the reads before
+    it, not of the first read it names. As first built it said "re-read under a different record", which was
+    false of a record edited, read, and put back: the third read is of the first read's own record. The seal and
+    render now share one rule for which earlier reads count (`related_reads`), so the two cannot drift apart.
 
 ## The library
 
@@ -351,7 +357,8 @@ E8 left about an early re-read; a review of that build then put two more choices
   correction, **the MDE whenever a read that is not early is not met** (D2, D3; Amendment 3, E2, E3, and E7), the
   prereg id, a data hash, and the library version. An early read's sentence carries only the name, when it was
   read and when its window closed, and that provenance (E8). A re-read on different data, early or not, names
-  the first read, and one under a different record does once it is not early (D6; Amendment 4, E12 and E13). It reads no wall clock.
+  the first read, and one of the same data after a read under a different record does once it is not early
+  (D6; Amendment 4, E12 and E13). It reads no wall clock.
 - **`report.assert_quoted`** is not part of this step: it is rebuilt on explicit quote markers in its own pull
   request (Amendment 4, E11).
 

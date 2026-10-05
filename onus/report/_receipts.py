@@ -4,7 +4,7 @@ from pathlib import Path
 
 from onus.prereg import Evaluation, Horizon, PreregError, ReadReceipt
 from onus.prereg._evaluate import read_early
-from onus.prereg._reads import ReadLine, find_line, read_file
+from onus.prereg._reads import ReadLine, find_line, read_file, related_reads
 
 
 def receipt_from_line(reads_path: str | Path, line_sha256: str) -> ReadReceipt:
@@ -25,15 +25,16 @@ def receipt_from_line(reads_path: str | Path, line_sha256: str) -> ReadReceipt:
 def re_read_kind(read: ReadLine, earlier: list[ReadLine]) -> str | None:
     """Return what the recorded ``read`` differed in when it superseded another: "data", "record", or None.
 
-    ``earlier`` are the lines before it in its reads file. Those that count are the ones the seal held it to: reads
-    of its experiment, or of a record with its file stem. It is "data" when any of them used other data, by its
-    hash, whatever the labels; and "record" when none did, so the same data was given other labels, which only a
-    different record can do. Which of the two it is says nothing about any label, since a read
-    on other data needed ``supersedes`` whatever its labels were. It is None for a read that superseded none.
+    ``earlier`` are the lines before it in its reads file. Those that count are the ones the seal held it to:
+    reads of its experiment, or of a record with its file stem. It is "data" when any of them used other data, by
+    its hash, whatever the labels; and "record" when none did, so one of them gave the same data other labels,
+    which only a read under a different record can do; that read need not be the first one, which ``supersedes``
+    names. Which of the two it is says nothing about any label, since a read on other data needed ``supersedes``
+    whatever its labels were. It is None for a read that superseded none.
     """
     if read.supersedes is None:
         return None
-    related = [line for line in earlier if line.experiment == read.experiment or line.stem == read.stem]
+    related = related_reads(earlier, read.experiment, read.stem)
     if any(line.data_sha256 != read.data_sha256 for line in related):
         return "data"
     return "record"

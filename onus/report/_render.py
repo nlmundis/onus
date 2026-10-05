@@ -149,14 +149,15 @@ def _early(horizon: Horizon, read_at: datetime) -> str:
 
 
 # How a re-read's clause opens, by what the read differed in from those before it (``re_read_kind``).
-_RE_READ = {"data": "re-read on different data", "record": "re-read under a different record"}
+_RE_READ = {"data": "re-read on different data", "record": "re-read after a read under a different record"}
 
 
 def _re_read(kind: str | None, first: str | None, *, early: bool) -> list[str]:
     """Return the clause naming the ``first`` read a re-read superseded; none for a read that superseded none.
 
     ``kind`` is ``re_read_kind``'s. An early read carries the clause only for a re-read on different data (E12): one
-    under a different record on the same data was sealed because a label differs, so there the clause would say so.
+    of the same data after a read under a different record was sealed because a label differs, so there the clause
+    would say so.
     """
     if kind is None or (early and kind != "data"):
         return []
@@ -233,15 +234,17 @@ def render(
     The sentence is one line. A read that is not early carries its verdict ("met" or "not met"), the test and its
     counts, the exact p-value and the family's adjusted one, the minimum detectable effect when it is not met, and
     any warnings. A read recorded before its days window closed everywhere reveals nothing about the result: in
-    their place it carries only "read early (read at <the read time>; window closed at <the window's end day,
-    12:00 UTC>)". A read that superseded another says so just after its verdict or its "read early (...)": "re-read
-    on different data; first read <hash>" when an earlier read of the experiment used other data, and otherwise, on
-    a read that is not early, "re-read under a different record; first read <hash>", since there the same data was
-    given another label. An early read says nothing in that second case, where saying it would give away that a
-    label changed. Every sentence ends with the prereg id, a data hash, the number of units used, and the onus
-    version. It reads no clock: the read time it prints is the one the reads file records. p-values have four
-    significant digits; alphas are exact; the MDE is the null plus a gap of four significant digits, rounded away
-    from the null, or the exact gap where those digits would print an effect outside [0, 1].
+    their place it carries only "read early (read at <the read time>; window closed at <the window's end day, 12:00
+    UTC>)". A read that superseded another says so just after its verdict or its "read early (...)": "re-read on
+    different data; first read <hash>" when an earlier read of the experiment, or of a record with the same file
+    stem, used other data, and otherwise, on a read that is not early, "re-read after a read under a different
+    record; first read <hash>", since there one of those earlier reads gave the same data another label, under
+    another record; the first read named may itself be of this record. An early read says nothing in that second
+    case, where saying it would give away that a label changed. Every sentence ends with the prereg id, a data hash,
+    the number of units used, and the onus version. It reads no clock: the read time it prints is the one the reads
+    file records. p-values have four significant digits; alphas are exact; the MDE is the null plus a gap of four
+    significant digits, rounded away from the null, or the exact gap where those digits would print an effect
+    outside [0, 1].
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.

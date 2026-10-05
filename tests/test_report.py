@@ -364,7 +364,7 @@ class RenderTest(Reads):
             )
         self.assertTrue(
             render(edited, days_sample(), "faster", receipt=late, reads_path=self.reads, as_of=window).startswith(
-                f"faster: met; re-read under a different record; first read {first.line_sha256[:12]}; one-sided"
+                f"faster: met; re-read after a read under a different record; first read {first.line_sha256[:12]}; "
             )
         )
 
@@ -379,7 +379,7 @@ class RenderTest(Reads):
         sentence = render(edited, sample(), "faster", receipt=second, reads_path=self.reads)
         self.assertTrue(
             sentence.startswith(
-                f"faster: met; re-read under a different record; first read {first.line_sha256[:12]}; one-sided"
+                f"faster: met; re-read after a read under a different record; first read {first.line_sha256[:12]}; "
             ),
             sentence,
         )
@@ -391,6 +391,25 @@ class RenderTest(Reads):
             )
         )
         self.assertEqual(render(edited, sample(), "faster", receipt=second, reads_path=self.reads), sentence)
+
+    def test_the_first_record_read_again_after_an_edited_one_does_not_claim_to_differ_from_the_first_read(self):
+        # The record is edited, read, and put back: the third read is of the first read's own record, data, and
+        # labels, and was sealed by the read in between, so its clause speaks of that read and not of its own record.
+        original = self.rule()
+        first = self.read(original, sample())
+        edited = self.rule(loosened(record()))
+        self.read(edited, sample(), supersedes=first.line_sha256, reason="alpha was recorded wrongly")
+        restored = self.rule()
+        self.assertEqual(restored.id, original.id)
+        third = self.read(restored, sample(), supersedes=first.line_sha256, reason="the alpha was right after all")
+        sentence = render(restored, sample(), "faster", receipt=third, reads_path=self.reads)
+        self.assertTrue(
+            sentence.startswith(
+                f"faster: met; re-read after a read under a different record; first read {first.line_sha256[:12]}; "
+            ),
+            sentence,
+        )
+        self.assertNotIn("re-read under a different record", sentence)
 
     def test_a_re_read_on_different_data_names_the_first_read(self):
         rule = self.rule()
