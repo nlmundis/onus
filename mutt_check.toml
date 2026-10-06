@@ -2298,3 +2298,125 @@ suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_receipts.py"
 find = "        \"early\": (line.early, read_early(horizon, line.at)),\n"
 replace = ""
+
+# --- assert_quoted on explicit quote markers (Amendment 5) ---
+
+[[mutant]]
+name = "a_marked_quote_that_is_no_rendered_sentence_accepted"
+why = "A stale copy, a rounded figure, or another wording inside the markers would pass, beside the exact sentence or alone."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "        if quote not in wanted:\n"
+replace = "        if False:\n"
+
+[[mutant]]
+name = "a_sentence_the_document_never_marks_accepted"
+why = "A document that quotes one result and drops another, or marks nothing at all, would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    if missing:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_wrapped_quote_refused"
+why = "A quote hard-wrapped or indented between its markers would fail, though only its whitespace differs from the sentence."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    return \" \".join(text.split())\n"
+replace = "    return text.strip()\n"
+
+[[mutant]]
+name = "a_marker_that_is_not_exact_marks_nothing"
+why = "A marker with other spacing, or left unfinished, would mark nothing, and the stale copy it was meant to mark would go unchecked beside a good quote."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "        if marker is None:\n            raise AssertionError(\n"
+replace = "        if marker is None:\n            continue\n            raise AssertionError(\n"
+
+[[mutant]]
+name = "a_marker_in_another_case_not_seen"
+why = "A marker typed in capitals would not be seen at all, so the copy between such a pair would go unchecked, and a sentence holding the marker's words in another case would be taken as quotable."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "_MENTION = re.compile(\"onus:quote\", re.IGNORECASE)\n"
+replace = "_MENTION = re.compile(\"onus:quote\")\n"
+
+[[mutant]]
+name = "a_closing_marker_with_no_opening_ignored"
+why = "A stray closing marker, left when its opening one was deleted, would be passed over, and the text it used to mark would go unchecked."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "                raise AssertionError(f\"line {_line(doc, start)} of the document closes a quote that no {OPEN!r} opened\")\n"
+replace = "                continue\n"
+
+[[mutant]]
+name = "an_opening_marker_inside_a_span_restarts_it"
+why = "A second opening marker would restart the span, so a stale copy above it, after the first, would drop out of the check."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "            if opened is not None:\n                raise AssertionError(\n"
+replace = "            if False:\n                raise AssertionError(\n"
+
+[[mutant]]
+name = "a_span_never_closed_ignored"
+why = "A quote whose closing marker was lost would not be checked at all, and a stale copy in it would pass."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    if opened is not None:\n        raise AssertionError(f\"the quote opened"
+replace = "    if False:\n        raise AssertionError(f\"the quote opened"
+
+[[mutant]]
+name = "a_closed_span_left_open"
+why = "A closed span would stay open, so the next quote's opening marker would be refused as standing inside it."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "            spans.append((opened[0], doc[opened[1] : start]))\n            opened = None\n"
+replace = "            spans.append((opened[0], doc[opened[1] : start]))\n"
+
+[[mutant]]
+name = "a_single_string_read_as_its_characters"
+why = "A caller passing one sentence bare, not in a list, would have it read as its characters and be told that a space is no sentence, and a set or a generator of sentences, whose order no message could follow, would be let through."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    if not isinstance(sentences, (list, tuple)) or not all("
+replace = "    if not all("
+
+[[mutant]]
+name = "no_sentences_accepted"
+why = "Called with no sentence, a document that marks nothing would pass, having been checked against nothing."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    if not sentences:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "an_empty_sentence_accepted"
+why = "An empty sentence would match an empty span, so a caller that lost its rendered sentence would pass against a document quoting nothing."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "        if not sentence.strip() or _MENTION.search(sentence):\n"
+replace = "        if _MENTION.search(sentence):\n"
+
+[[mutant]]
+name = "a_sentence_no_document_can_quote_accepted"
+why = "A sentence holding \"onus:quote\" can stand in no span, since those words may stand only in a marker; accepted, its caller would be told the document does not quote it, not that it cannot be quoted."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "        if not sentence.strip() or _MENTION.search(sentence):\n"
+replace = "        if not sentence.strip():\n"
+
+[[mutant]]
+name = "the_line_named_counted_from_zero"
+why = "Every message would name the line above the one at fault."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "    return doc.count(\"\\n\", 0, position) + 1\n"
+replace = "    return doc.count(\"\\n\", 0, position)\n"
+
+[[mutant]]
+name = "a_sentence_s_own_whitespace_not_read_as_one_space"
+why = "A sentence handed over wrapped, as a test might build it, would match no span, though the document quotes it exactly, whitespace aside."
+suites = ["tests.test_report.QuoteTest"]
+file = "onus/report/_quote.py"
+find = "        wanted[_one_spaced(sentence)] = sentence\n"
+replace = "        wanted[sentence] = sentence\n"

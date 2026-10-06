@@ -8,9 +8,12 @@ provenance; an early read's says only when it was read and when its window close
 re-read on different data, early or not, names the first read; one of the same data after a read under a different
 record does once it is not early. It reads no clock. ``receipt_from_line`` gives a second process the receipt of
 a recorded read. ``render_exploratory`` quotes a test result no rule registered, with no verdict.
+``assert_quoted`` fails a test unless the quotes a document marks, between ``<!-- onus:quote -->`` and
+``<!-- /onus:quote -->``, are exactly the rendered sentences.
 """
 
+from onus.report._quote import assert_quoted
 from onus.report._receipts import receipt_from_line
 from onus.report._render import MDE_POWER, render, render_exploratory
 
-__all__ = ["MDE_POWER", "receipt_from_line", "render", "render_exploratory"]
+__all__ = ["MDE_POWER", "assert_quoted", "receipt_from_line", "render", "render_exploratory"]

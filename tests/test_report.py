@@ -19,7 +19,8 @@ from unittest import mock
 
 import onus
 from onus.prereg import PreregError, ReadReceipt, Rule, evaluate, load, record_read
-from onus.report import MDE_POWER, receipt_from_line, render, render_exploratory
+from onus.report import MDE_POWER, assert_quoted, receipt_from_line, render, render_exploratory
+from onus.report._quote import CLOSE, OPEN
 from onus.report._render import exact_text, mde_text, significant_text
 from onus.stats import (
     TestResult,
@@ -840,3 +841,188 @@ class NumberTextTest(unittest.TestCase):
         self.assertEqual(mde_text(Fraction("0.3333"), 1 - 2**-30), "0.3333 + 0.6667")
         self.assertEqual(mde_text(Fraction("0.6667"), 2**-30), "0.6667 - 0.6667")
         self.assertNotEqual(Fraction(1 - 2**-30) - Fraction("0.3333"), Fraction("0.6667"))
+
+
+def marked(text: str) -> str:
+    """``text`` between the two quote markers, each on a line of its own."""
+    return f"{OPEN}\n{text}\n{CLOSE}\n"
+
+
+class QuoteTest(Reads):
+    """assert_quoted fails unless the quotes a document marks are exactly the rendered sentences."""
+
+    FASTER = (
+        "faster: met; one-sided (greater) sign test; prereg layout@0123456789ab, data sha256 ba5eba11 over 8 units."
+    )
+    CLEARER = "clearer: not met; one-sided (greater) sign test; prereg layout@0123456789ab, data sha256 ba5eba11."
+
+    def test_a_document_marking_each_rendered_sentence_passes(self):
+        rule = self.rule()
+        receipt = self.read(rule, sample())
+        sentences = [
+            render(rule, sample(), name, receipt=receipt, reads_path=self.reads) for name in ("faster", "clearer")
+        ]
+        exploratory = render_exploratory(sign_test(5, 1, ties=0, alternative="greater", method="exact"))
+        doc = "# Results\n\n" + marked(sentences[0]) + "\nProse between.\n\n" + marked(sentences[1])
+        assert_quoted(doc, sentences)
+        assert_quoted(doc, tuple(sentences))
+        # The same sentence marked twice is quoted twice, and an exploratory sentence is quoted like any other.
+        assert_quoted(doc + marked(sentences[0]) + marked(exploratory), [*sentences, exploratory])
+        assert_quoted(marked(sentences[0]), [sentences[0], sentences[0]])
+        # A sentence's own whitespace is read as a span's is: handed over wrapped, it is the same sentence.
+        assert_quoted(marked(sentences[0]), [sentences[0].replace("; ", ";\n")])
+
+    def test_a_marked_quote_may_be_wrapped_and_indented_and_nothing_else(self):
+        words = self.FASTER.split(" ")
+        wrapped = "\n".join(" ".join(words[i : i + 4]) for i in range(0, len(words), 4))
+        for label, text in {
+            "one line": self.FASTER,
+            "markers on the sentence's line": None,
+            "hard-wrapped": wrapped,
+            "indented and wrapped": "    " + wrapped.replace("\n", "\n    "),
+            "tabs, CRLF, and spaces left at line ends": wrapped.replace("\n", " \t\r\n"),
+            "a blank line inside": wrapped.replace("\n", "\n\n", 1),
+            "a no-break space and a line separator, which str.split reads as whitespace": wrapped.replace(
+                "\n", "\u00a0\u2028"
+            ),
+        }.items():
+            with self.subTest(label):
+                doc = f"- {OPEN}{self.FASTER}{CLOSE}\n" if text is None else marked(text)
+                assert_quoted(doc, [self.FASTER])
+        for label, text in {
+            "a rounded figure": self.FASTER.replace("8 units", "about 8 units"),
+            "a changed character": self.FASTER.replace("met;", "met:"),
+            "another letter case": self.FASTER.replace("faster: met", "Faster: Met"),
+            "a zero-width space, which str.split does not read as whitespace": self.FASTER.replace(
+                "met;", "met;\u200b"
+            ),
+            "a blockquote marker opening a wrapped line": wrapped.replace("\n", "\n> "),
+            "a list marker inside the span": "- " + self.FASTER,
+            "a word split by the wrap": self.FASTER.replace("greater", "grea\nter"),
+            "two sentences in one span": self.FASTER + " " + self.CLEARER,
+            "nothing": "",
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(AssertionError, "line 3 of the document is none of the rendered sentences"):
+                    assert_quoted("# Results\n\n" + marked(text), [self.FASTER, self.CLEARER])
+
+    def test_a_stale_copy_inside_markers_fails_wherever_it_stands(self):
+        stale = self.FASTER.replace("ba5eba11", "0ddba11")
+        good = marked(self.FASTER) + marked(self.CLEARER)
+        for label, doc in {"before": marked(stale) + good, "after": good + marked(stale)}.items():
+            with self.subTest(stale=label):
+                with self.assertRaisesRegex(
+                    AssertionError, "is none of the rendered sentences: 'faster: met; .*0ddba11"
+                ):
+                    assert_quoted(doc, [self.FASTER, self.CLEARER])
+        # The message names the line of the span's opening marker.
+        with self.assertRaisesRegex(AssertionError, "marked at line 7 of the document"):
+            assert_quoted(good + marked(stale), [self.FASTER, self.CLEARER])
+
+    def test_a_sentence_the_document_does_not_mark_fails(self):
+        # The message names the first sentence, in the order given, that no span holds.
+        for label, (doc, missing) in {
+            "no markers at all": (f"- {self.FASTER}\n- {self.CLEARER}\n", "faster: met"),
+            "an empty document": ("", "faster: met"),
+            "the other sentence marked": (marked(self.FASTER) + f"- {self.CLEARER}\n", "clearer: not met"),
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(AssertionError, f"marks no quote of the rendered sentence '{missing}"):
+                    assert_quoted(doc, [self.FASTER, self.CLEARER])
+        # Only marked text is checked: a stale copy outside any markers is not found.
+        assert_quoted(f"- {self.FASTER} (stale, unmarked)\n" + marked(self.FASTER), [self.FASTER])
+
+    def test_a_marker_that_is_not_exact_fails_instead_of_marking_nothing(self):
+        stale = self.FASTER.replace("ba5eba11", "0ddba11")
+        for label, opening in {
+            "no spaces": "<!--onus:quote-->",
+            "two spaces": "<!--  onus:quote -->",
+            "another case": "<!-- ONUS:QUOTE -->",
+            "a key after it": "<!-- onus:quote layout@0123456789ab faster -->",
+            "never finished": "<!-- onus:quote",
+            "not a comment": "onus:quote",
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(
+                    AssertionError, "line 2 of the document mentions .* outside an exact marker"
+                ):
+                    assert_quoted(f"# Results\n{opening}\n{self.FASTER}\n{CLOSE}\n", [self.FASTER])
+        # The closing marker is held to its exact text as the opening one is.
+        for label, closing in {
+            "a space after the slash": "<!-- / onus:quote -->",
+            "no spaces": "<!--/onus:quote-->",
+            "another case": "<!-- /ONUS:QUOTE -->",
+            "never finished": "<!-- /onus:quote",
+        }.items():
+            with self.subTest(closing=label):
+                with self.assertRaisesRegex(AssertionError, "line 3 of the document mentions .* outside an exact"):
+                    assert_quoted(f"{OPEN}\n{self.FASTER}\n{closing}\n", [self.FASTER])
+        # Known limit: a slip inside the ten characters is not seen, so such a pair marks nothing, and what stands
+        # between it is as unchecked as any unmarked text.
+        assert_quoted(f"<!-- onus: quote -->{stale}<!-- /onus: quote -->\n" + marked(self.FASTER), [self.FASTER])
+        # A pair of inexact markers round a stale copy marks nothing, so the copy must not pass unchecked beside a
+        # good quote: with other spacing, and in another case.
+        for label, (opening, closing) in {
+            "no spaces": ("<!--onus:quote-->", "<!--/onus:quote-->"),
+            "another case": ("<!-- ONUS:QUOTE -->", "<!-- /ONUS:QUOTE -->"),
+        }.items():
+            with self.subTest(pair=label):
+                with self.assertRaisesRegex(AssertionError, "line 1 of the document mentions .* outside an exact"):
+                    assert_quoted(f"{opening}{stale}{closing}\n" + marked(self.FASTER), [self.FASTER])
+        # At the very start of a document, where no marker's opening could stand before it.
+        with self.assertRaisesRegex(AssertionError, "line 1 of the document mentions"):
+            assert_quoted("onus:quote -->" + marked(self.FASTER), [self.FASTER])
+
+    def test_markers_that_do_not_pair_fail(self):
+        # Each would leave a stale copy unchecked beside a good quote, were the stray marker let through.
+        stale = self.FASTER.replace("ba5eba11", "0ddba11")
+        good = marked(self.FASTER)
+        cases = {
+            "a closing marker first": (f"{CLOSE}\n" + good, "line 1 of the document closes a quote that no"),
+            "a second closing marker": (good + f"{CLOSE}\n", "line 4 of the document closes a quote that no"),
+            "an opening marker inside a span": (
+                f"{OPEN}\n{stale}\n{OPEN}\n{self.FASTER}\n{CLOSE}\n",
+                "line 3 of the document opens a quote inside the one opened at line 1",
+            ),
+            "a span never closed": (good + f"\n{OPEN}\n{stale}\n", "opened at line 5 of the document is never closed"),
+        }
+        for label, (doc, message) in cases.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(AssertionError, message):
+                    assert_quoted(doc, [self.FASTER])
+        # Two spans one after the other are two quotes: the first is closed before the second opens.
+        assert_quoted(good + good, [self.FASTER])
+
+    def test_only_text_and_a_list_of_sentences_are_compared(self):
+        doc = marked(self.FASTER)
+        with self.assertRaisesRegex(TypeError, "reads a document's text, not bytes"):
+            assert_quoted(doc.encode(), [self.FASTER])  # type: ignore[arg-type]
+        for label, sentences in {
+            "one string": self.FASTER,
+            "a set": {self.FASTER},
+            "a generator": (each for each in [self.FASTER]),
+            "a list holding bytes": [self.FASTER.encode()],
+            "a list holding None": [self.FASTER, None],
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(TypeError, "as a list or tuple of strings"):
+                    assert_quoted(doc, sentences)  # type: ignore[arg-type]
+        empties: tuple[list[str], tuple[str, ...]] = ([], ())
+        for empty in empties:
+            # With no sentence, a document that marks nothing would otherwise pass, having been checked against nothing.
+            with self.assertRaisesRegex(ValueError, "needs at least one rendered sentence"):
+                assert_quoted("No result is quoted here.\n", empty)
+            with self.assertRaisesRegex(ValueError, "needs at least one rendered sentence"):
+                assert_quoted(doc, empty)
+        for label, sentence in {
+            "empty": "",
+            "only whitespace": " \n\t",
+            "holding the opening marker": f"{OPEN} faster: met.",
+            "holding the marker's words in another case": "Onus:Quote is met.",
+        }.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(ValueError, "is not a sentence a document can quote"):
+                    assert_quoted(doc, [self.FASTER, sentence])
+        # An empty sentence would match an empty span: a caller that lost its sentence must not pass.
+        with self.assertRaisesRegex(ValueError, "is not a sentence a document can quote"):
+            assert_quoted(marked(""), [""])
