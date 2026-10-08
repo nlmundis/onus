@@ -4,7 +4,7 @@
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
-suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report", "tests.test_scrub"]
+suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report", "tests.test_scrub", "tests.test_baseline"]
 timeout = 300
 
 # --- the environment every stage runs with ---
@@ -2670,3 +2670,153 @@ find = '''    if not scrubbers:
 '''
 replace = '''    if False:
 '''
+
+# --- onus.baseline ---
+
+[[mutant]]
+name = "an_approved_file_overwritten_by_a_plain_run"
+why = "A mismatch that rewrote the approved file would pass on the next run, with nobody having read the change."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''            target.write_bytes(received.encode("utf-8"))
+'''
+replace = '''            approved.write_bytes(received.encode("utf-8"))
+'''
+
+[[mutant]]
+name = "a_missing_approved_file_created"
+why = "A test with no approved file would record whatever it produced and pass, so a deleted baseline would come back unread."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        root = os.environ.get(APPROVE_ROOT)
+'''
+replace = '''        root = os.environ.get(APPROVE_ROOT, None if approved.is_file() else str(folder.parents[1]))
+'''
+
+[[mutant]]
+name = "a_missing_approved_file_skipped"
+why = "A skip is green in most reports, so a baseline that was never recorded, or was deleted, would go unnoticed."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''            self.fail(
+                f"{approved.name} has no approved file'''
+replace = '''            self.skipTest(
+                f"{approved.name} has no approved file'''
+
+[[mutant]]
+name = "the_received_file_written_into_the_checkout"
+why = "Received files beside the approved ones dirty the work tree, and one committed by mistake reads as a second baseline."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '    return Path(tempfile.gettempdir()) / "onus-received" / folder / '
+replace = '    return approved.parent / "onus-received" / folder / '
+
+[[mutant]]
+name = "make_approve_records_outside_its_checkout"
+why = "A suite run from one checkout with another's tests on its path, or inside a mutation sandbox, would rewrite files nobody asked it to."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if not approved.is_relative_to(root):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "recording_under_a_root_that_is_no_work_tree"
+why = "Outside a git work tree no diff shows what was recorded, so the review the recording relies on does not exist."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if not (root / ".git").exists():
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "an_empty_root_read_as_the_current_folder"
+why = "ONUS_APPROVE_ROOT set to nothing would resolve to wherever the suite was started, and record there."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if not root.is_absolute():
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "forbid_ignored_while_recording"
+why = "A path or token the scrubbers missed would be approved, and every later run on another machine would fail, or a secret would be committed."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''            if found is not None:
+'''
+replace = '''            if False:
+'''
+
+[[mutant]]
+name = "an_unchanged_output_rewritten"
+why = "Recording twice would touch every approved file, so make approve would not be safe to run again."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''            if not path.is_file() or path.read_bytes() != text.encode("utf-8"):
+'''
+replace = '''            if True:
+'''
+
+[[mutant]]
+name = "a_stale_record_accepted"
+why = "The record would go on naming a producer, arguments, or scrubbers the test no longer uses."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if meta.read_bytes() != meta_text.encode("utf-8"):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "scrubbers_applied_in_reverse"
+why = "Each scrubber reads what the one before left, so the order given is part of the approved output."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        for scrubber in scrubbers:
+            received = scrubber(received)
+'''
+replace = '''        for scrubber in reversed(scrubbers):
+            received = scrubber(received)
+'''
+
+[[mutant]]
+name = "a_producer_among_the_tests_accepted"
+why = "A function written in the tests can return whatever its baseline wants, so the baseline would show nothing about the code."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    if source.is_relative_to(tests.resolve()):
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_recorded_mock_accepted"
+why = "A record edited to name a mock would pass the check that exists to find it."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    if isinstance(found, mock.NonCallableMock):
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_producer_its_name_does_not_give_accepted"
+why = "The record would name one function while another made the output."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if _resolved(name) is not producer:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "an_approved_file_with_no_record_passed"
+why = "An approved file whose record was deleted, or a record whose file was, would pass the check of the records."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '            sorted(stems), sorted(outputs), "each approved file'
+replace = '            sorted(stems), sorted(stems), "each approved file'

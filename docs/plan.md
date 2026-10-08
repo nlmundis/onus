@@ -317,7 +317,7 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
 ## Amendment 6 (2026-10-07): step 4's first choices, and who may push
 
 Before any of step 4 was written, the maintainer chose each point below from options; each binds v0.1. E16 was
-built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
+built with this amendment, E17 with `baseline` after it; E18 is built with `signoff`.
 
 - **E15, a session may push its branch and open its pull request.** Once `make check` is green on the head
   commit, one targeted adversarial review has run and its findings are fixed or listed, and the leak scan with
@@ -358,6 +358,28 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
   replaces `assertApproved(received, *, label="", ext=".md")`, which could learn none of the three. Set aside:
   the caller naming the producer of a text it passes in, where the record would be a claim; and a header inside
   the approved file, where a JSON baseline would stop being JSON.
+  - As built, chosen in the build and open to veto:
+    - **What "real" means.** A producer is real when importing its recorded name gives it back, it is callable
+      and no mock, and its source file lies outside the folder that holds the approved folder (the tests). So a
+      bound method, a lambda, a `functools.partial`, a built-in, and a function written among the tests are
+      refused. `assertApproved` checks this before it runs the producer, and `ApprovedProducersAreReal`, mixed
+      into a test case with `approved_dir` set, checks every record on disk, and that each approved file has
+      one record and each record one file.
+    - **Where files go.** The approved folder is `approved` beside the test's own file, unless the class sets
+      `approved_dir`. A mismatch writes the received text to
+      `<temporary folder>/onus-received/<8 hex of the approved folder's path>/`, where the plan said
+      `<repo-sha8>`: the helper never asks git which repository it is in.
+    - **Recording.** Under `ONUS_APPROVE_ROOT` the root must be an absolute path with a `.git` entry and must
+      hold the approved file; an empty or relative value is refused, not read as the current folder. `forbid=`
+      regexes read the scrubbed output. A file already equal to the output is not rewritten. A record that no
+      longer matches the call fails the test even when the output matches.
+    - **onus has no `make approve` of its own**, because it has no tier-1 files: its tests of `baseline` build a
+      scratch checkout. An adopter's target is one line, setting `ONUS_APPROVE_ROOT` to
+      `git rev-parse --show-toplevel` for one run of its suite.
+  - Known limits: the producer's own keyword arguments cannot be named `scrubbers`, `label`, `ext`, or
+    `forbid`; a test and label have one record, so two `ext` values under one label collide; JSON reads the
+    keys 1 and "1" of an argument as one; and whether `onus`'s own outputs (a rendered sentence, say) should be
+    held to tier-1 files here is undecided.
 - **E18, the environment `signoff record` refuses under.** It refuses when a variable named `CLAUDECODE`,
   `AI_AGENT`, `CI`, or `GITHUB_ACTIONS` is set, or any whose name starts with `CLAUDE_CODE_`, `CODEX_`,
   `CURSOR_`, `AIDER_`, `GEMINI_CLI`, or `COPILOT_`, and names the variable it tripped on. It does not refuse on
@@ -374,7 +396,7 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
 - **Subpackages, named by intent:** `onus.stats`, `onus.prereg`, `onus.report`, `onus.baseline` (tier 1),
   `onus.signoff` (tier 2), `onus.scrub`, and `onus.invariants` (the Hypothesis part; not `property`, which
   would shadow the builtin). `prereg` will import `signoff` (L1 step 4), since amendments are bound by
-  sign-offs. Built so far: `stats`, `prereg`, `report`, and `scrub`.
+  sign-offs. Built so far: `stats`, `prereg`, `report`, `scrub`, and `baseline`.
 - **Python:** `requires-python >=3.11`, with CI covering 3.11 to 3.14. Locally, `.python-version` pins the
   exact patch and the floor check (it compiles the package) runs on an exact 3.11 patch, both from pyenv and
   handed to uv by path; in CI each matrix job supplies its own interpreter.
@@ -547,7 +569,7 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
 3. `prereg` (PR #5, merged), then `report` to Amendments 2, 3, and 4 (PR #8, merged), then
    `report.assert_quoted` on explicit quote markers, as its own pull request (Amendment 5).
-4. `scrub` (built, to Amendment 6's E16), then `baseline`, then `signoff`, each its own pull request, plus the
+4. `scrub` and `baseline` (built, to Amendment 6's E16 and E17), then `signoff`, each its own pull request, plus the
    prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
    Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
