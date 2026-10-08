@@ -21,6 +21,9 @@ its amendments arrive with `onus.signoff`.
 with the minimum detectable effect whenever a read that is not early is not met, and nothing about the result on
 an early read; quotes exploratory results with no verdict; and fails a test unless the quotes a document marks,
 between `<!-- onus:quote -->` and `<!-- /onus:quote -->`, are exactly the rendered sentences.
+`onus.scrub` replaces dates, timestamps, UUIDs, hex ids of the lengths a caller lists, a caller's folders, and
+whatever a caller's own regex or function names, each value with a token numbered by the value, and never a
+number.
 v0.1.0 brings:
 
 | Subpackage | What it gives a caller |
