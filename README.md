@@ -26,7 +26,10 @@ own regex matches, each value with a token numbered by the value, and a caller's
 caller gives them; it ships no scrubber that replaces a number. `onus.baseline` gives a `unittest.TestCase`
 `assertApproved`, which runs a producer, scrubs its output, and holds it byte for byte to a file committed beside
 the tests, recorded only when `ONUS_APPROVE_ROOT` names the checkout, with a record of the producer, its
-arguments' hash, and the scrubbers beside each file.
+arguments' hash, and the scrubbers beside each file. `onus.signoff` keeps a hash-chained ledger of sign-offs
+and revocations, extended only after eight digits are typed at a terminal (POSIX only; a tripwire against
+mistakes, not a control against forgery), and whose `check_signoff` answers
+SIGNED, UNSIGNED, CHANGED, REVOKED, or CORRUPT, failing closed on one malformed line or one break in the chain.
 v0.1.0 brings:
 
 | Subpackage | What it gives a caller |

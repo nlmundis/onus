@@ -317,7 +317,7 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
 ## Amendment 6 (2026-10-07): step 4's first choices, and who may push
 
 Before any of step 4 was written, the maintainer chose each point below from options; each binds v0.1. E16 was
-built with this amendment, E17 with `baseline` after it; E18 is built with `signoff`.
+built with this amendment, E17 with `baseline` after it, and E18 with `signoff`, where E19 to E21 were chosen.
 
 - **E15, a session may push its branch and open its pull request.** Once `make check` is green on the head
   commit, one targeted adversarial review has run and its findings are fixed or listed, and the leak scan with
@@ -411,6 +411,54 @@ built with this amendment, E17 with `baseline` after it; E18 is built with `sign
   `ANTHROPIC_*` or a bare `CLAUDE_*`, which a person's own shell profile may set. Exact names only, which go
   stale, and every name that looks related, which could refuse the maintainer at their own terminal, were set
   aside. It is a tripwire, as before; the control is step H.
+- **E19, a revocation is a line that names the sign-off it revokes (2026-10-08).** `revoke` appends a
+  `signoff/1` line for the artifact with `sha256` and `bytes` null, nothing bound, and `supersedes` set to the
+  hash of the sign-off line it revokes; the person types the first eight hex digits of that line's hash.
+  `check_signoff` answers REVOKED while it is the artifact's newest line, and a later `record` signs the
+  artifact again. A second schema for revocations, and no revocation in v0.1, were set aside.
+- **E20, `bound` is `{path: sha256}`, and it is checked (2026-10-08).** `record --bind <file>` stores each
+  file's path from the ledger's folder, never outside it, with its sha256, and `check_signoff` answers CHANGED,
+  naming the file, when one no longer matches. Recording without checking, and a free-text note, were set aside.
+- **E21, `reviewed_by` is a required argument (2026-10-08).** `--reviewed-by <name>`, with no default, shown
+  back at the terminal before the digits are typed. It is one line and holds no "@", so no address is written
+  into a ledger. It is never read from git or the login.
+  - As built, for E18 to E21, chosen in the build and open to veto:
+    - **`supersedes` is always the newest earlier line for the artifact**, or null for its first: a re-signing
+      names the sign-off or revocation before it, and `record` fills it in. A ledger where a line names any
+      other is CORRUPT, as is a revocation of what is not a sign-off.
+    - **Fail closed means the whole ledger.** One malformed line, one break in `prev`, a file not ending in a
+      newline, or bytes that are not UTF-8 make every artifact CORRUPT, one the ledger never names included.
+      No ledger at all, or an empty one, is UNSIGNED.
+    - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, written whole under another name
+      and then renamed, so CHANGED can show a diff. A kept copy that no longer hashes to its name makes the
+      artifact whose newest line signed it CORRUPT, whether or not its content changed, and stops the next
+      `record`; one that is gone leaves CHANGED without a diff.
+    - **The terminal is `/dev/tty`, opened by descriptor,** and must be a terminal: a file or pipe in its
+      place is refused, and standard input is never read. What is typed must be exactly the first eight hex
+      digits, lower case, with nothing round them. What is shown has every control character written as its
+      escape, so content cannot move the cursor or erase the lines being confirmed.
+    - **A re-signing binds only what it is told to.** A file the line before bound and this one does not is
+      shown as "no longer bound" before the digits are asked for. The ledger and its kept copies cannot be
+      bound. The same content with the same files bound, when that is the artifact's newest line, is not
+      signed again.
+    - **The command line** is `python -m onus.signoff record|revoke|check`. `check` exits 0 only for SIGNED
+      (10 UNSIGNED, 11 CHANGED, 12 REVOKED, 13 CORRUPT); a refusal, or a ledger or content that cannot be read
+      or written, exits 20.
+    - **Messages name what clears them.** The environment refusal says to run from a terminal where the
+      variable is not set, and every CORRUPT says that onus repairs nothing and the ledger is restored from
+      version control.
+    - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
+  - Known limits, most from this step's review:
+    - A refused first sign-off leaves an empty ledger file behind.
+    - The lock is held while the person answers, so a second sign-off on the same ledger waits, with no
+      message and no time limit.
+    - Digits already waiting on the terminal when the prompt appears are read as the answer.
+    - The bound files' contents are not kept, so a changed one is named without a diff.
+    - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
+      own profile, and `GEMINI_CLI` also matches a longer name that starts so.
+    - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,
+      which any process could do, so these checks stay tripwires and step H stays the control.
+    - Nothing here binds a prereg amendment yet, which arrives with the prereg work.
 
 ## The library
 
@@ -421,7 +469,7 @@ built with this amendment, E17 with `baseline` after it; E18 is built with `sign
 - **Subpackages, named by intent:** `onus.stats`, `onus.prereg`, `onus.report`, `onus.baseline` (tier 1),
   `onus.signoff` (tier 2), `onus.scrub`, and `onus.invariants` (the Hypothesis part; not `property`, which
   would shadow the builtin). `prereg` will import `signoff` (L1 step 4), since amendments are bound by
-  sign-offs. Built so far: `stats`, `prereg`, `report`, `scrub`, and `baseline`.
+  sign-offs. Built so far: `stats`, `prereg`, `report`, `scrub`, `baseline`, and `signoff`.
 - **Python:** `requires-python >=3.11`, with CI covering 3.11 to 3.14. Locally, `.python-version` pins the
   exact patch and the floor check (it compiles the package) runs on an exact 3.11 patch, both from pyenv and
   handed to uv by path; in CI each matrix job supplies its own interpreter.
@@ -595,7 +643,7 @@ built with this amendment, E17 with `baseline` after it; E18 is built with `sign
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
 3. `prereg` (PR #5, merged), then `report` to Amendments 2, 3, and 4 (PR #8, merged), then
    `report.assert_quoted` on explicit quote markers, as its own pull request (Amendment 5).
-4. `scrub` and `baseline` (built, to Amendment 6's E16 and E17), then `signoff`, each its own pull request, plus the
+4. `scrub`, `baseline`, and `signoff` (built, to Amendment 6's E16 to E21), each its own pull request, plus the
    prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
    Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
