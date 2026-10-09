@@ -314,6 +314,70 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
     text, so a marker pair inside a code block or a longer comment marks a quote too. And a sentence that
     differs from another only in its whitespace is the same sentence to this check.
 
+## Amendment 6 (2026-10-07): step 4's first choices, and who may push
+
+Before any of step 4 was written, the maintainer chose each point below from options; each binds v0.1. E16 was
+built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
+
+- **E15, a session may push its branch and open its pull request.** Once `make check` is green on the head
+  commit, one targeted adversarial review has run and its findings are fixed or listed, and the leak scan with
+  its positive control is clean, a session pushes the branch and opens the pull request without asking. Merging
+  and tagging still need the maintainer's word, per item. This replaces the rule that every push and pull
+  request needed that word.
+- **E16, a scrubbed value becomes a token numbered by the value.** `iso_dates`, `iso_timestamps`, `uuids`,
+  `hex_ids`, and `pattern` write "<date-1>", "<hex-2>": within one text, values are numbered from 1 in the order
+  they first appear, and equal values share a number, so a baseline still shows which ids were equal and fails
+  when two are swapped or merged. The cost is that a new id early in an output renumbers the later ones in the
+  diff. A flat token and a per-scrubber switch were the options set aside. `paths` writes the name its caller
+  gave, unnumbered.
+  - As built, chosen in the build and open to veto:
+    - A scrubber is a `Scrubber`, a frozen, callable, named function from a text to a text, so that `baseline`
+      can record which scrubbers shaped an output; `chain` takes only these, and `redactor(fn)` is how a plain
+      function gets a name (its module and qualified name).
+    - Only a real value is replaced: "2026-13-45" and "2026-01-08T25:00" stay, as does anything that runs on
+      into a letter or digit, of any script, on either side. The date inside a timestamp is left to
+      `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
+      regex, since `datetime` reads "24:00" on some Python versions and not on others.
+    - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
+      replaces a run written like a number: digits alone, or digits, an "e", and more digits, as the end of a
+      float in scientific notation is. The cost: an id that happens to be written so stays, and its comparison
+      fails, visibly; that is about 1 in 130 ids of 12 digits, and under 1 in ten million of 40. For a
+      short id, `pattern` names what stands round it.
+    - `paths` also replaces the other spelling of a path under `/var`, `/tmp`, or `/etc`, with or without
+      `/private`; the plan named only `/var`. It replaces a path only where it stands whole: not where its last
+      folder's name runs on ("/srv/app2"), and not where it is the end or the middle of another path
+      ("/home/u/srv/app", or a URL's path). It tries the longest mapped path first. Its own name lists the
+      names it writes and never the paths, which differ by machine and by run and would otherwise be recorded
+      beside every approved file.
+    - A token's name is a lower-case letter followed by lower-case letters, digits, or underscores; `pattern`
+      refuses the four names the built-in scrubbers write. `redactor` refuses a lambda and a function defined
+      inside another, whose names tell nothing apart.
+  - Known limits, most from this step's review:
+    - A text that already holds something shaped like a token ("<date-1>") is not told apart from a scrubbed
+      one, and a token whose name is itself a hex run of a listed length is replaced again by a later `hex_ids`.
+    - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
+      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
+    - Two patterns given one name in a chain each number from 1, so two different values can share a token.
+    - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - `paths` leaves a path glued to a flag ("-I/srv/app"), since the letter before it reads as a longer path.
+    - `pattern` can be handed a regex that matches numbers, which nothing here can refuse.
+    - A `Scrubber` can be built directly under any name, so a recorded name is a label, not a proof.
+- **E17, `baseline` runs the producer itself and records it beside the approved file.** The call is
+  `assertApproved(producer, *args, scrubbers=(), label="", ext=".md", **kwargs)`: the helper calls
+  `producer(*args, **kwargs)`, scrubs the result, and compares. It records the producer's module and qualified
+  name, a sha256 of the canonical JSON of the arguments, and the scrubbers' names in
+  `<name>.approved.meta.json` beside the approved file, so the recorded producer is what made the output and
+  the approved file stays the scrubbed output byte for byte. The arguments must be JSON-serializable. This
+  replaces `assertApproved(received, *, label="", ext=".md")`, which could learn none of the three. Set aside:
+  the caller naming the producer of a text it passes in, where the record would be a claim; and a header inside
+  the approved file, where a JSON baseline would stop being JSON.
+- **E18, the environment `signoff record` refuses under.** It refuses when a variable named `CLAUDECODE`,
+  `AI_AGENT`, `CI`, or `GITHUB_ACTIONS` is set, or any whose name starts with `CLAUDE_CODE_`, `CODEX_`,
+  `CURSOR_`, `AIDER_`, `GEMINI_CLI`, or `COPILOT_`, and names the variable it tripped on. It does not refuse on
+  `ANTHROPIC_*` or a bare `CLAUDE_*`, which a person's own shell profile may set. Exact names only, which go
+  stale, and every name that looks related, which could refuse the maintainer at their own terminal, were set
+  aside. It is a tripwire, as before; the control is step H.
+
 ## The library
 
 ### Shape
@@ -323,7 +387,7 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
 - **Subpackages, named by intent:** `onus.stats`, `onus.prereg`, `onus.report`, `onus.baseline` (tier 1),
   `onus.signoff` (tier 2), `onus.scrub`, and `onus.invariants` (the Hypothesis part; not `property`, which
   would shadow the builtin). `prereg` will import `signoff` (L1 step 4), since amendments are bound by
-  sign-offs. Built so far: `stats`, `prereg`, and `report`.
+  sign-offs. Built so far: `stats`, `prereg`, `report`, and `scrub`.
 - **Python:** `requires-python >=3.11`, with CI covering 3.11 to 3.14. Locally, `.python-version` pins the
   exact patch and the floor check (it compiles the package) runs on an exact 3.11 patch, both from pyenv and
   handed to uv by path; in CI each matrix job supplies its own interpreter.
@@ -405,26 +469,29 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
 ### baseline, signoff, and scrub (approval testing)
 
 - **`scrub`:** `chain`, `iso_dates`, `iso_timestamps`, `paths(mapping)` (including `/private/var` and `/var`),
-  `uuids` and `hex_ids`, `pattern`, and `redactor(fn)`. No PII rules ship, and numeric scrubbers on stats output
-  are forbidden.
+  `uuids` and `hex_ids(*lengths)`, `pattern(regex, name)`, and `redactor(fn)`, each a named `Scrubber`. A value
+  becomes a token numbered by the value (Amendment 6, E16). No PII rules ship, and numeric scrubbers on stats
+  output are forbidden: none ships, and `hex_ids` never replaces digits alone.
 - **Tier 1 (`baseline`):**
-  - Tests use `ApprovedMixin.assertApproved(received, *, label="", ext=".md")`. Approved files are
+  - Tests use `ApprovedMixin.assertApproved(producer, *args, scrubbers=(), label="", ext=".md", **kwargs)`
+    (Amendment 6, E17). Approved files are
     `tests/approved/<module>.<Class>.<method>[.<label>].approved<ext>`, committed.
   - On a mismatch the test fails with a diff and writes the received file under
     `$TMPDIR/onus-received/<repo-sha8>/`. A missing approved file fails; it never skips.
   - **Recording** happens only under `make approve`, which sets `ONUS_APPROVE_ROOT` to the invoking checkout's
     top level. The helper refuses unless the approved path resolves under that root and the root is a git work
     tree, so a mutation sandbox refuses.
-  - `forbid=` patterns apply while recording. Approved files carry the producer, `inputs_sha256`, and the
-    scrubbers, never a timestamp. `ApprovedProducersAreReal` refuses test-local or mock producers.
+  - `forbid=` patterns apply while recording. Each approved file's sidecar carries the producer,
+    `inputs_sha256`, and the scrubbers, never a timestamp (E17). `ApprovedProducersAreReal` refuses test-local or mock producers.
 - **Tier 2 (`signoff`):**
   - **Ledger:** the adopter passes the ledger path. Lines are `{"schema": "signoff/1", artifact, sha256, bytes,
     bound, supersedes, reviewed_by, at, tool, prev}`, hash-chained. Blobs are content-addressed, mode 0444.
   - **Ids** are exact, matching `^[a-z0-9][a-z0-9._-]*:[A-Za-z0-9._/-]+$`; no globs.
   - `check_signoff` returns SIGNED, UNSIGNED, CHANGED (with a diff), REVOKED, or CORRUPT, and **fails closed** on
     a malformed line or a broken chain.
-  - **`record`** refuses when any agent-session environment variable is set or `/dev/tty` cannot be opened,
-    shows the diff, reads a typed 8-hex prefix from `/dev/tty`, then appends under flock and fsync.
+  - **`record`** refuses when any agent-session environment variable is set (Amendment 6, E18, lists them) or
+    `/dev/tty` cannot be opened, shows the diff, reads a typed 8-hex prefix from `/dev/tty`, then appends under
+    flock and fsync.
   - **These are tripwires; the control is step H.**
 
 ### invariants (the `invariants` extra)
@@ -477,7 +544,9 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
 
 - A branch per session, then a pull request; files staged by path. `make check`'s raw output, with its test
   count, goes in the pull request body.
-- **The maintainer's explicit word, per item,** is needed to push, open a pull request, merge, or tag.
+- **The maintainer's explicit word, per item,** is needed to merge or tag. A session pushes its branch and opens
+  its pull request without it, once the gate is green, one targeted review has run, and the leak scan is clean
+  (Amendment 6, E15).
 - **Before each push,** scan the tree, the commit messages, and the pull request body for names of people,
   companies, customers, and private repositories, machine paths, and email addresses, with a positive control.
 - Deliberate corner-cuts are marked in place: `# ⚠ SHORTCUT (date) — what — ceiling — exit`.
@@ -491,14 +560,15 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
 3. `prereg` (PR #5, merged), then `report` to Amendments 2, 3, and 4 (PR #8, merged), then
    `report.assert_quoted` on explicit quote markers, as its own pull request (Amendment 5).
-4. `baseline`, `signoff`, and `scrub`, plus the prereg work PR #5 deferred: amendment files and their sign-off
+4. `scrub` (built, to Amendment 6's E16), then `baseline`, then `signoff`, each its own pull request, plus the
+   prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
    Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
 5. `invariants`.
 6. The v0.1 mutants: each part brings its own, and the no-op spec (`mutt_check.noop.toml`) is already enforced,
    so this step checks that the whole list below is present and caught.
 
-Then the leak scan, and a push, pull request, merge, and `v0.1.0` tag, each on the maintainer's word.
+Then the leak scan, the push, and the pull request; and the merge and the `v0.1.0` tag, each on the maintainer's word.
 
 **Verify:** every mutant caught, the no-op survives, `make reference` reproduces the fixture byte for byte, and
 `git status --porcelain` is empty after two runs.
@@ -513,7 +583,7 @@ with their oracles and mutants, and `make calibrate`.
 
 ## Maintainer-only items
 
-- Every push, pull request, merge, and tag.
+- Every merge and tag (pushes and pull requests were theirs too until Amendment 6, E15).
 - Installing the pinned interpreter patches.
 - Each tier-2 `signoff record`, from their own terminal.
 - Applying step H before the first tier-2 sign-off is relied on.

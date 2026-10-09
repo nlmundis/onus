@@ -4,7 +4,7 @@
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
-suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report"]
+suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report", "tests.test_scrub"]
 timeout = 300
 
 # --- the environment every stage runs with ---
@@ -2420,3 +2420,331 @@ suites = ["tests.test_report.QuoteTest"]
 file = "onus/report/_quote.py"
 find = "        wanted[_one_spaced(sentence)] = sentence\n"
 replace = "        wanted[sentence] = sentence\n"
+
+# --- onus.scrub ---
+
+[[mutant]]
+name = "tokens_not_numbered"
+why = "A flat token cannot tell one id from another, so an output that swapped or merged two runs would still match its baseline."
+suites = ["tests.test_scrub.NumberingTest"]
+file = "onus/scrub/_scrub.py"
+find = '''            return f"<{name}-{numbers.setdefault(same(match[0]), len(numbers) + 1)}>"
+'''
+replace = '''            return f"<{name}>"
+'''
+
+[[mutant]]
+name = "tokens_numbered_from_zero"
+why = '''The first value's token would be "<date-0>", against every baseline recorded from one.'''
+suites = ["tests.test_scrub.NumberingTest"]
+file = "onus/scrub/_scrub.py"
+find = 'len(numbers) + 1)}>"'
+replace = 'len(numbers))}>"'
+
+[[mutant]]
+name = "a_match_that_is_not_the_value_replaced"
+why = "A date-shaped text that is no date, or a hex run of a length nobody listed, would be hidden behind a token instead of failing its comparison."
+suites = ["tests.test_scrub.DatesTest", "tests.test_scrub.TimestampsTest", "tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''            if not real(match[0]):
+'''
+replace = '''            if False:
+'''
+
+[[mutant]]
+name = "a_number_scrubbed_as_a_hex_id"
+why = "A run of digits alone is a count or the digits of a p-value; replaced, a statistic that changed would still match its baseline."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        return len(text) in wanted and not _NUMBER.match(text)
+'''
+replace = '''        return len(text) in wanted
+'''
+
+[[mutant]]
+name = "a_hex_run_of_any_length_replaced"
+why = "Words and short codes made of the letters a to f would be read as ids."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        return len(text) in wanted and not _NUMBER.match(text)
+'''
+replace = '''        return not _NUMBER.match(text)
+'''
+
+[[mutant]]
+name = "a_short_hex_length_accepted"
+why = 'Below 8, a listed length makes ids of ordinary words such as "facade".'
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = 'type(length) is int and length >= 8 for'
+replace = 'type(length) is int and length >= 1 for'
+
+[[mutant]]
+name = "a_hex_id_s_case_makes_two_values"
+why = "One id printed in capitals in one place would get a second number, and the baseline would show two runs where there was one."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_numbered(_HEX_RUNS, "hex", same=str.lower, real=real)'
+replace = '_numbered(_HEX_RUNS, "hex", same=_as_written, real=real)'
+
+[[mutant]]
+name = "a_uuid_s_case_makes_two_values"
+why = "One UUID printed in capitals in one place would get a second number."
+suites = ["tests.test_scrub.UuidsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_numbered(_UUIDS, "uuid", same=str.lower,'
+replace = '_numbered(_UUIDS, "uuid", same=_as_written,'
+
+[[mutant]]
+name = "the_date_of_a_timestamp_scrubbed_as_a_date"
+why = "iso_dates would cut a timestamp in two, so chaining it before iso_timestamps would leave the clock time in the output, different on every run."
+suites = ["tests.test_scrub.DatesTest"]
+file = "onus/scrub/_scrub.py"
+find = '{_DATE}(?!{_CLOCK}){_AFTER}")'
+replace = '{_DATE}{_AFTER}")'
+
+[[mutant]]
+name = "a_value_that_runs_on_replaced"
+why = "A date, UUID, or hex run that is the start of a longer word or number is not that value."
+suites = ["tests.test_scrub.DatesTest", "tests.test_scrub.TimestampsTest", "tests.test_scrub.UuidsTest", "tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_AFTER = r"(?![^\W_])"'
+replace = '_AFTER = r""'
+
+[[mutant]]
+name = "a_value_run_into_replaced"
+why = "A date, UUID, or hex run that is the end of a longer word or number is not that value."
+suites = ["tests.test_scrub.DatesTest", "tests.test_scrub.TimestampsTest", "tests.test_scrub.UuidsTest", "tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_BEFORE = r"(?<![^\W_])"'
+replace = '_BEFORE = r""'
+
+[[mutant]]
+name = "a_timestamp_s_zone_not_read"
+why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"'
+replace = '_ZONE = ""'
+
+[[mutant]]
+name = "a_folder_whose_name_runs_on_replaced"
+why = '"/srv/app2" would be scrubbed as the mapped "/srv/app" with a stray 2, hiding which folder the output named.'
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = ' + ")" + ends)'
+replace = ' + ")")'
+
+[[mutant]]
+name = "the_shortest_path_tried_first"
+why = "A folder mapped inside another mapped folder would never get its own name."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = 'key=lambda spelling: (-len(spelling), spelling)'
+replace = 'key=lambda spelling: (len(spelling), spelling)'
+
+[[mutant]]
+name = "the_private_spelling_not_replaced"
+why = "macOS reports a temporary folder under /private/var as often as under /var; one spelling would stay in the output."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''            return [path, "/private" + path]
+'''
+replace = '''            return [path]
+'''
+
+[[mutant]]
+name = "the_root_spelling_not_replaced"
+why = "A folder given in its /private spelling would stay in the output where macOS reports it without."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''            return [path, path.removeprefix("/private")]
+'''
+replace = '''            return [path]
+'''
+
+[[mutant]]
+name = "one_path_given_two_names_accepted"
+why = "Which name a path got would depend on the mapping's order."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = 'if names.setdefault(spelling, _named(name)) != name:'
+replace = 'if names.setdefault(spelling, _named(name)) is None:'
+
+[[mutant]]
+name = "a_relative_path_accepted"
+why = "A relative path names a different folder from every working folder, and the root alone stands before every path, so neither says which folder to replace."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        if not path.startswith("/"):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_token_name_that_breaks_the_token_accepted"
+why = 'A name holding ">", a space, or a line break would write a token no reader or later scrubber can tell from text.'
+suites = ["tests.test_scrub.PatternTest", "tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if not isinstance(name, str) or not _NAME.match(name):
+'''
+replace = '''    if not isinstance(name, str):
+'''
+
+[[mutant]]
+name = "an_empty_match_given_a_token"
+why = "A regex that can match nothing would put a token between every two characters of the output."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''            if not match[0]:
+'''
+replace = '''            if False:
+'''
+
+[[mutant]]
+name = "a_scrubber_s_non_text_result_passed_on"
+why = "A redactor that returns None would hand None to the next scrubber or to the comparison, which would fail far from the cause."
+suites = ["tests.test_scrub.RedactorTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        if not isinstance(scrubbed, str):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_non_text_scrubbed"
+why = "Bytes handed to a scrubber would fail inside the regex, or pass through a redactor unscrubbed, with no word about what was wrong."
+suites = ["tests.test_scrub.NumberingTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        if not isinstance(text, str):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_function_with_no_name_wrapped"
+why = "A partial or an instance has no module and qualified name, so an approved output could not record which rule shaped it."
+suites = ["tests.test_scrub.RedactorTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if not callable(function) or not isinstance(module, str) or not isinstance(qualname, str):
+'''
+replace = '''    if not callable(function):
+'''
+
+[[mutant]]
+name = "a_named_thing_that_cannot_be_called_wrapped"
+why = "It would be refused only when the scrubber first ran, inside a test, not where it was built."
+suites = ["tests.test_scrub.RedactorTest"]
+file = "onus/scrub/_scrub.py"
+find = '    if not callable(function) or not isinstance(module, str)'
+replace = '    if not isinstance(module, str)'
+
+[[mutant]]
+name = "a_plain_function_chained"
+why = "A chain's name lists its scrubbers; a bare function has none to list, so the record of what shaped an output would have a hole."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        if not isinstance(scrubber, Scrubber):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_chain_applied_in_reverse"
+why = "Each scrubber reads what the one before it left, so the order given is part of the result."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        for scrubber in scrubbers:
+            text = scrubber(text)
+'''
+replace = '''        for scrubber in reversed(scrubbers):
+            text = scrubber(text)
+'''
+
+[[mutant]]
+name = "an_empty_chain_built"
+why = "A chain of nothing scrubs nothing, and would say so only by an output that never matches."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if not scrubbers:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "the_end_of_another_path_replaced"
+why = "A mapped path that is the tail of a different, longer path, or the path of a URL, would be labelled as the mapped folder, and the output would misreport which folder it named."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = 'regex = re.compile(starts + "(?:"'
+replace = 'regex = re.compile("(?:"'
+
+[[mutant]]
+name = "a_paths_scrubber_named_by_its_paths"
+why = "The name is recorded beside an approved file; holding the paths, it would differ on every machine and run, and publish a machine's folders."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    listed = ", ".join(sorted(set(names.values())))
+'''
+replace = '''    listed = ", ".join(sorted(names))
+'''
+
+[[mutant]]
+name = "the_digits_of_a_float_scrubbed_as_a_hex_id"
+why = "The digits of a float in scientific notation run into its e, a hex letter; replaced, a statistic that changed would still match its baseline."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'
+replace = '_NUMBER = re.compile(r"[0-9]+\Z")'
+
+[[mutant]]
+name = "a_letter_of_another_script_not_read_as_a_letter"
+why = "A date or id inside a word written in another script would be replaced, as it would not be inside an ASCII word."
+suites = ["tests.test_scrub.DatesTest", "tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_AFTER = r"(?![^\W_])"'
+replace = '_AFTER = r"(?![0-9A-Za-z])"'
+
+[[mutant]]
+name = "an_hour_past_23_read_as_a_timestamp"
+why = "Left to datetime, 24:00 is a moment on some Python versions and not on others, so one approved text could not match across them."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '_HOUR = r"(?:[01][0-9]|2[0-3])"'
+replace = '_HOUR = r"(?:[01][0-9]|2[0-4])"'
+
+[[mutant]]
+name = "a_date_before_an_unread_clock_time_left"
+why = "A real date followed by a clock time no timestamp has would be replaced by neither scrubber, and would differ on every run."
+suites = ["tests.test_scrub.DatesTest"]
+file = "onus/scrub/_scrub.py"
+find = '_DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")'
+replace = '_DATES = re.compile(f"{_BEFORE}{_DATE}(?![T ][0-9]{{2}}:[0-9]{{2}}){_AFTER}")'
+
+[[mutant]]
+name = "a_pattern_named_as_a_built_in_token"
+why = "A pattern writing <date-N> beside iso_dates would number from 1 as it does, so two different values would share a token."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if name in _OWN_NAMES:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_lambda_wrapped_as_a_redactor"
+why = "Every lambda in a module is named <lambda>, so the record of which rule shaped an output could not tell two apart."
+suites = ["tests.test_scrub.RedactorTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if "<" in qualname:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_pattern_s_values_compared_without_case"
+why = "Two texts that differ in case are two values to a caller's regex unless the regex says otherwise."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '_named(name), same=_as_written, real=lambda text: True)'
+replace = '_named(name), same=str.lower, real=lambda text: True)'
