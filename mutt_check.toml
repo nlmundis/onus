@@ -4,7 +4,7 @@
 # `make mutants` runs this spec and requires every mutant caught.
 
 [run]
-suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report", "tests.test_scrub", "tests.test_baseline"]
+suites = ["tests.test_repo", "tests.test_stats", "tests.test_stats_properties", "tests.test_prereg", "tests.test_report", "tests.test_scrub", "tests.test_baseline", "tests.test_signoff"]
 timeout = 300
 
 # --- the environment every stage runs with ---
@@ -2820,3 +2820,250 @@ suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
 find = '            sorted(stems), sorted(outputs), "each approved file'
 replace = '            sorted(stems), sorted(stems), "each approved file'
+
+# --- onus.signoff ---
+
+[[mutant]]
+name = "a_sign_off_allowed_under_a_session"
+why = "The first tripwire: an agent session or an unattended job could reach the terminal check at all."
+suites = ["tests.test_signoff.RecordTest", "tests.test_signoff.RevokeTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if variable is not None:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "session_prefixes_not_checked"
+why = "Only the exact names would refuse, so a session that sets CLAUDE_CODE_SESSION_ID and not CLAUDECODE would pass."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if name in SESSION_NAMES or name.startswith(SESSION_PREFIXES):
+'''
+replace = '''        if name in SESSION_NAMES:
+'''
+
+[[mutant]]
+name = "session_names_not_checked"
+why = "CI and GITHUB_ACTIONS match no prefix, so an unattended job would pass."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if name in SESSION_NAMES or name.startswith(SESSION_PREFIXES):
+'''
+replace = '''        if name.startswith(SESSION_PREFIXES):
+'''
+
+[[mutant]]
+name = "the_terminal_replaced_by_standard_input"
+why = "Standard input can be a pipe or a file a script filled; the controlling terminal is what a person types at."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        terminal = os.open(_TTY, os.O_RDWR | os.O_NOCTTY)
+'''
+replace = '''        terminal = os.dup(0)
+'''
+
+[[mutant]]
+name = "what_is_not_a_terminal_accepted"
+why = "A file or a pipe at the terminal's path would answer the confirmation with nobody there."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if not os.isatty(terminal):
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_glob_id_accepted"
+why = "An id with a wildcard would read as covering artifacts nobody looked at."
+suites = ["tests.test_signoff.RecordTest", "tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = 'ARTIFACT_ID = re.compile(r"[a-z0-9][a-z0-9._-]*:[A-Za-z0-9._/-]+\Z")'
+replace = 'ARTIFACT_ID = re.compile(r"[a-z0-9][a-z0-9._-]*:[A-Za-z0-9._/*-]+\Z")'
+
+[[mutant]]
+name = "a_corrupt_line_skipped"
+why = "Skipping a malformed line would let a ledger with a damaged or forged line go on answering SIGNED."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        line = _parse_line(each, where)
+'''
+replace = '''        try:
+            line = _parse_line(each, where)
+        except CorruptLedgerError:
+            continue
+'''
+
+[[mutant]]
+name = "a_broken_prev_chain_accepted"
+why = "Without the chain a line could be removed, edited, or put in, and nothing would show it."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if line.prev != (lines[-1].line_sha256 if lines else None):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_line_that_names_the_wrong_earlier_line_accepted"
+why = "A re-signing or a revocation could claim to follow a line it does not, hiding the one between."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if line.supersedes != (earlier.line_sha256 if earlier else None):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_revocation_of_a_revocation_accepted"
+why = "A revocation must find a sign-off to revoke; one that revokes a revocation says nothing a reader could act on."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if line.revokes and (earlier is None or earlier.revokes):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_ledger_cut_short_accepted"
+why = "A write cut short would lose its line silently, and the artifact would read UNSIGNED, not CORRUPT."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if raw and not raw.endswith(b"\n"):
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_key_onus_did_not_write_accepted"
+why = "A line carrying an extra key is not one onus wrote, and what it means is anyone's guess."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = 'sorted(record) != sorted(KEYS):'
+replace = 'not set(KEYS) <= set(record):'
+
+[[mutant]]
+name = "an_address_accepted_as_a_reviewer"
+why = "A ledger is committed, often publicly; an address in it is published."
+suites = ["tests.test_signoff.RecordTest", "tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    "reviewed_by": lambda value: _one_line(value) and "@" not in str(value),
+'''
+replace = '''    "reviewed_by": _one_line,
+'''
+
+[[mutant]]
+name = "the_confirmation_not_required"
+why = "The typed digits are the act of approval; without them a line is written on running the command."
+suites = ["tests.test_signoff.RecordTest", "tests.test_signoff.RevokeTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if typed != expected[:_PREFIX]:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "any_start_of_the_hash_accepted"
+why = "An empty answer, or one digit, would confirm: pressing return would sign."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if typed != expected[:_PREFIX]:
+'''
+replace = '''    if not expected.startswith(typed):
+'''
+
+[[mutant]]
+name = "a_revocation_confirmed_by_the_content_s_hash"
+why = "The digits must be the revoked line's, so the person has read which sign-off they are revoking."
+suites = ["tests.test_signoff.RevokeTest"]
+file = "onus/signoff/_ledger.py"
+find = """newest.line_sha256, "the revoked line's sha256", None"""
+replace = """str(newest.sha256), "the revoked line's sha256", None"""
+
+[[mutant]]
+name = "a_changed_bound_file_ignored"
+why = "The approval depended on that file; changed, the artifact would still read SIGNED."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if changed:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_file_outside_the_ledger_s_folder_bound"
+why = "Its recorded path would climb out of the folder, and on another machine would name some other file or none."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            if not file.is_file() or not file.is_relative_to(ledger.parent):
+'''
+replace = '''            if not file.is_file():
+'''
+
+[[mutant]]
+name = "the_same_content_signed_twice"
+why = "A second identical line adds nothing and hides which sign-off is the one that counts."
+suites = ["tests.test_signoff.RecordTest", "tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if newest is not None and (newest.sha256, dict(newest.bound)) == (digest, bound):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_tampered_signed_copy_trusted"
+why = "The diff a CHANGED shows would be against content nobody signed."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if _sha256(signed) != line.sha256:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "the_signed_copy_left_writable"
+why = "The kept copy is evidence of what was signed; writable, an editor or a script can change it in passing."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                    kept.chmod(0o444)
+'''
+replace = '''                    kept.chmod(0o644)
+'''
+
+[[mutant]]
+name = "the_line_not_flushed_to_disk"
+why = "A crash after the command reports the line written could lose it."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            os.fsync(file.fileno())
+'''
+replace = '''            pass
+'''
+
+[[mutant]]
+name = "the_ledger_extended_without_its_lock"
+why = "Two sign-offs at once could both read the same last line and both chain to it, breaking the chain."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            fcntl.flock(file.fileno(), fcntl.LOCK_EX)
+'''
+replace = '''            pass
+'''
+
+[[mutant]]
+name = "a_corrupt_ledger_exits_zero"
+why = "A script that checks the exit code would read a corrupt ledger as signed."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = 'Status.CORRUPT: 13}'
+replace = 'Status.CORRUPT: 0}'
+
+[[mutant]]
+name = "a_refusal_exits_zero"
+why = "A wrapper would report a sign-off made when it was refused."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = '''EXIT_REFUSED = 20
+'''
+replace = '''EXIT_REFUSED = 0
+'''
