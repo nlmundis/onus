@@ -19,6 +19,12 @@ def shout(text: str) -> str:
     return text.upper()
 
 
+class Rules:
+    @staticmethod
+    def lower(text: str) -> str:
+        return text.lower()
+
+
 class NumberingTest(unittest.TestCase):
     """What every numbered scrubber shares: one number per distinct value, in order of first appearance."""
 
@@ -59,7 +65,10 @@ class DatesTest(unittest.TestCase):
         self.assertEqual(iso_dates()("2026-02-28, 2026-02-30, 2026-13-01"), "<date-1>, 2026-02-30, 2026-13-01")
 
     def test_a_date_inside_a_longer_number_or_word_stays(self):
-        for text in ("12026-01-08", "2026-01-081", "v2026-01-08", "2026-01-08a"):
+        for text in ("12026-01-08", "2026-01-081", "v2026-01-08", "2026-01-08a", "V2026-01-08", "2026-01-08Z"):
+            with self.subTest(text=text):
+                self.assertEqual(iso_dates()(text), text)
+        for text in ("\u00e92026-01-08", "2026-01-08\u00e9", "\u06622026-01-08"):
             with self.subTest(text=text):
                 self.assertEqual(iso_dates()(text), text)
 
@@ -72,6 +81,10 @@ class DatesTest(unittest.TestCase):
         for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
             with self.subTest(first=order[0].name):
                 self.assertEqual(chain(*order)(text), "<timestamp-1> and <timestamp-2> on <date-1>")
+
+    def test_a_date_before_a_clock_time_no_timestamp_has_is_replaced(self):
+        # After "T" the date runs on into a letter, so it stays, as it does before any other letter.
+        self.assertEqual(iso_dates()("2026-01-08 25:00 and 2026-01-08T10:61"), "<date-1> 25:00 and 2026-01-08T10:61")
 
 
 class TimestampsTest(unittest.TestCase):
@@ -86,13 +99,18 @@ class TimestampsTest(unittest.TestCase):
             "2026-01-08T11:00:05Z",
             "2026-01-08T11:00:05+00:00",
             "2026-01-08T11:00:05.25-08:00",
+            "2026-01-08T11:00:05,25",
+            "2026-01-08T11:00:05+0530",
+            "2026-01-08T11:00:05-08",
+            "2026-12-31T23:59:60Z",
         )
         for form in forms:
             with self.subTest(form=form):
                 self.assertEqual(iso_timestamps()(f"at {form}."), "at <timestamp-1>.")
 
     def test_only_a_real_moment_is_replaced(self):
-        for text in ("2026-01-08T25:00", "2026-02-30T11:00:00Z", "2026-01-08T11:61"):
+        # 24:00 is refused here on every Python version; datetime reads it on some and not on others.
+        for text in ("2026-01-08T25:00", "2026-02-30T11:00:00Z", "2026-01-08T11:61", "2026-01-08T24:00"):
             with self.subTest(text=text):
                 self.assertEqual(iso_timestamps()(text), text)
 
@@ -100,11 +118,19 @@ class TimestampsTest(unittest.TestCase):
         text = "2026-01-08T11:00:00Z, 2026-01-08T11:00:00+00:00, 2026-01-08T11:00:00Z"
         self.assertEqual(iso_timestamps()(text), "<timestamp-1>, <timestamp-2>, <timestamp-1>")
 
+    def test_what_follows_a_timestamp_stays(self):
+        self.assertEqual(iso_timestamps()("2026-01-08T11:00:5 2026-01-08T11:00+24"), "<timestamp-1>:5 <timestamp-1>+24")
+
+    def test_its_name_is_its_functions(self):
+        self.assertEqual(
+            (iso_timestamps().name, iso_dates().name, uuids().name), ("iso_timestamps", "iso_dates", "uuids")
+        )
+
     def test_a_bare_date_is_not_a_timestamp(self):
         self.assertEqual(iso_timestamps()("on 2026-01-08 at noon"), "on 2026-01-08 at noon")
 
     def test_a_timestamp_inside_a_longer_word_stays(self):
-        for text in ("x2026-01-08T11:00", "2026-01-08T11:00x", "2026-01-08T11:001"):
+        for text in ("x2026-01-08T11:00", "2026-01-08T11:00x", "2026-01-08T11:001", "X2026-01-08T11:00"):
             with self.subTest(text=text):
                 self.assertEqual(iso_timestamps()(text), text)
 
@@ -116,7 +142,10 @@ class UuidsTest(unittest.TestCase):
 
     def test_a_shape_that_is_not_a_uuid_stays(self):
         short = UUID_A[:-1]
-        for text in (short, UUID_A + "0", "a" + UUID_A, UUID_A.replace("-", ""), UUID_A.replace("f", "g")):
+        three_groups = UUID_A[:8] + UUID_A[13:]
+        five_groups = UUID_A[:9] + "abcd-" + UUID_A[9:]
+        shapes = (short, UUID_A + "0", "a" + UUID_A, "A" + UUID_A, UUID_A.replace("-", ""), UUID_A.replace("f", "g"))
+        for text in (*shapes, three_groups, five_groups):
             with self.subTest(text=text):
                 self.assertEqual(uuids()(text), text)
 
@@ -129,7 +158,15 @@ class HexIdsTest(unittest.TestCase):
         self.assertEqual(hex_ids(40)(text), f"<hex-1> {sha256} {SHA_A[:39]} {SHA_A}0")
 
     def test_a_run_inside_a_longer_word_stays(self):
-        for text in (f"x{SHA_A}", f"{SHA_A}z", f"{SHA_A}g"):
+        for text in (
+            f"x{SHA_A}",
+            f"{SHA_A}z",
+            f"{SHA_A}g",
+            f"X{SHA_A}",
+            f"{SHA_A}Z",
+            f"\u00e9{SHA_A}",
+            f"{SHA_A}\u00e9",
+        ):
             with self.subTest(text=text):
                 self.assertEqual(hex_ids(40)(text), text)
 
@@ -137,12 +174,16 @@ class HexIdsTest(unittest.TestCase):
         # Digits alone, at a listed length: a count, a numerator, or the digits of an exact p-value.
         text = "n = 12345678; p = 6004799503160661/18014398509481984; 0.6666070179300212860107421875"
         self.assertEqual(hex_ids(8, 16, 17, 28)(text), text)
+        # The digits of a float in scientific notation, with its e: a hex run that holds a letter.
+        floats = "1.2345678e-05 3.1234567E+10 0.12345e10 1234567e 12345e12"
+        self.assertEqual(hex_ids(8)(floats), floats)
+        self.assertEqual(hex_ids(8)("1234567f e1234567 123e456a"), "<hex-1> <hex-2> <hex-3>")
 
     def test_case_does_not_make_two_ids(self):
         self.assertEqual(hex_ids(40)(f"{SHA_A} {SHA_A.upper()}"), "<hex-1> <hex-1>")
 
     def test_the_lengths_are_required_and_at_least_eight(self):
-        for lengths in ((), (7,), (40, 7), (40.0,), ("40",), (True,)):
+        for lengths in ((), (7,), (40, 7), (40.0,), ("40",), (True,), (8.0,)):
             with self.subTest(lengths=lengths), self.assertRaisesRegex(ValueError, "each an int of at least 8"):
                 hex_ids(*lengths)
         self.assertEqual(hex_ids(8)("deadbeef facade"), "<hex-1> facade")
@@ -156,6 +197,13 @@ class PatternTest(unittest.TestCase):
         scrubber = pattern(r"run-[0-9a-f]{6}", "run")
         self.assertEqual(scrubber("run-00ab12 then run-ffffff then run-00ab12"), "<run-1> then <run-2> then <run-1>")
         self.assertEqual(scrubber.name, "pattern('run-[0-9a-f]{6}', 'run')")
+        self.assertEqual(pattern("[A-Za-z]+", "word_2")("ab AB ab"), "<word_2-1> <word_2-2> <word_2-1>")
+
+    def test_a_name_this_modules_own_scrubbers_write_is_refused(self):
+        for name in ("date", "timestamp", "uuid", "hex"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "own scrubbers write"):
+                pattern("x", name)
+        self.assertEqual(pattern("x", "dates")("x"), "<dates-1>")
 
     def test_a_name_that_cannot_stand_in_a_token_is_refused(self):
         for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None):
@@ -164,7 +212,7 @@ class PatternTest(unittest.TestCase):
 
     def test_a_regex_that_matches_nothing_at_all_is_refused_when_it_does(self):
         scrubber = pattern("x*", "x")
-        with self.assertRaisesRegex(ValueError, "matched an empty text"):
+        with self.assertRaisesRegex(ValueError, r"the x pattern 'x\*' matched an empty text"):
             scrubber("abc")
 
     def test_the_regex_is_a_string_that_compiles(self):
@@ -184,7 +232,21 @@ class PathsTest(unittest.TestCase):
 
     def test_a_folder_whose_name_only_starts_alike_stays(self):
         scrubber = paths({"/srv/app": "app"})
-        for text in ("/srv/app2", "/srv/app-old/x", "/srv/app_b", "/srv/app.bak", "/srv/application"):
+        for text in (
+            "/srv/app2",
+            "/srv/app-old/x",
+            "/srv/app_b",
+            "/srv/app.bak",
+            "/srv/application",
+            "/srv/appB",
+            "/srv/app_",
+            "/srv/app-",
+            "/srv/app~",
+            "/srv/app+1",
+            "/srv/app@2",
+            "/srv/app\u00e9",
+            "/srv/app.\u00e9",
+        ):
             with self.subTest(text=text):
                 self.assertEqual(scrubber(text), text)
 
@@ -204,9 +266,35 @@ class PathsTest(unittest.TestCase):
         self.assertEqual(paths({"/var": "var"})("/private/var/x /var/x"), "<var>/x <var>/x")
 
     def test_no_other_folder_gains_a_private_spelling(self):
-        self.assertEqual(paths({"/srv/app": "app"})("/private/srv/app"), "/private<app>")
-        self.assertEqual(paths({"/variable/x": "x"})("/private/variable/x"), "/private<x>")
-        self.assertEqual(paths({"/private/variable/x": "x"})("/variable/x"), "/variable/x")
+        for mapped, text in (
+            ("/srv/app", "/private/srv/app"),
+            ("/variable/x", "/private/variable/x"),
+            ("/private/variable/x", "/variable/x"),
+            ("/usr/x", "/private/usr/x"),
+            ("/private/opt/x", "/opt/x"),
+        ):
+            with self.subTest(mapped=mapped):
+                self.assertEqual(paths({mapped: "x"})(text), text)
+
+    def test_the_end_or_the_middle_of_another_path_stays(self):
+        scrubber = paths({"/srv/app": "app"})
+        for text in (
+            "/home/u/srv/app/x",
+            "word/srv/app",
+            "WORD/srv/app",
+            "https://h.example/srv/app/y",
+            "./srv/app",
+            "~/srv/app",
+            "a_/srv/app",
+            "a-/srv/app",
+            "a+/srv/app",
+            "a@/srv/app",
+            "caf\u00e9/srv/app",
+            "-I/srv/app",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(scrubber(text), text)
+        self.assertEqual(scrubber("--root=/srv/app file:///srv/app (/srv/app)"), "--root=<app> file://<app> (<app>)")
 
     def test_a_trailing_slash_and_a_pathlike_are_read_as_the_folder(self):
         self.assertEqual(paths({"/srv/app/": "app"})("/srv/app/x"), "<app>/x")
@@ -231,8 +319,9 @@ class PathsTest(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "each path as text, not bytes"):
             paths({pathlib.PurePosixPath("/srv/app").__fspath__().encode(): "app"})  # type: ignore[dict-item]
 
-    def test_its_name_lists_every_spelling_it_replaces(self):
-        self.assertEqual(paths({"/var/x": "x"}).name, "paths({'/private/var/x': 'x', '/var/x': 'x'})")
+    def test_its_name_lists_its_names_and_no_path(self):
+        self.assertEqual(paths({"/var/x": "x"}).name, "paths(x)")
+        self.assertEqual(paths({"/srv/b": "work", "/srv/a": "work", "/srv/c": "app"}).name, "paths(app, work)")
 
     def test_a_regex_character_in_a_path_is_read_as_itself(self):
         self.assertEqual(paths({"/srv/a+b (1)": "a"})("/srv/a+b (1)/x /srv/aab (1)"), "<a>/x /srv/aab (1)")
@@ -254,6 +343,21 @@ class RedactorTest(unittest.TestCase):
         for nameless in (functools.partial(shout), "shout", None, named_but_not_callable):
             with self.subTest(nameless=nameless), self.assertRaisesRegex(TypeError, "takes a named function"):
                 redactor(nameless)  # type: ignore[arg-type]
+
+    def test_a_lambda_or_a_function_inside_another_is_refused(self):
+        def inner(text: str) -> str:
+            return text
+
+        for unnamed in (lambda text: text, inner):
+            with (
+                self.subTest(unnamed=unnamed.__qualname__),
+                self.assertRaisesRegex(ValueError, "defined at a module's"),
+            ):
+                redactor(unnamed)
+
+    def test_a_method_is_named_with_its_class(self):
+        self.assertEqual(redactor(Rules.lower).name, "redactor(tests.test_scrub.Rules.lower)")
+        self.assertEqual(redactor(Rules.lower)("QUIET"), "quiet")
 
 
 class ChainTest(unittest.TestCase):

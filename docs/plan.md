@@ -335,20 +335,33 @@ built with this amendment, E17 with `baseline` after it; E18 is built with `sign
       can record which scrubbers shaped an output; `chain` takes only these, and `redactor(fn)` is how a plain
       function gets a name (its module and qualified name).
     - Only a real value is replaced: "2026-13-45" and "2026-01-08T25:00" stay, as does anything that runs on
-      into a letter or digit on either side. The date inside a timestamp is left to `iso_timestamps`, so the
-      two may be chained in either order.
+      into a letter or digit, of any script, on either side. The date inside a timestamp is left to
+      `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
+      regex, since `datetime` reads "24:00" on some Python versions and not on others.
     - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
-      replaces a run of digits alone, so no scrubber shipped here can replace a number. The cost: an id that
-      happens to hold none of the letters a to f stays, and its comparison fails, visibly; that is about 36 in
-      10,000 ids of 12 digits and under 1 in a hundred million of 40. For a short id, `pattern` names what
-      stands round it.
+      replaces a run written like a number: digits alone, or digits, an "e", and more digits, as the end of a
+      float in scientific notation is. The cost: an id that happens to be written so stays, and its comparison
+      fails, visibly; that is about 1 in 130 ids of 12 digits, and under 1 in ten million of 40. For a
+      short id, `pattern` names what stands round it.
     - `paths` also replaces the other spelling of a path under `/var`, `/tmp`, or `/etc`, with or without
-      `/private`; the plan named only `/var`. It replaces a path only where it stands whole ("/srv/app2" is not
-      "/srv/app"), and tries the longest mapped path first.
-    - A token's name is a lower-case letter followed by lower-case letters, digits, or underscores.
-  - Known limits: a text that already holds something shaped like a token ("<date-1>") is not told apart from a
-    scrubbed one; a timestamp is numbered by how it is written, so one moment written in two zones is two
-    values; and `pattern` can be handed a regex that matches numbers, which nothing here can refuse.
+      `/private`; the plan named only `/var`. It replaces a path only where it stands whole: not where its last
+      folder's name runs on ("/srv/app2"), and not where it is the end or the middle of another path
+      ("/home/u/srv/app", or a URL's path). It tries the longest mapped path first. Its own name lists the
+      names it writes and never the paths, which differ by machine and by run and would otherwise be recorded
+      beside every approved file.
+    - A token's name is a lower-case letter followed by lower-case letters, digits, or underscores; `pattern`
+      refuses the four names the built-in scrubbers write. `redactor` refuses a lambda and a function defined
+      inside another, whose names tell nothing apart.
+  - Known limits, most from this step's review:
+    - A text that already holds something shaped like a token ("<date-1>") is not told apart from a scrubbed
+      one, and a token whose name is itself a hex run of a listed length is replaced again by a later `hex_ids`.
+    - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
+      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
+    - Two patterns given one name in a chain each number from 1, so two different values can share a token.
+    - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - `paths` leaves a path glued to a flag ("-I/srv/app"), since the letter before it reads as a longer path.
+    - `pattern` can be handed a regex that matches numbers, which nothing here can refuse.
+    - A `Scrubber` can be built directly under any name, so a recorded name is a label, not a proof.
 - **E17, `baseline` runs the producer itself and records it beside the approved file.** The call is
   `assertApproved(producer, *args, scrubbers=(), label="", ext=".md", **kwargs)`: the helper calls
   `producer(*args, **kwargs)`, scrubs the result, and compares. It records the producer's module and qualified
