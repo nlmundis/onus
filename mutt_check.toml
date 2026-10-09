@@ -3191,9 +3191,9 @@ name = "a_tampered_signed_copy_trusted"
 why = "The diff a CHANGED shows would be against content nobody signed."
 suites = ["tests.test_signoff.CheckTest"]
 file = "onus/signoff/_ledger.py"
-find = '''        if _sha256(signed) != line.sha256:
+find = '''    if _sha256(data) != digest:
 '''
-replace = '''        if False:
+replace = '''    if False:
 '''
 
 [[mutant]]
@@ -3201,9 +3201,9 @@ name = "the_signed_copy_left_writable"
 why = "The kept copy is evidence of what was signed; writable, an editor or a script can change it in passing."
 suites = ["tests.test_signoff.RecordTest"]
 file = "onus/signoff/_ledger.py"
-find = '''                    kept.chmod(0o444)
+find = '''                partial.chmod(0o444)
 '''
-replace = '''                    kept.chmod(0o644)
+replace = '''                partial.chmod(0o644)
 '''
 
 [[mutant]]
@@ -3242,4 +3242,87 @@ file = "onus/signoff/__main__.py"
 find = '''EXIT_REFUSED = 20
 '''
 replace = '''EXIT_REFUSED = 0
+'''
+
+[[mutant]]
+name = "a_terminal_control_sequence_shown_raw"
+why = "Content under review could move the cursor or erase lines on the reviewer's terminal, hiding what they are confirming."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = 'memoryview((_visible(shown) + prompt).encode'
+replace = 'memoryview((shown + prompt).encode'
+
+[[mutant]]
+name = "an_answer_with_spaces_round_it_accepted"
+why = "What is typed must be exactly the digits; a looser reading is a second, undocumented way to confirm."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''.removesuffix("\n")
+'''
+replace = '''.strip()
+'''
+
+[[mutant]]
+name = "a_dropped_binding_not_shown"
+why = "A re-signing that leaves out a file the sign-off before bound would loosen the approval with nothing on the screen saying so."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            + "".join(f"  no longer bound: {name}\n" for name in unbound)
+'''
+replace = ''
+
+[[mutant]]
+name = "the_ledger_bound_to_its_own_sign_off"
+why = "The append changes the ledger, so such a sign-off could never read SIGNED."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            if file == ledger or file.is_relative_to(_blobs(ledger)):
+'''
+replace = '''            if False:
+'''
+
+[[mutant]]
+name = "the_kept_copy_written_in_place"
+why = "A write cut short would leave part of the content under the full content's hash."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                partial = kept.with_name(kept.name + ".partial")
+'''
+replace = '''                partial = kept.with_name(kept.name)
+'''
+
+[[mutant]]
+name = "a_last_line_without_a_newline_run_into_the_next"
+why = "The diff would print the removed and the added last lines as one line."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = 'last = [parts[-1] + "\n\\ no newline at the end\n"] if parts[-1] else []'
+replace = 'last = [parts[-1]] if parts[-1] else []'
+
+[[mutant]]
+name = "bytes_that_are_not_text_shown_alike"
+why = "Two contents that differ only in bytes that are not UTF-8 would show no difference."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = 'data.decode("utf-8", "backslashreplace")'
+replace = 'data.decode("utf-8", "replace")'
+
+[[mutant]]
+name = "a_corrupt_ledger_named_with_no_remedy"
+why = "No command clears a corrupt ledger; a message that does not say so leaves the reader looking for one."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            f"{problem}. onus does not repair a ledger: restore it, and the copies kept beside it, from version "
+'''
+replace = '''            f"{problem}. Restore it, and the copies kept beside it, from version "
+'''
+
+[[mutant]]
+name = "an_unreadable_ledger_crashes_the_command"
+why = "A traceback and exit 1 would read as a crash, not as a refusal with nothing written."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = '''    except (SignoffError, NotImplementedError, OSError) as error:
+'''
+replace = '''    except (SignoffError, NotImplementedError) as error:
 '''

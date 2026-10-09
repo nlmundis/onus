@@ -33,11 +33,21 @@ class SignoffError(ValueError):
 
 
 class CorruptLedgerError(SignoffError):
-    """A ledger that holds a malformed line or a broken chain, so nothing in it can be relied on."""
+    """A ledger that holds a malformed line, a broken chain, or a kept copy that is not what was signed.
+
+    Nothing in such a ledger can be relied on, and onus offers no repair, which every message says.
+    """
+
+    def __init__(self, problem: str) -> None:
+        """Keep ``problem`` and say what clears it, since no command here does."""
+        super().__init__(
+            f"{problem}. onus does not repair a ledger: restore it, and the copies kept beside it, from version "
+            "control, and read what changed"
+        )
 
 
 class SignoffRefused(SignoffError):
-    """A sign-off or revocation that was not written: no person at a terminal confirmed it."""
+    """A sign-off or revocation refused before the terminal was reached, or not confirmed there."""
 
 
 class Status(enum.Enum):
@@ -140,7 +150,7 @@ FIELDS = {
 def _no_repeats(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     keys = [key for key, _ in pairs]
     if len(set(keys)) != len(keys):
-        raise CorruptLedgerError("it gives a key more than once")
+        raise ValueError("it gives a key more than once")
     return dict(pairs)
 
 
@@ -148,8 +158,9 @@ def _parse_line(text: str, where: str) -> Line:
     """Return the signoff/1 line ``text``, checked field by field.
 
     Raises:
-        CorruptLedgerError: ``text`` is not JSON, not an object with exactly signoff/1's keys, holds a field of the
-            wrong kind, or signs content without its size or a size without content.
+        CorruptLedgerError: ``text`` is not JSON, gives a key twice, is not an object with exactly signoff/1's
+            keys, holds a field of the wrong kind, signs content without its size or a size without content, or
+            is a revocation that names no line or binds a file.
     """
     try:
         record = json.loads(text, object_pairs_hook=_no_repeats)
@@ -224,10 +235,42 @@ def _blobs(ledger: Path) -> Path:
     return ledger.with_name(ledger.name + ".blobs")
 
 
+def _kept(ledger: Path, digest: str) -> bytes | None:
+    """Return the copy kept beside ``ledger`` of the content whose sha256 is ``digest``, or None when none is kept.
+
+    Raises:
+        CorruptLedgerError: a copy is kept under that name and is not that content.
+    """
+    blob = _blobs(ledger) / digest
+    if not blob.is_file():
+        return None
+    data = blob.read_bytes()
+    if _sha256(data) != digest:
+        raise CorruptLedgerError(f"{blob} is not the content its name says was signed")
+    return data
+
+
+def _lines(data: bytes) -> list[str]:
+    """Return ``data`` as lines to compare: read as UTF-8, with each byte that is not UTF-8 written as its escape."""
+    parts = data.decode("utf-8", "backslashreplace").split("\n")
+    last = [parts[-1] + "\n\\ no newline at the end\n"] if parts[-1] else []
+    return [part + "\n" for part in parts[:-1]] + last
+
+
 def _diff(before: bytes, after: bytes, before_name: str, after_name: str) -> str:
-    """Return a unified diff of two contents read as UTF-8, a byte that is not shown as U+FFFD."""
-    old, new = (data.decode("utf-8", "replace").splitlines(keepends=True) for data in (before, after))
-    return "".join(difflib.unified_diff(old, new, before_name, after_name))
+    """Return a unified diff of two contents, a last line with no newline marked as one."""
+    return "".join(difflib.unified_diff(_lines(before), _lines(after), before_name, after_name))
+
+
+def _visible(text: str) -> str:
+    """Return ``text`` with each character a terminal would obey, not show, written as its escape.
+
+    Content under review is written to the reviewer's terminal; a carriage return or an escape sequence in it
+    could otherwise overwrite or hide the lines being confirmed.
+    """
+    return "".join(
+        each if each in "\n\t" or each.isprintable() else each.encode("unicode_escape").decode("ascii") for each in text
+    )
 
 
 def _valid_id(artifact: str) -> str:
@@ -255,8 +298,8 @@ def check_signoff(ledger: str | os.PathLike[str], artifact: str, path: str | os.
     UNSIGNED: no line names the artifact, or there is no ledger. CHANGED: the content, or a bound file, differs
     from what was signed, or is missing; ``diff`` shows the content's change when the signed copy is kept beside
     the ledger. REVOKED: the newest line revokes the sign-off. CORRUPT: the ledger cannot be relied on, because a
-    line is malformed, the chain is broken, or the kept copy of the signed content is not that content. It fails
-    closed: one bad line anywhere makes every artifact CORRUPT.
+    line is malformed, the chain is broken, or the kept copy of the content this artifact's newest line signed is
+    not that content. It fails closed: one bad line anywhere makes every artifact CORRUPT.
 
     Raises:
         SignoffError: ``artifact`` is not an exact id.
@@ -272,16 +315,16 @@ def check_signoff(ledger: str | os.PathLike[str], artifact: str, path: str | os.
         return Check(Status.UNSIGNED, f"no line of {ledger} names {artifact!r}")
     if line.sha256 is None:
         return Check(Status.REVOKED, f"revoked by {line.reviewed_by} at {line.at.isoformat()}", line)
+    try:
+        signed = _kept(ledger, line.sha256)
+    except CorruptLedgerError as error:
+        return Check(Status.CORRUPT, str(error), line)
     if not path.is_file():
         return Check(Status.CHANGED, f"{path} is missing", line)
     content = path.read_bytes()
     if _sha256(content) != line.sha256:
-        blob = _blobs(ledger) / line.sha256
-        if not blob.is_file():
+        if signed is None:
             return Check(Status.CHANGED, f"{path} is not the content signed; the signed copy is not kept", line)
-        signed = blob.read_bytes()
-        if _sha256(signed) != line.sha256:
-            return Check(Status.CORRUPT, f"{blob} is not the content its name says was signed", line)
         return Check(
             Status.CHANGED, f"{path} is not the content signed", line, _diff(signed, content, "signed", str(path))
         )
@@ -327,7 +370,7 @@ def _confirmed(terminal: int, shown: str, expected: str, what: str) -> None:
         SignoffRefused: what was typed is not those digits.
     """
     prompt = f"Type the first {_PREFIX} hex digits of {what} to confirm, or anything else to refuse: "
-    unwritten = memoryview((shown + prompt).encode("utf-8"))
+    unwritten = memoryview((_visible(shown) + prompt).encode("utf-8"))
     while unwritten:
         unwritten = unwritten[os.write(terminal, unwritten) :]
     answer = b""
@@ -336,7 +379,7 @@ def _confirmed(terminal: int, shown: str, expected: str, what: str) -> None:
         if not more:
             break
         answer += more
-    typed = answer.decode("utf-8", "replace").strip()
+    typed = answer.decode("utf-8", "replace").removesuffix("\n")
     if typed != expected[:_PREFIX]:
         raise SignoffRefused(f"not confirmed: what was typed is not the first {_PREFIX} hex digits of {what}")
 
@@ -362,7 +405,8 @@ def _append(
     if variable is not None:
         raise SignoffRefused(
             f"the environment variable {variable} is set, which an agent session or an unattended job sets: a "
-            "sign-off is a person's, made from their own terminal"
+            "sign-off is a person's, made from their own terminal. If you are that person, run it from a terminal "
+            "where that variable is not set"
         )
     _valid_id(artifact)
     if not FIELDS["reviewed_by"](reviewed_by):
@@ -384,12 +428,15 @@ def _append(
             lines = parse_ledger(file.read(), ledger)
             fields, shown, expected, what, blob = build(ledger, lines, _newest(lines, artifact))
             _confirmed(terminal, shown, expected, what)
-            if blob is not None:
+            if blob is not None and _kept(ledger, _sha256(blob)) is None:
+                # Written whole under another name first, so a write cut short never stands under the hash.
                 kept = _blobs(ledger) / _sha256(blob)
-                if not kept.is_file():
-                    kept.parent.mkdir(exist_ok=True)
-                    kept.write_bytes(blob)
-                    kept.chmod(0o444)
+                kept.parent.mkdir(exist_ok=True)
+                partial = kept.with_name(kept.name + ".partial")
+                partial.unlink(missing_ok=True)
+                partial.write_bytes(blob)
+                partial.chmod(0o444)
+                os.replace(partial, kept)
             record = {
                 "schema": SCHEMA,
                 "artifact": artifact,
@@ -422,19 +469,23 @@ def record(
     is no controlling terminal. Then it shows, at the terminal, the artifact, the reviewer, the content's sha256
     and size, the files bound, and the diff from what was signed before (the whole content, the first time), and
     reads back the first eight hex digits of the content's sha256 from the terminal, never from standard input.
-    Only then, holding the ledger's lock, it keeps a read-only copy of the content beside the ledger and appends
-    the line, flushed to disk. These are tripwires against a mistake, not a control against a process set on
-    forging a sign-off.
+    It holds the ledger's lock from before it reads the ledger until the line is on disk, the time the person
+    takes to answer included, so a second sign-off on the same ledger waits. Once confirmed, it keeps a
+    read-only copy of the content beside the ledger and appends the line, flushed to disk. What it shows has
+    every control character written as its escape. The whole content is shown as added whenever no signed copy
+    is there to compare with: the first time, after a revocation, and when the copy is not kept. These are
+    tripwires against a mistake, not a control against a process set on forging a sign-off.
 
     ``bind`` names other files the approval depends on, inside the ledger's folder; ``check_signoff`` reports
-    CHANGED when one of them changes. A re-signing names the line it supersedes itself.
+    CHANGED when one of them changes. A re-signing names the line it supersedes itself, and binds only what
+    this call binds: a file the line before bound and this one does not is shown as no longer bound.
 
     Raises:
-        SignoffRefused: a session variable is set, there is no terminal, the confirmation was not typed, or the
-            content is already the one signed with the same files bound.
-        SignoffError: the id or ``reviewed_by`` is refused, ``path`` is no file, or a bound file is missing or
-            outside the ledger's folder.
-        CorruptLedgerError: the ledger cannot be relied on.
+        SignoffRefused: a session variable is set, there is no terminal, or the confirmation was not typed.
+        SignoffError: the id or ``reviewed_by`` is refused; ``path`` is no file; a bound file is missing, outside
+            the ledger's folder, or the ledger or one of its kept copies; or the artifact's newest line already
+            signs this content with these files bound.
+        CorruptLedgerError: the ledger, or the kept copy of what was signed before, cannot be relied on.
         NotImplementedError: this platform has no fcntl.
     """
     path = Path(path)
@@ -452,17 +503,22 @@ def record(
                 raise SignoffError(
                     f"{each} is not a file inside the ledger's folder, {ledger.parent}, so it cannot be bound"
                 )
+            if file == ledger or file.is_relative_to(_blobs(ledger)):
+                raise SignoffError(
+                    f"{each} is the ledger or a copy it keeps, which signing changes: it cannot be bound"
+                )
             bound[file.relative_to(ledger.parent).as_posix()] = _sha256(file.read_bytes())
         if newest is not None and (newest.sha256, dict(newest.bound)) == (digest, bound):
-            raise SignoffRefused(f"{artifact!r} is already signed with this content and these bound files")
+            raise SignoffError(f"{artifact!r} is already signed with this content and these bound files")
         signed_before = b""
         if newest is not None and newest.sha256 is not None:
-            blob = _blobs(ledger) / newest.sha256
-            signed_before = blob.read_bytes() if blob.is_file() else b""
+            signed_before = _kept(ledger, newest.sha256) or b""
+        unbound = sorted(set(newest.bound) - set(bound)) if newest else []
         shown = (
             f"\nSign-off of {artifact}\n  reviewed by: {reviewed_by}\n  content: {path}\n  sha256: {digest}\n"
             f"  bytes: {len(content)}\n"
             + "".join(f"  bound: {name} {value}\n" for name, value in sorted(bound.items()))
+            + "".join(f"  no longer bound: {name}\n" for name in unbound)
             + (f"  supersedes: {newest.line_sha256}\n" if newest else "  first sign-off of this artifact\n")
             + _diff(signed_before, content, "signed before", str(path))
             + "\n"

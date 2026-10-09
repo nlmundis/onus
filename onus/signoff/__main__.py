@@ -38,7 +38,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             line = record(args.ledger, args.artifact, args.path, reviewed_by=args.reviewed_by, bind=args.bind)
         else:
             line = revoke(args.ledger, args.artifact, reviewed_by=args.reviewed_by)
-    except (SignoffError, NotImplementedError) as error:
+    except (SignoffError, NotImplementedError, OSError) as error:
+        # An OSError is a ledger, a kept copy, or a content that cannot be read or written: no verdict, no line.
         print(f"refused: {error}", file=sys.stderr)
         return EXIT_REFUSED
     print(f"written: line {line.line_sha256}")

@@ -429,19 +429,36 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **Fail closed means the whole ledger.** One malformed line, one break in `prev`, a file not ending in a
       newline, or bytes that are not UTF-8 make every artifact CORRUPT, one the ledger never names included.
       No ledger at all, or an empty one, is UNSIGNED.
-    - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, so CHANGED can show a diff. A
-      kept copy that no longer hashes to its name is CORRUPT; one that is gone leaves CHANGED without a diff.
+    - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, written whole under another name
+      and then renamed, so CHANGED can show a diff. A kept copy that no longer hashes to its name makes the
+      artifact whose newest line signed it CORRUPT, whether or not its content changed, and stops the next
+      `record`; one that is gone leaves CHANGED without a diff.
     - **The terminal is `/dev/tty`, opened by descriptor,** and must be a terminal: a file or pipe in its
       place is refused, and standard input is never read. What is typed must be exactly the first eight hex
-      digits, lower case. The same content with the same files bound is not signed twice.
+      digits, lower case, with nothing round them. What is shown has every control character written as its
+      escape, so content cannot move the cursor or erase the lines being confirmed.
+    - **A re-signing binds only what it is told to.** A file the line before bound and this one does not is
+      shown as "no longer bound" before the digits are asked for. The ledger and its kept copies cannot be
+      bound. The same content with the same files bound, when that is the artifact's newest line, is not
+      signed again.
     - **The command line** is `python -m onus.signoff record|revoke|check`. `check` exits 0 only for SIGNED
-      (10 UNSIGNED, 11 CHANGED, 12 REVOKED, 13 CORRUPT), and a refusal exits 20.
+      (10 UNSIGNED, 11 CHANGED, 12 REVOKED, 13 CORRUPT); a refusal, or a ledger or content that cannot be read
+      or written, exits 20.
+    - **Messages name what clears them.** The environment refusal says to run from a terminal where the
+      variable is not set, and every CORRUPT says that onus repairs nothing and the ledger is restored from
+      version control.
     - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
-  - Known limits: a refused first sign-off leaves an empty ledger file behind; the bound files' contents are
-    not kept, so a changed one is named without a diff; the library's own tests reach `record` by pointing it
-    at a pseudo-terminal and clearing the environment, which any process could do, so these checks stay
-    tripwires and step H stays the control; and nothing here binds a prereg amendment yet, which arrives with
-    the prereg work.
+  - Known limits, most from this step's review:
+    - A refused first sign-off leaves an empty ledger file behind.
+    - The lock is held while the person answers, so a second sign-off on the same ledger waits, with no
+      message and no time limit.
+    - Digits already waiting on the terminal when the prompt appears are read as the answer.
+    - The bound files' contents are not kept, so a changed one is named without a diff.
+    - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
+      own profile, and `GEMINI_CLI` also matches a longer name that starts so.
+    - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,
+      which any process could do, so these checks stay tripwires and step H stays the control.
+    - Nothing here binds a prereg amendment yet, which arrives with the prereg work.
 
 ## The library
 

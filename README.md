@@ -27,7 +27,8 @@ caller gives them; it ships no scrubber that replaces a number. `onus.baseline` 
 `assertApproved`, which runs a producer, scrubs its output, and holds it byte for byte to a file committed beside
 the tests, recorded only when `ONUS_APPROVE_ROOT` names the checkout, with a record of the producer, its
 arguments' hash, and the scrubbers beside each file. `onus.signoff` keeps a hash-chained ledger of sign-offs
-and revocations that only a person typing at a terminal extends (POSIX only), and whose `check_signoff` answers
+and revocations, extended only after eight digits are typed at a terminal (POSIX only; a tripwire against
+mistakes, not a control against forgery), and whose `check_signoff` answers
 SIGNED, UNSIGNED, CHANGED, REVOKED, or CORRUPT, failing closed on one malformed line or one break in the chain.
 v0.1.0 brings:
 

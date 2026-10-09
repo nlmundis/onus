@@ -13,6 +13,7 @@ import pathlib
 import select
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -52,6 +53,7 @@ class Terminal:
         """Open both ends, and start reading what the far end is shown."""
         self.master, self.slave = os.openpty()
         self.name = os.ttyname(self.slave)
+        self.inode = os.fstat(self.slave).st_ino
         self._shown = b""
         self._closing = threading.Event()
         self._reader = threading.Thread(target=self._drain, daemon=True)
@@ -196,7 +198,19 @@ class RecordTest(Desk):
 
     def test_anything_but_the_first_eight_hex_digits_refuses_and_writes_nothing(self):
         digest = sha(FIRST)
-        for typed in ("", "y", "yes", digest[:7], digest[:9], digest, digest[:8].upper(), digest[1:9], "00000000"):
+        padded = (" " + digest[:8], digest[:8] + " ", digest[:8] + "\t")
+        for typed in (
+            "",
+            "y",
+            "yes",
+            digest[:7],
+            digest[:9],
+            digest,
+            digest[:8].upper(),
+            digest[1:9],
+            "00000000",
+            *padded,
+        ):
             with self.subTest(typed=typed):
                 with self.assertRaisesRegex(SignoffRefused, "not confirmed"):
                     self.sign(typed)
@@ -252,10 +266,11 @@ class RecordTest(Desk):
 
     def test_the_same_content_is_not_signed_twice(self):
         self.sign()
-        with self.assertRaisesRegex(SignoffRefused, "already signed with this content"):
+        with self.assertRaisesRegex(SignoffError, "already signed with this content") as raised:
             self.sign()
+        self.assertNotIsInstance(raised.exception, SignoffRefused)
         self.assertEqual(len(self.lines()), 1)
-        self.assertNotIn("Type the first", self.terminal.shown().split("Type the first", 2)[-1])
+        self.assertEqual(self.terminal.shown().count("Type the first"), 1)
 
     def test_content_signed_again_after_another_keeps_one_copy(self):
         self.sign()
@@ -280,8 +295,9 @@ class RecordTest(Desk):
         for name in (*names, "CURSOR_TRACE_ID", "AIDER_MODEL", "GEMINI_CLI", "GEMINI_CLI_IDE", "COPILOT_AGENT"):
             with self.subTest(name=name), mock.patch.dict(os.environ, {name: ""}):
                 with mock.patch.object(_ledger, "_open_terminal", side_effect=AssertionError("opened")):
-                    with self.assertRaisesRegex(SignoffRefused, f"the environment variable {name} is set"):
+                    with self.assertRaisesRegex(SignoffRefused, f"the environment variable {name} is set") as raised:
                         record(self.ledger, ARTIFACT, self.truth, reviewed_by="A Reviewer")
+                self.assertIn("run it from a terminal where that variable is not set", str(raised.exception))
                 self.assertFalse(self.ledger.exists())
 
     def test_a_variable_a_persons_own_profile_may_set_does_not_refuse(self):
@@ -375,20 +391,110 @@ class RecordTest(Desk):
 
         calls: list[str] = []
 
+        def which(fd: int) -> str:
+            inode = os.fstat(fd).st_ino
+            return (
+                "ledger" if inode == self.ledger.stat().st_ino else "terminal" if inode == self.terminal.inode else "?"
+            )
+
         def locked(fd: int, how: int) -> None:
-            calls.append(f"flock {how == fcntl.LOCK_EX}")
+            calls.append(f"flock {which(fd)} {how == fcntl.LOCK_EX}")
 
         def read(raw: bytes, path: pathlib.Path) -> list[_ledger.Line]:
             calls.append("read")
             return []
 
         def synced(fd: int) -> None:
-            calls.append(f"fsync {len(self.lines())}")
+            calls.append(f"fsync {which(fd)} {len(self.lines())}")
 
         with mock.patch.object(fcntl, "flock", side_effect=locked), mock.patch.object(os, "fsync", side_effect=synced):
             with mock.patch.object(_ledger, "parse_ledger", side_effect=read):
                 self.sign()
-        self.assertEqual(calls, ["flock True", "read", "fsync 1"])
+        self.assertEqual(calls, ["flock ledger True", "read", "fsync ledger 1"])
+
+    def test_the_ledger_may_be_named_from_the_folder_the_command_runs_in(self):
+        here = os.getcwd()
+        self.addCleanup(os.chdir, here)
+        os.chdir(self.folder)
+        self.terminal.type(sha(FIRST)[:8])
+        record("ledger.jsonl", ARTIFACT, "batch-1.json", reviewed_by="A Reviewer")
+        os.chdir(here)
+        self.assertEqual(self.status(), Status.SIGNED)
+        self.assertTrue((self.folder / "ledger.jsonl.blobs" / sha(FIRST)).is_file())
+
+    def test_what_the_terminal_would_obey_is_shown_as_its_escape(self):
+        self.truth.write_bytes(b"shown\n\x1b[1A\x1b[2Khidden\rover\x07\x00\ttab \xc3\xa9\n")
+        self.sign()
+        shown = self.terminal.shown()
+        self.assertIn("+\\x1b[1A\\x1b[2Khidden\\rover\\x07\\x00\ttab \u00e9\n", shown)
+        self.assertNotIn("\x1b", shown)
+        self.assertNotIn("\x07", shown)
+
+    def test_content_that_is_not_text_is_signed_and_its_bytes_shown(self):
+        self.truth.write_bytes(b"\xff\xfe one\n")
+        self.sign()
+        self.truth.write_bytes(b"\xff\xfd one\n")
+        check = check_signoff(self.ledger, ARTIFACT, self.truth)
+        assert check.diff is not None
+        self.assertIn("-\\xff\\xfe one\n+\\xff\\xfd one\n", check.diff)
+        self.sign()
+        self.assertEqual(self.status(), Status.SIGNED)
+
+    def test_a_last_line_with_no_newline_is_marked_not_run_into_the_next(self):
+        self.truth.write_bytes(b"one\ntwo")
+        self.sign()
+        self.truth.write_bytes(b"one\nthree")
+        check = check_signoff(self.ledger, ARTIFACT, self.truth)
+        assert check.diff is not None
+        self.assertIn("-two\n\\ no newline at the end\n+three\n\\ no newline at the end\n", check.diff)
+
+    def test_the_whole_content_is_shown_again_when_no_signed_copy_is_kept(self):
+        self.sign()
+        shutil.rmtree(self.folder / "ledger.jsonl.blobs")
+        self.truth.write_bytes(SECOND)
+        self.sign()
+        shown = self.terminal.shown()
+        self.assertEqual(shown.count('-{"a": "cat"}'), 0)
+        self.assertIn('+{"a": "dog"}\n', shown)
+        self.assertEqual(self.status(), Status.SIGNED)
+
+    def test_a_kept_copy_that_is_not_what_was_signed_stops_the_next_sign_off(self):
+        self.sign()
+        blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
+        blob.chmod(0o644)
+        blob.write_bytes(b"tampered\n")
+        self.truth.write_bytes(SECOND)
+        with self.assertRaisesRegex(CorruptLedgerError, "is not the content its name says was signed"):
+            self.sign()
+        self.assertEqual(len(self.lines()), 1)
+
+    def test_a_wrong_file_already_under_the_contents_hash_is_not_taken_for_the_kept_copy(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        blobs.mkdir()
+        (blobs / sha(FIRST)).write_bytes(b"cut sh")
+        with self.assertRaisesRegex(CorruptLedgerError, "is not the content its name says was signed"):
+            self.sign()
+        self.assertEqual(self.lines(), [])
+
+    def test_the_kept_copy_is_written_whole_or_not_at_all(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        blobs.mkdir()
+        left_behind = blobs / (sha(FIRST) + ".partial")
+        left_behind.write_bytes(b"cut sh")
+        left_behind.chmod(0o444)
+        names: list[str] = []
+        real = os.replace
+
+        def replace(source: pathlib.Path, target: pathlib.Path) -> None:
+            names.append(
+                f"{pathlib.Path(source).name} -> {pathlib.Path(target).name} {pathlib.Path(source).read_bytes()!r}"
+            )
+            real(source, target)
+
+        with mock.patch.object(os, "replace", side_effect=replace):
+            self.sign()
+        self.assertEqual(names, [f"{sha(FIRST)}.partial -> {sha(FIRST)} {FIRST!r}"])
+        self.assertEqual([path.name for path in blobs.iterdir()], [sha(FIRST)])
 
 
 class BoundTest(Desk):
@@ -420,8 +526,38 @@ class BoundTest(Desk):
         again = self.sign(bind=[self.rubric])
         self.assertEqual(dict(again.bound), {"rubrics/v3.md": sha("be harsh\n")})
         self.assertEqual(self.status(), Status.SIGNED)
-        with self.assertRaisesRegex(SignoffRefused, "already signed"):
+        with self.assertRaisesRegex(SignoffError, "already signed"):
             self.sign(bind=[self.rubric])
+
+    def test_each_bound_file_is_recorded_and_each_is_checked(self):
+        second = self.folder / "rubrics" / "notes.md"
+        second.write_text("notes\n", encoding="utf-8")
+        line = self.sign(bind=[self.rubric, second])
+        self.assertEqual(dict(line.bound), {"rubrics/notes.md": sha("notes\n"), "rubrics/v3.md": sha("be fair\n")})
+        for changed in (self.rubric, second):
+            with self.subTest(changed=changed.name):
+                kept = changed.read_bytes()
+                changed.write_bytes(b"changed\n")
+                check = check_signoff(self.ledger, ARTIFACT, self.truth)
+                self.assertEqual((check.status, check.line), (Status.CHANGED, line))
+                self.assertIn(f"['rubrics/{changed.name}']", check.detail)
+                changed.write_bytes(kept)
+        self.assertEqual(self.status(), Status.SIGNED)
+
+    def test_a_file_the_line_before_bound_and_this_one_does_not_is_shown_as_unbound(self):
+        self.sign(bind=[self.rubric])
+        self.truth.write_bytes(SECOND)
+        line = self.sign()
+        self.assertEqual(dict(line.bound), {})
+        self.assertIn("  no longer bound: rubrics/v3.md\n", self.terminal.shown())
+
+    def test_the_ledger_and_its_kept_copies_cannot_be_bound(self):
+        self.sign()
+        self.truth.write_bytes(SECOND)
+        for bound in (self.ledger, self.folder / "ledger.jsonl.blobs" / sha(FIRST)):
+            with self.subTest(bound=bound.name), self.assertRaisesRegex(SignoffError, "which signing changes"):
+                self.sign(bind=[bound])
+        self.assertEqual(len(self.lines()), 1)
 
     def test_a_file_outside_the_ledgers_folder_or_missing_cannot_be_bound(self):
         outside = pathlib.Path(tempfile.mkdtemp(prefix="onus-signoff-out-")).resolve()
@@ -528,9 +664,12 @@ class CheckTest(Desk):
         blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
         blob.chmod(0o644)
         blob.write_bytes(b"tampered\n")
-        self.assertEqual(self.status(), Status.SIGNED)  # the content itself still matches the line
+        check = check_signoff(self.ledger, ARTIFACT, self.truth)
+        self.assertEqual(check.status, Status.CORRUPT)  # though the content itself still matches the line
+        self.assertIn("onus does not repair a ledger: restore it", check.detail)
         self.truth.write_bytes(SECOND)
         self.assertEqual(self.status(), Status.CORRUPT)
+        self.assertEqual(self.status("truth:other"), Status.UNSIGNED)
 
     def test_a_ledger_written_by_hand_to_the_schema_reads_as_signed(self):
         self.write(self.signed())
@@ -541,6 +680,9 @@ class CheckTest(Desk):
         malformed: dict[str, dict[str, object] | str] = {
             "not json": "{",
             "a list": "[]",
+            "a number": "7",
+            "a text": '"signoff/1"',
+            "nothing": "null",
             "blank": "",
             "a key missing": {key: value for key, value in good.items() if key != "tool"},
             "a key added": {**good, "note": "x"},
@@ -559,6 +701,8 @@ class CheckTest(Desk):
             "bound to no hash": {**good, "bound": {"x": "abc"}},
             "bound to a number": {**good, "bound": {"x": 7}},
             "bound to nothing named": {**good, "bound": {"": sha("x")}},
+            "bound through this folder": {**good, "bound": {"./x": sha("x")}},
+            "bound through no folder": {**good, "bound": {"a//x": sha("x")}},
             "an address": {**good, "reviewed_by": "a@example.org"},
             "two lines of name": {**good, "reviewed_by": "A\nB"},
             "a time with no zone": {**good, "at": "2026-01-08T11:00:00"},
@@ -639,6 +783,8 @@ class CheckTest(Desk):
         check = check_signoff(self.ledger, ARTIFACT, self.truth)
         self.assertEqual(check.status, Status.CORRUPT)
         self.assertIn("its last write was cut short", check.detail)
+        self.assertIn("onus does not repair a ledger: restore it", check.detail)
+        self.assertEqual(check.detail.count("onus does not repair"), 1)
         self.ledger.write_bytes(b"\xff\xfe\n")
         check = check_signoff(self.ledger, ARTIFACT, self.truth)
         self.assertEqual(check.status, Status.CORRUPT)
@@ -690,7 +836,8 @@ class CommandLineTest(Desk):
         self.truth.write_bytes(FIRST)
         self.terminal.type(sha(line)[:8])
         with self.printed():
-            self.assertEqual(main(["revoke", str(self.ledger), ARTIFACT, "--reviewed-by", "A Reviewer"]), 0)
+            self.assertEqual(main(["revoke", str(self.ledger), ARTIFACT, "--reviewed-by", "B Reviewer"]), 0)
+        self.assertEqual(json.loads(self.lines()[1])["reviewed_by"], "B Reviewer")
         self.assertEqual(self.run_check()[0], 12)
         self.ledger.write_text("broken\n", encoding="utf-8")
         self.assertEqual(self.run_check()[0], 13)
@@ -704,6 +851,25 @@ class CommandLineTest(Desk):
             self.assertEqual(main(["check", str(self.ledger), "truth:*", str(self.truth)]), 20)
         with mock.patch.dict(sys.modules, {"fcntl": None}), self.printed() as (_, err):
             self.assertEqual(main(["revoke", str(self.ledger), ARTIFACT, "--reviewed-by", "A Reviewer"]), 20)
+
+    def test_a_ledger_or_content_that_cannot_be_read_is_a_refusal_not_a_crash(self):
+        self.ledger.mkdir()
+        self.terminal.type(sha(FIRST)[:8])
+        with self.printed() as (_, err):
+            code = main(["record", str(self.ledger), ARTIFACT, str(self.truth), "--reviewed-by", "A Reviewer"])
+        self.assertEqual(code, 20)
+        self.assertIn("refused: ", err.getvalue())
+
+    def test_the_exit_code_reaches_the_shell(self):
+        environment = {**os.environ, "PYTHONPATH": str(pathlib.Path(onus.__file__).resolve().parents[1])}
+        done = subprocess.run(
+            [sys.executable, "-B", "-m", "onus.signoff", "check", str(self.ledger), ARTIFACT, str(self.truth)],
+            capture_output=True,
+            text=True,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+        )
+        self.assertEqual((done.returncode, done.stdout.split(":")[0]), (10, "UNSIGNED"))
 
     def test_the_reviewer_has_no_default(self):
         for command in (
