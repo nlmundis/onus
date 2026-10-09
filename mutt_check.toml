@@ -2756,9 +2756,9 @@ name = "an_approved_file_overwritten_by_a_plain_run"
 why = "A mismatch that rewrote the approved file would pass on the next run, with nobody having read the change."
 suites = ["tests.test_baseline.RecordingTest"]
 file = "onus/baseline/_approved.py"
-find = '''            target.write_bytes(received.encode("utf-8"))
+find = '''        target.write_bytes(received.encode("utf-8"))
 '''
-replace = '''            approved.write_bytes(received.encode("utf-8"))
+replace = '''        approved.write_bytes(received.encode("utf-8"))
 '''
 
 [[mutant]]
@@ -2786,8 +2786,8 @@ name = "the_received_file_written_into_the_checkout"
 why = "Received files beside the approved ones dirty the work tree, and one committed by mistake reads as a second baseline."
 suites = ["tests.test_baseline.ComparingTest"]
 file = "onus/baseline/_approved.py"
-find = '    return Path(tempfile.gettempdir()) / "onus-received" / folder / '
-replace = '    return approved.parent / "onus-received" / folder / '
+find = '    target = Path(tempfile.gettempdir()) / "onus-received" / folder / '
+replace = '    target = approved.parent / "onus-received" / folder / '
 
 [[mutant]]
 name = "make_approve_records_outside_its_checkout"
@@ -2866,9 +2866,9 @@ name = "a_producer_among_the_tests_accepted"
 why = "A function written in the tests can return whatever its baseline wants, so the baseline would show nothing about the code."
 suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    if source.is_relative_to(tests.resolve()):
+find = '''            if source.is_relative_to(folder.resolve()):
 '''
-replace = '''    if False:
+replace = '''            if False:
 '''
 
 [[mutant]]
@@ -2876,7 +2876,7 @@ name = "a_recorded_mock_accepted"
 why = "A record edited to name a mock would pass the check that exists to find it."
 suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    if isinstance(found, mock.NonCallableMock):
+find = '''    if _is_mock(found):
 '''
 replace = '''    if False:
 '''
@@ -2896,8 +2896,106 @@ name = "an_approved_file_with_no_record_passed"
 why = "An approved file whose record was deleted, or a record whose file was, would pass the check of the records."
 suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '            sorted(stems), sorted(outputs), "each approved file'
-replace = '            sorted(stems), sorted(stems), "each approved file'
+find = 'self.assertEqual(stems, outputs, '
+replace = 'self.assertEqual(stems, stems, '
+
+[[mutant]]
+name = "only_the_approved_folder_s_parent_counted_as_the_tests"
+why = "With approved files kept in a subfolder, or outside the tests, a helper elsewhere in the test package would be accepted as code under test."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    return tuple(dict.fromkeys((top, folder.resolve().parent)))
+'''
+replace = '''    return (folder.resolve().parent,)
+'''
+
+[[mutant]]
+name = "only_the_test_package_counted_as_the_tests"
+why = "Approved files kept beside product code would let that folder's own helpers through."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    return tuple(dict.fromkeys((top, folder.resolve().parent)))
+'''
+replace = '''    return (top,)
+'''
+
+[[mutant]]
+name = "a_nested_test_package_s_top_misplaced"
+why = "For tests two packages deep, only their own folder would count, and a shared helper one level up would be accepted."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    top = own.parents[depth - 2] if depth > 1 else own
+'''
+replace = '''    top = own
+'''
+
+[[mutant]]
+name = "a_wrapper_judged_only_by_what_it_wraps"
+why = "A function written in the tests could set __wrapped__ to real code and be recorded as that code."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    for each in (found, inspect.unwrap(found)):
+'''
+replace = '''    for each in (inspect.unwrap(found),):
+'''
+
+[[mutant]]
+name = "a_wrapper_judged_only_by_itself"
+why = "A test function behind a wrapper with no source file of its own, as functools.lru_cache gives, would not be seen as written among the tests."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    for each in (found, inspect.unwrap(found)):
+'''
+replace = '''    for each in (found,):
+'''
+
+[[mutant]]
+name = "a_second_output_recorded_over_the_first"
+why = "Two calls in one test under one label share a file; recording would keep only the last, and every plain run would then fail on the first."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if stem in held:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_folder_with_no_record_passes_the_check"
+why = "A mistyped or emptied folder would make the check of the records pass having read nothing."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '        self.assertTrue(metas, '
+replace = '        self.assertTrue(True, '
+
+[[mutant]]
+name = "a_named_mock_accepted_as_a_producer"
+why = "A mock given a real function's module and name would be recorded as that function."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    if _is_mock(producer) or not isinstance(module, str) or not isinstance(qualname, str):
+'''
+replace = '''    if not isinstance(module, str) or not isinstance(qualname, str):
+'''
+
+[[mutant]]
+name = "an_autospec_function_not_read_as_a_mock"
+why = "mock.patch(autospec=True) puts a real function object in place of the code; it has a name and a module, and only its mock attribute tells it apart."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    return isinstance(thing, mock.NonCallableMock) or isinstance(getattr(thing, "mock", None), mock.NonCallableMock)
+'''
+replace = '''    return isinstance(thing, mock.NonCallableMock)
+'''
+
+[[mutant]]
+name = "forbid_ignored_on_a_plain_run"
+why = "An approved file recorded before the pattern was added, or edited by hand, would go on passing with the forbidden text in it."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        for pattern in forbid:
+'''
+replace = '''        for pattern in forbid if os.environ.get(APPROVE_ROOT) else ():
+'''
 
 # --- onus.signoff ---
 
