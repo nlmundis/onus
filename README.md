@@ -23,7 +23,10 @@ an early read; quotes exploratory results with no verdict; and fails a test unle
 between `<!-- onus:quote -->` and `<!-- /onus:quote -->`, are exactly the rendered sentences.
 `onus.scrub` replaces dates, timestamps, UUIDs, hex ids of the lengths a caller lists, and whatever a caller's
 own regex matches, each value with a token numbered by the value, and a caller's folders with the names the
-caller gives them; it ships no scrubber that replaces a number.
+caller gives them; it ships no scrubber that replaces a number. `onus.baseline` gives a `unittest.TestCase`
+`assertApproved`, which runs a producer, scrubs its output, and holds it byte for byte to a file committed beside
+the tests, recorded only when `ONUS_APPROVE_ROOT` names the checkout, with a record of the producer, its
+arguments' hash, and the scrubbers beside each file.
 v0.1.0 brings:
 
 | Subpackage | What it gives a caller |

@@ -317,7 +317,7 @@ Amendment 4's E11 left the marker's form to this step. The maintainer chose each
 ## Amendment 6 (2026-10-07): step 4's first choices, and who may push
 
 Before any of step 4 was written, the maintainer chose each point below from options; each binds v0.1. E16 was
-built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
+built with this amendment, E17 with `baseline` after it; E18 is built with `signoff`.
 
 - **E15, a session may push its branch and open its pull request.** Once `make check` is green on the head
   commit, one targeted adversarial review has run and its findings are fixed or listed, and the leak scan with
@@ -371,6 +371,40 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
   replaces `assertApproved(received, *, label="", ext=".md")`, which could learn none of the three. Set aside:
   the caller naming the producer of a text it passes in, where the record would be a claim; and a header inside
   the approved file, where a JSON baseline would stop being JSON.
+  - As built, chosen in the build and open to veto:
+    - **What "real" means.** A producer is real when importing its recorded name gives it back, it is callable
+      and no mock (an autospec stand-in included), and it is written outside the tests: both the function and,
+      when it wraps another, the one it wraps. The tests are the top folder of the test's own package (`tests`
+      for `tests.unit.test_x`; a module in no package has its own folder) and the folder that holds the
+      approved folder. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in
+      the test package are refused, and so is every function when tests sit in the same folder as the code,
+      until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
+    - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
+      must have the record's four keys and name a real producer, each approved file must have one record and
+      each record one file, and a folder that is missing or holds no record fails, so that passing means
+      records were read.
+    - **Where files go.** The approved folder is `approved` beside the test's own file, unless the class sets
+      `approved_dir`. A missing approved file and a mismatch both write the received text to
+      `<temporary folder>/onus-received/<8 hex of the approved folder's path>/`, where the plan said
+      `<repo-sha8>`: the helper never asks git which repository it is in. A failure to write it there is said
+      in the message, beside the diff.
+    - **Recording.** Under `ONUS_APPROVE_ROOT` the root must be an absolute path with a `.git` entry and must
+      hold the approved file; an empty or relative value is refused, not read as the current folder. A file
+      already equal to the output is not rewritten. A record that no longer matches the call fails the test
+      even when the output matches. Each failure names the variable, since no `make approve` exists until an
+      adopter writes one.
+    - **`forbid=` reads the scrubbed output on every run**, not only while recording as the plan said, so an
+      approved file that already holds a forbidden text fails too.
+    - **One output per test and label.** A second `assertApproved` in one test under the same label is
+      refused, whatever its `ext`, since it would be recorded over the first.
+    - **onus has no `make approve` of its own**, because it has no tier-1 files: its tests of `baseline` build a
+      scratch checkout. An adopter's target is one line, setting `ONUS_APPROVE_ROOT` to
+      `git rev-parse --show-toplevel` for one run of its suite.
+  - Known limits: the producer's own keyword arguments cannot be named `scrubbers`, `label`, `ext`, or
+    `forbid`; JSON reads the keys 1 and "1" of an argument as one; a test file run as a script is the module
+    `__main__` and looks for files under that name; a test is known by its module's last name, so two test
+    modules of one name sharing an approved folder collide; and whether `onus`'s own outputs (a rendered
+    sentence, say) should be held to tier-1 files here is undecided.
 - **E18, the environment `signoff record` refuses under.** It refuses when a variable named `CLAUDECODE`,
   `AI_AGENT`, `CI`, or `GITHUB_ACTIONS` is set, or any whose name starts with `CLAUDE_CODE_`, `CODEX_`,
   `CURSOR_`, `AIDER_`, `GEMINI_CLI`, or `COPILOT_`, and names the variable it tripped on. It does not refuse on
@@ -387,7 +421,7 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
 - **Subpackages, named by intent:** `onus.stats`, `onus.prereg`, `onus.report`, `onus.baseline` (tier 1),
   `onus.signoff` (tier 2), `onus.scrub`, and `onus.invariants` (the Hypothesis part; not `property`, which
   would shadow the builtin). `prereg` will import `signoff` (L1 step 4), since amendments are bound by
-  sign-offs. Built so far: `stats`, `prereg`, `report`, and `scrub`.
+  sign-offs. Built so far: `stats`, `prereg`, `report`, `scrub`, and `baseline`.
 - **Python:** `requires-python >=3.11`, with CI covering 3.11 to 3.14. Locally, `.python-version` pins the
   exact patch and the floor check (it compiles the package) runs on an exact 3.11 patch, both from pyenv and
   handed to uv by path; in CI each matrix job supplies its own interpreter.
@@ -473,8 +507,9 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
   becomes a token numbered by the value (Amendment 6, E16). No PII rules ship, and numeric scrubbers on stats
   output are forbidden: none ships, and `hex_ids` never replaces digits alone.
 - **Tier 1 (`baseline`):**
-  - Tests use `ApprovedMixin.assertApproved(producer, *args, scrubbers=(), label="", ext=".md", **kwargs)`
-    (Amendment 6, E17). Approved files are
+  - Tests use `ApprovedMixin.assertApproved(producer, *args, scrubbers=(), label="", ext=".md", forbid=(),
+    **kwargs)` (Amendment 6, E17, whose "as built" notes say where this section's first wording gave way).
+    Approved files are
     `tests/approved/<module>.<Class>.<method>[.<label>].approved<ext>`, committed.
   - On a mismatch the test fails with a diff and writes the received file under
     `$TMPDIR/onus-received/<repo-sha8>/`. A missing approved file fails; it never skips.
@@ -560,7 +595,7 @@ built with this amendment; E17 and E18 are built with `baseline` and `signoff`.
    the library with the adopters' earlier hand-written tests; they were not built, and no later step owns them.
 3. `prereg` (PR #5, merged), then `report` to Amendments 2, 3, and 4 (PR #8, merged), then
    `report.assert_quoted` on explicit quote markers, as its own pull request (Amendment 5).
-4. `scrub` (built, to Amendment 6's E16), then `baseline`, then `signoff`, each its own pull request, plus the
+4. `scrub` and `baseline` (built, to Amendment 6's E16 and E17), then `signoff`, each its own pull request, plus the
    prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
    Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
