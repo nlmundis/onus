@@ -373,26 +373,38 @@ built with this amendment, E17 with `baseline` after it; E18 is built with `sign
   the approved file, where a JSON baseline would stop being JSON.
   - As built, chosen in the build and open to veto:
     - **What "real" means.** A producer is real when importing its recorded name gives it back, it is callable
-      and no mock, and its source file lies outside the folder that holds the approved folder (the tests). So a
-      bound method, a lambda, a `functools.partial`, a built-in, and a function written among the tests are
-      refused. `assertApproved` checks this before it runs the producer, and `ApprovedProducersAreReal`, mixed
-      into a test case with `approved_dir` set, checks every record on disk, and that each approved file has
-      one record and each record one file.
+      and no mock (an autospec stand-in included), and it is written outside the tests: both the function and,
+      when it wraps another, the one it wraps. The tests are the top folder of the test's own package (`tests`
+      for `tests.unit.test_x`; a module in no package has its own folder) and the folder that holds the
+      approved folder. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in
+      the test package are refused, and so is every function when tests sit in the same folder as the code,
+      until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
+    - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
+      must have the record's four keys and name a real producer, each approved file must have one record and
+      each record one file, and a folder that is missing or holds no record fails, so that passing means
+      records were read.
     - **Where files go.** The approved folder is `approved` beside the test's own file, unless the class sets
-      `approved_dir`. A mismatch writes the received text to
+      `approved_dir`. A missing approved file and a mismatch both write the received text to
       `<temporary folder>/onus-received/<8 hex of the approved folder's path>/`, where the plan said
-      `<repo-sha8>`: the helper never asks git which repository it is in.
+      `<repo-sha8>`: the helper never asks git which repository it is in. A failure to write it there is said
+      in the message, beside the diff.
     - **Recording.** Under `ONUS_APPROVE_ROOT` the root must be an absolute path with a `.git` entry and must
-      hold the approved file; an empty or relative value is refused, not read as the current folder. `forbid=`
-      regexes read the scrubbed output. A file already equal to the output is not rewritten. A record that no
-      longer matches the call fails the test even when the output matches.
+      hold the approved file; an empty or relative value is refused, not read as the current folder. A file
+      already equal to the output is not rewritten. A record that no longer matches the call fails the test
+      even when the output matches. Each failure names the variable, since no `make approve` exists until an
+      adopter writes one.
+    - **`forbid=` reads the scrubbed output on every run**, not only while recording as the plan said, so an
+      approved file that already holds a forbidden text fails too.
+    - **One output per test and label.** A second `assertApproved` in one test under the same label is
+      refused, whatever its `ext`, since it would be recorded over the first.
     - **onus has no `make approve` of its own**, because it has no tier-1 files: its tests of `baseline` build a
       scratch checkout. An adopter's target is one line, setting `ONUS_APPROVE_ROOT` to
       `git rev-parse --show-toplevel` for one run of its suite.
   - Known limits: the producer's own keyword arguments cannot be named `scrubbers`, `label`, `ext`, or
-    `forbid`; a test and label have one record, so two `ext` values under one label collide; JSON reads the
-    keys 1 and "1" of an argument as one; and whether `onus`'s own outputs (a rendered sentence, say) should be
-    held to tier-1 files here is undecided.
+    `forbid`; JSON reads the keys 1 and "1" of an argument as one; a test file run as a script is the module
+    `__main__` and looks for files under that name; a test is known by its module's last name, so two test
+    modules of one name sharing an approved folder collide; and whether `onus`'s own outputs (a rendered
+    sentence, say) should be held to tier-1 files here is undecided.
 - **E18, the environment `signoff record` refuses under.** It refuses when a variable named `CLAUDECODE`,
   `AI_AGENT`, `CI`, or `GITHUB_ACTIONS` is set, or any whose name starts with `CLAUDE_CODE_`, `CODEX_`,
   `CURSOR_`, `AIDER_`, `GEMINI_CLI`, or `COPILOT_`, and names the variable it tripped on. It does not refuse on
@@ -495,8 +507,9 @@ built with this amendment, E17 with `baseline` after it; E18 is built with `sign
   becomes a token numbered by the value (Amendment 6, E16). No PII rules ship, and numeric scrubbers on stats
   output are forbidden: none ships, and `hex_ids` never replaces digits alone.
 - **Tier 1 (`baseline`):**
-  - Tests use `ApprovedMixin.assertApproved(producer, *args, scrubbers=(), label="", ext=".md", **kwargs)`
-    (Amendment 6, E17). Approved files are
+  - Tests use `ApprovedMixin.assertApproved(producer, *args, scrubbers=(), label="", ext=".md", forbid=(),
+    **kwargs)` (Amendment 6, E17, whose "as built" notes say where this section's first wording gave way).
+    Approved files are
     `tests/approved/<module>.<Class>.<method>[.<label>].approved<ext>`, committed.
   - On a mismatch the test fails with a diff and writes the received file under
     `$TMPDIR/onus-received/<repo-sha8>/`. A missing approved file fails; it never skips.
