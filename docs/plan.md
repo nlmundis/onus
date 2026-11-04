@@ -489,20 +489,20 @@ written here. Each binds v0.1:
   section's first wording, "while recording", gives way to it.
   - As built, chosen in the build and open to veto:
     - **Post hoc** is decided by the first read, in the reads file, of the rule's experiment or of a record with its
-      stem, that labels the hypothesis: an amendment touching it that the read's own `amendments` does not list
-      labels it. This is wider than "signed after the first read", which it contains: an amendment signed before a
-      read but placed beside the record only after it is post hoc too. It reads no clock, so no sign-off time,
-      backdated on the rule or moved by a revocation and a later re-signing, and no gap between two machines'
-      clocks, can move the label; `signed_at` is kept on the rule but decides nothing. A hypothesis no read labels,
-      because an amendment added or renamed it, takes the first related read as its own, so a hypothesis added
-      after the data were read is post hoc. `render` re-derives `post_hoc` and
-      `amendments` from the rule and the lines before the read and refuses a line whose fields differ, as it does
-      `early`, and says "post hoc: amended by <the amendment's id> after its first read" just after the verdict or
-      the "read early (...)", on an early read too, since that is the rule's history and not its result.
+      stem: an amendment touching the hypothesis that this read's own `amendments` does not list labels it. The
+      first read is the experiment's, not the first that labels the hypothesis, so a hypothesis an amendment added
+      or renamed after the data were read stays post hoc on every later read. This is wider than "signed after the
+      first read", which it contains: an amendment signed before a read but placed beside the record only after it
+      is post hoc too. It reads no clock, so no sign-off time, backdated on the rule or moved by a revocation and a
+      later re-signing, and no gap between two machines' clocks, can move the label; `signed_at` is kept on the rule
+      but decides nothing. `render` re-derives `post_hoc` and `amendments` from the rule and the lines before the
+      read and refuses a line whose fields differ, as it does `early`, and says "post hoc: amended by <the
+      amendment's id> after its first read" just after the verdict or the "read early (...)", on an early read too,
+      since that is the rule's history and not its result.
     - **load refuses rather than passing over:** amendments beside a record loaded with no ledger; a file whose
-      name starts, in any case, as an amendment's and is not `<stem>.amend-YYYY-MM-DD.json` with a real day; a
-      record named in another case than its folder spells it, which a file system that ignores case would open
-      while its amendments went unfound; an amendment dated before the rule it amends was registered, or one that
+      name starts, in any case and either Unicode normal form, as an amendment's and is not
+      `<stem>.amend-YYYY-MM-DD.json` in the record's case with a real day, so a record opened under another case
+      finds its amendments and refuses them as misnamed; an amendment dated before the rule it amends was registered, or one that
       moves `registered`; an amendment outside the ledger's folder, or one whose path the sign-off id cannot
       spell; and `load` of an amendment file itself.
     - An amended rule's reads are related to the record's by the record's stem, so the seal treats a read under an

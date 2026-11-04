@@ -2,8 +2,8 @@
 
 import hashlib
 import json
-import os
 import re
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
@@ -491,7 +491,7 @@ def _amended(previous: Rule, stem: str, name: str, raw: bytes, signed_at: dateti
             no one-line reason, or holds a record ``load`` would refuse.
         BoundArtifactError: the record it holds binds a file that is missing or has changed.
     """
-    found = re.fullmatch(rf"{re.escape(stem)}{_AMEND_STEM}\.json", name, re.DOTALL)
+    found = re.fullmatch(rf"{re.escape(_nfc(stem))}{_AMEND_STEM}\.json", _nfc(name), re.DOTALL)
     if found is None:
         raise PreregError(f"{name!r} is not named as an amendment of {stem!r} is: {stem}.amend-YYYY-MM-DD.json")
     if iso_date(found.group(1), f"the day in {name}") < previous.registered:
@@ -534,6 +534,11 @@ def _chain(stem: str, raw: bytes, amendments: list[tuple[str, bytes, datetime]],
     return rule
 
 
+def _nfc(name: str) -> str:
+    """Return ``name`` in Unicode normal form C, as a file system that ignores normal form compares names."""
+    return unicodedata.normalize("NFC", name)
+
+
 def _amendment_names(path: Path) -> list[str]:
     """Return the names of the files beside the record ``path`` that start as its amendments do, oldest first.
 
@@ -541,12 +546,14 @@ def _amendment_names(path: Path) -> list[str]:
         PreregError: one is not named ``<stem>.amend-YYYY-MM-DD.json`` with a real day, or is not a file; it is
             refused rather than passed over, since an amendment left out unseen would leave the rule unamended.
     """
-    # Matched without case, so that on a file system that ignores case an amendment whose name differs from the
-    # record's only in case is refused as misnamed rather than passed over.
-    prefix = f"{path.stem}.amend-".casefold()
-    names = sorted(entry.name for entry in path.parent.iterdir() if entry.name.casefold().startswith(prefix))
+    # Found without case and in one Unicode normal form, so that on a file system that ignores either an amendment
+    # whose name differs from the record's in case or in form is seen, and refused as misnamed when its case
+    # differs, rather than passed over; a difference of form alone is no difference.
+    stem = _nfc(path.stem)
+    prefix = f"{stem}.amend-".casefold()
+    names = sorted(entry.name for entry in path.parent.iterdir() if _nfc(entry.name).casefold().startswith(prefix))
     for name in names:
-        found = re.fullmatch(rf"{re.escape(path.stem)}{_AMEND_STEM}\.json", name, re.DOTALL)
+        found = re.fullmatch(rf"{re.escape(stem)}{_AMEND_STEM}\.json", _nfc(name), re.DOTALL)
         if found is None or not (path.parent / name).is_file():
             raise PreregError(
                 f"{name} beside {path.name} is named as its amendments are, but is not a file named "
@@ -603,18 +610,13 @@ def load(path: str | Path, *, ledger: str | Path | None = None) -> Rule:
 
     Raises:
         PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires; it, or
-            its file stem, gives a name holding a line break; ``path`` is not spelled as its folder spells it, or is
-            itself an amendment; amendments lie beside it and no ``ledger`` is given; or an amendment is misnamed,
+            its file stem, gives a name holding a line break; ``path`` is itself an amendment; amendments lie
+            beside it and no ``ledger`` is given; or an amendment is misnamed,
             dated before the record was registered, moves its registration, is malformed, is out of its chain, lies
             outside the ledger's folder, or is not signed for exactly the bytes read.
         BoundArtifactError: a bound file is missing or has changed.
     """
     path = Path(path)
-    if path.name not in os.listdir(path.parent):
-        raise PreregError(
-            f"{path} names no file as its folder spells it; on a file system that ignores case, load the record by "
-            "its name as written there, so that its amendments are found by it"
-        )
     if re.fullmatch(rf".+{_AMEND_STEM}", path.stem, re.DOTALL):
         raise PreregError(f"{path.name} is an amendment: load the record it amends, and its amendments come with it")
     raw = path.read_bytes()

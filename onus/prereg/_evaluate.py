@@ -282,21 +282,21 @@ def read_early(horizon: Horizon, at: datetime) -> bool:
 def post_hoc(rule: Rule, earlier: list[ReadLine]) -> dict[str, str]:
     """Return, by name, each hypothesis of ``rule`` labelled post hoc, with the amendment that made it so.
 
-    A hypothesis is post hoc when an amendment that touches it was not applied at its first read: the first of
-    ``earlier`` that is a read of the rule's experiment or of a record with its file stem and labels it, whose line
-    lists the amendments its rule was loaded with. Any amendment signed after that read was not applied at it, and
-    neither was one signed before but placed beside the record only after it. Which amendments a read applied is
-    read from its line, never from a clock, so neither a sign-off time nor two machines' clocks can move the label.
-    A hypothesis no such read labels, because an amendment added or renamed it, takes the first related read as its
-    own, so one added after the data were read is post hoc too. The amendment named is the first such, oldest
-    first. A rule read before any read of it is post hoc in nothing.
+    A hypothesis is post hoc when an amendment that touches it was not applied at the experiment's first read: the
+    first of ``earlier`` that is a read of the rule's experiment or of a record with its file stem, whose line lists
+    the amendments its rule was loaded with. Any amendment signed after that read was not applied at it, and neither
+    was one signed before but placed beside the record only after it. Which amendments a read applied is read from
+    its line, never from a clock, so neither a sign-off time nor two machines' clocks can move the label. The first
+    read is the experiment's and not the first that labels the hypothesis, so a hypothesis an amendment added or
+    renamed after the data were read stays post hoc on every later read, not only on its own first one. The
+    amendment named is the first such, oldest first. A rule read before any read of it is post hoc in nothing.
     """
     related = related_reads(earlier, rule.experiment, base_stem(rule.id.rpartition("@")[0]))
     if not related:
         return {}
+    first = related[0]
     labelled: dict[str, str] = {}
     for hypothesis in rule.hypotheses:
-        first = next((line for line in related if hypothesis.name in line.labels), related[0])
         late = [each for each in rule.amendments if hypothesis.name in each.touches and each.id not in first.amendments]
         if late:
             labelled[hypothesis.name] = late[0].id

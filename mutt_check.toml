@@ -3342,16 +3342,16 @@ name = "the_latest_read_taken_as_the_first"
 why = "An amendment signed between a first read and a later one would be judged against the later read, and pass as made before the data were seen."
 suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/prereg/_evaluate.py"
-find = "        first = next((line for line in related if hypothesis.name in line.labels), related[0])\n"
-replace = "        first = next((line for line in reversed(related) if hypothesis.name in line.labels), related[-1])\n"
+find = "    first = related[0]\n"
+replace = "    first = related[-1]\n"
 
 [[mutant]]
-name = "a_hypothesis_added_after_a_read_not_post_hoc"
-why = "A hypothesis an amendment added or renamed after the data were read has no read of its own, and would never be labelled post hoc."
+name = "the_first_read_that_labels_it_taken_as_the_first"
+why = "A hypothesis an amendment added or renamed after the data were read would be post hoc on its own first read only, and unlabelled on every read after."
 suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/prereg/_evaluate.py"
-find = "        first = next((line for line in related if hypothesis.name in line.labels), related[0])\n"
-replace = "        first = next((line for line in related if hypothesis.name in line.labels), None)  # type: ignore[arg-type]\n        if first is None:\n            continue\n"
+find = "    first = related[0]\n    labelled: dict[str, str] = {}\n    for hypothesis in rule.hypotheses:\n"
+replace = "    labelled: dict[str, str] = {}\n    for hypothesis in rule.hypotheses:\n        first = next((line for line in related if hypothesis.name in line.labels), related[0])\n"
 
 [[mutant]]
 name = "an_amendment_not_signed_applied"
@@ -3382,8 +3382,8 @@ name = "a_misnamed_amendment_passed_over"
 why = "A file meant as an amendment but misnamed would be passed over, and the rule load as if it were never amended."
 suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
-find = "    names = sorted(entry.name for entry in path.parent.iterdir() if entry.name.casefold().startswith(prefix))\n"
-replace = "    names = sorted(entry.name for entry in path.parent.iterdir() if re.fullmatch(rf\"{re.escape(path.stem)}{_AMEND_STEM}\\.json\", entry.name))\n"
+find = "    names = sorted(entry.name for entry in path.parent.iterdir() if _nfc(entry.name).casefold().startswith(prefix))\n"
+replace = "    names = sorted(entry.name for entry in path.parent.iterdir() if re.fullmatch(rf\"{re.escape(stem)}{_AMEND_STEM}\\.json\", _nfc(entry.name)))\n"
 
 [[mutant]]
 name = "an_amendment_dated_before_its_record_accepted"
@@ -3506,12 +3506,12 @@ find = "    if after.registered != previous.registered:\n"
 replace = "    if False:\n"
 
 [[mutant]]
-name = "a_record_named_in_another_case_loaded"
-why = "On a file system that ignores case, a record loaded as LAYOUT.json would find none of its layout.amend files and load unamended."
+name = "amendments_found_in_one_unicode_form_only"
+why = "An amendment named in the other Unicode normal form than its record, which a file system that ignores form treats as the same name, would be passed over and the rule load unamended."
 suites = ["tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
-find = "    if path.name not in os.listdir(path.parent):\n"
-replace = "    if False:\n"
+find = "    stem = _nfc(path.stem)\n"
+replace = "    stem = path.stem\n"
 
 [[mutant]]
 name = "the_bytes_signed_not_compared_with_those_read"

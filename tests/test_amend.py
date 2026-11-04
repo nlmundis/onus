@@ -274,10 +274,22 @@ class LoadMoreTest(Amended):
         with self.assertRaisesRegex(PreregError, "an amendment cannot move the day a record was registered"):
             self.loaded()
 
-    def test_a_record_named_in_another_case_is_refused_not_loaded_without_its_amendments(self):
+    def test_a_record_opened_in_another_case_finds_its_amendments_and_refuses_them(self):
         self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
-        with self.assertRaisesRegex(PreregError, "names no file as its folder spells it"):
+        if not (self.folder / "LAYOUT.json").exists():
+            self.skipTest("this file system tells names apart by case, so no other case opens the record")
+        with self.assertRaisesRegex(PreregError, "layout.amend-2026-01-10.json beside LAYOUT.json is named as"):
             load(self.folder / "LAYOUT.json", ledger=self.ledger)
+
+    def test_an_amendment_in_another_unicode_normal_form_is_seen_not_passed_over(self):
+        decomposed, composed = "cafe\u0301", "caf\u00e9"
+        base = self.write(record(), name=f"{decomposed}.json")
+        self.write(
+            amendment(prereg_id(base), record(provenance={"author": "another"})),
+            name=f"{composed}.amend-2026-01-10.json",
+        )
+        with self.assertRaisesRegex(PreregError, "amend-2026-01-10.json"):
+            load(base, ledger=self.ledger)
 
     def test_an_amendment_named_in_another_case_is_refused_as_misnamed(self):
         path = self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
@@ -410,6 +422,12 @@ class PostHocTest(Amended):
         # Its labels name another hypothesis, so the seal holds it to the first read.
         self.read(self.loaded(), "2026-01-12T10:00:00+00:00", data=data, supersedes=first.line_sha256, reason="renamed")
         self.assertEqual(self.last_line()["post_hoc"], ["finishes"])
+        # And on every later read, whose first read of "finishes" would otherwise be the read just above.
+        receipt = self.read(
+            self.loaded(), "2026-01-13T10:00:00+00:00", data=data, supersedes=first.line_sha256, reason="again"
+        )
+        self.assertEqual(self.last_line()["post_hoc"], ["finishes"])
+        self.assertIn("post hoc", render(self.loaded(), data, "finishes", receipt=receipt, reads_path=self.reads))
 
     def test_an_amendment_that_touches_nothing_labels_nothing(self):
         self.read(load(self.base))
