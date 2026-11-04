@@ -112,7 +112,10 @@ class RenderTest(Reads):
     def test_each_hypothesis_is_quoted_in_one_sentence(self):
         rule = self.rule()
         receipt = self.read(rule, sample())
-        tail = f"prereg {rule.id}, data sha256 {receipt.data_sha256[:12]} over 6 units; onus {VERSION}."
+        tail = (
+            "count horizon: unit dates not checked against registration;"
+            f" prereg {rule.id}, data sha256 {receipt.data_sha256[:12]} over 6 units; onus {VERSION}."
+        )
         expected = {
             "faster": (
                 "faster: met; one-sided (greater) sign test, method exact, null 0.5: wins 6, losses 0, n = 6 discordant"
@@ -640,7 +643,7 @@ class RenderTest(Reads):
         receipt = self.read(rule, sample())
         with self.reads.open("a", encoding="utf-8") as reads:
             reads.write('{"schema": "read/1"}\n')
-        with self.assertRaisesRegex(PreregError, "line 2 of .* is not a read/2 line"):
+        with self.assertRaisesRegex(PreregError, "line 2 of .* is not a read/3 line"):
             render(rule, sample(), "faster", receipt=receipt, reads_path=self.reads)
 
     def test_a_sentence_that_would_span_lines_is_refused(self):

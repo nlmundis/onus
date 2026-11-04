@@ -19,6 +19,7 @@ from onus.prereg._rule import (
     HorizonNotReachedError,
     PreregError,
     Rule,
+    base_stem,
     check_intact,
     iso_date,
 )
@@ -278,6 +279,27 @@ def read_early(horizon: Horizon, at: datetime) -> bool:
     return end is not None and at < datetime.combine(end, CLOSED_EVERYWHERE, tzinfo=UTC)
 
 
+def post_hoc(rule: Rule, earlier: list[ReadLine]) -> dict[str, str]:
+    """Return, by name, each hypothesis of ``rule`` labelled post hoc, with the amendment that made it so.
+
+    A hypothesis is post hoc when an amendment that touches it was signed after its first read: the first of
+    ``earlier`` that is a read of the rule's experiment or of a record with its file stem and labels it. One that
+    no such read labels, because an amendment added it or renamed it, counts the experiment's first read as its
+    own, so that a hypothesis added after the data were seen is post hoc too. The amendment named is the first
+    such. A rule read before any read of it is post hoc in nothing.
+    """
+    related = related_reads(earlier, rule.experiment, base_stem(rule.id.rpartition("@")[0]))
+    if not related:
+        return {}
+    labelled: dict[str, str] = {}
+    for hypothesis in rule.hypotheses:
+        first = next((line for line in related if hypothesis.name in line.labels), related[0])
+        late = [each for each in rule.amendments if hypothesis.name in each.touches and each.signed_at > first.at]
+        if late:
+            labelled[hypothesis.name] = late[0].id
+    return labelled
+
+
 def _seal(rule: Rule, evaluation: Evaluation, earlier: list[ReadLine], supersedes: str | None) -> None:
     """Refuse a re-read on different data unless it names the first read it supersedes.
 
@@ -288,7 +310,7 @@ def _seal(rule: Rule, evaluation: Evaluation, earlier: list[ReadLine], supersede
         PreregError: the read's data hash, n, or labels differ from such an earlier read and ``supersedes`` is not
             given; ``supersedes`` is given and no such read differs; or it names a read other than the first.
     """
-    related = related_reads(earlier, rule.experiment, rule.id.rpartition("@")[0])
+    related = related_reads(earlier, rule.experiment, base_stem(rule.id.rpartition("@")[0]))
     this = (evaluation.data_sha256, evaluation.n, evaluation.labels())
     differs = [line for line in related if (line.data_sha256, line.n, line.labels) != this]
     if differs and supersedes is None:
@@ -316,26 +338,28 @@ def record_read(
     supersedes: str | None = None,
     reason: str | None = None,
 ) -> ReadReceipt:
-    """Append a ``read/2`` line to ``reads_path`` recording that ``evaluation`` was read, and return its receipt.
+    """Append a ``read/3`` line to ``reads_path`` recording that ``evaluation`` was read, and return its receipt.
 
     The read time comes from onus's own clock, never from the caller. The line records the evaluation's
     ``as_of`` and ``early``: whether a days horizon's read was recorded before noon UTC on the window's end day,
-    when the window has closed in every time zone. A count horizon's read is never early.
+    when the window has closed in every time zone. A count horizon's read is never early. It records too the ids
+    of the amendments the rule was loaded with and the hypotheses ``post_hoc`` labels post hoc: those an amendment
+    touched that was signed after the hypothesis was first read in this reads file.
 
     The reads file is sealed: once it holds a read of the rule's experiment, or of a record with the rule's file
     stem, a read whose data hash, n, or labels differ from any such earlier read is refused, unless
     ``supersedes`` names the first of them by its line sha256 and ``reason`` says why; both are written into the
     line. The seal binds only the reads file it is given. The check and the append hold an exclusive flock on the
-    file, so writers take turns, and a line that is not a read/2 line refuses every read. flock comes from fcntl,
-    which only POSIX has; ``record_read`` imports it itself, so ``onus.prereg`` imports everywhere, and where there
-    is no fcntl it refuses before it opens the reads file.
+    file, so writers take turns, and a line that is not a read/3 or read/2 line refuses every read. flock comes from
+    fcntl, which only POSIX has; ``record_read`` imports it itself, so ``onus.prereg`` imports everywhere, and where
+    there is no fcntl it refuses before it opens the reads file.
 
     Raises:
         PreregError: ``evaluation`` names another rule or other hypotheses, states a family or alpha the rule does
             not, or labels a hypothesis other than its adjusted p-value decides; a days horizon's evaluation
             carries no ``as_of``, or one before its window's end; ``rule`` no longer matches its record;
             ``supersedes`` and ``reason`` are not given together, or are malformed; the seal refuses the read; or
-            the reads file holds a line that is not a read/2 line, or its last line was cut short.
+            the reads file holds a line that is not a read/3 or read/2 line, or its last line was cut short.
         NotImplementedError: this platform has no fcntl, so no flock to hold while the read is checked and appended.
     """
     try:
@@ -376,7 +400,8 @@ def record_read(
     with reads_path.open("a+b") as reads:
         fcntl.flock(reads.fileno(), fcntl.LOCK_EX)
         reads.seek(0)
-        _seal(rule, evaluation, parse_reads(reads.read(), reads_path), supersedes)
+        earlier = parse_reads(reads.read(), reads_path)
+        _seal(rule, evaluation, earlier, supersedes)
         at = _now().astimezone(UTC)
         early = read_early(rule.horizon, at)
         line = json.dumps(
@@ -393,6 +418,8 @@ def record_read(
                 "supersedes": supersedes,
                 "reason": reason,
                 "onus": onus.__version__,
+                "amendments": [amendment.id for amendment in rule.amendments],
+                "post_hoc": sorted(post_hoc(rule, earlier)),
             },
             sort_keys=True,
             separators=(",", ":"),

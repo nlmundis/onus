@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from onus.prereg import Evaluation, Horizon, PreregError, ReadReceipt
-from onus.prereg._evaluate import read_early
+from onus.prereg import Evaluation, PreregError, ReadReceipt, Rule
+from onus.prereg._evaluate import post_hoc, read_early
 from onus.prereg._reads import ReadLine, find_line, read_file, related_reads
 
 
@@ -14,8 +14,8 @@ def receipt_from_line(reads_path: str | Path, line_sha256: str) -> ReadReceipt:
     one builds a receipt by hand.
 
     Raises:
-        PreregError: there is no reads file at ``reads_path``, it holds a line that is not a read/2 line, or no
-            line has that sha256.
+        PreregError: there is no reads file at ``reads_path``, it holds a line that is not a read/3 or read/2 line,
+            or no line has that sha256.
     """
     path = Path(reads_path).resolve()  # as record_read names it, so the two receipts of one read are equal
     line = find_line(read_file(path), line_sha256, path)
@@ -47,19 +47,24 @@ def re_read_kind(read: ReadLine, earlier: list[ReadLine]) -> str | None:
 
 
 def bound_read(
-    evaluation: Evaluation, *, horizon: Horizon, receipt: ReadReceipt, reads_path: str | Path
-) -> tuple[ReadLine, list[ReadLine]]:
-    """Return the recorded read ``receipt`` names, once its line is shown to record ``evaluation``, and those before it.
+    rule: Rule, evaluation: Evaluation, *, receipt: ReadReceipt, reads_path: str | Path
+) -> tuple[ReadLine, list[ReadLine], dict[str, str]]:
+    """Return the read ``receipt`` names, the lines before it, and what it labels post hoc, once shown to record it.
 
-    The line's ``early`` must be the one its read time gives under ``horizon``, the rule's (``read_early``), so a
-    hand-edited flag can neither state the verdict of a read made before its window closed nor withhold one.
+    The read is returned once its line is shown to record ``evaluation``; what it labels post hoc is each hypothesis
+    by name, with the id of the amendment that made it so.
+
+    The line's ``early`` must be the one its read time gives under the rule's horizon (``read_early``), so a
+    hand-edited flag can neither state the verdict of a read made before its window closed nor withhold one. Its
+    ``amendments`` must be the rule's, and its ``post_hoc`` the hypotheses ``post_hoc`` finds from the lines before
+    it, so a hand-edited line can neither drop the post hoc label nor add one.
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
         PreregError: ``reads_path`` is not the file the receipt names, once both are resolved; that file is missing
-            or holds a line that is not a read/2 line; no line has the receipt's sha256; or that line's prereg,
-            experiment, data_sha256, n, labels, or at differ from the evaluation's or the receipt's, or its early
-            from the one its at gives under ``horizon``.
+            or holds a line that is not a read/3 or read/2 line; no line has the receipt's sha256; or that line's
+            prereg, experiment, data_sha256, n, labels, or at differ from the evaluation's or the receipt's; its
+            early from the one its at gives; or its amendments or post_hoc from the rule's.
     """
     if not isinstance(receipt, ReadReceipt):
         raise TypeError(f"render needs the ReadReceipt of a recorded read, not {receipt!r}")
@@ -68,6 +73,8 @@ def bound_read(
         raise PreregError(f"the receipt names the reads file {receipt.reads_path}, not {path}")
     lines = read_file(path)
     line = find_line(lines, receipt.line_sha256, path)
+    earlier = lines[: lines.index(line)]
+    labelled = post_hoc(rule, earlier)
     # Each field as the line records it, then what it must equal: the evaluation re-derived here, the receipt, and
     # the flag the line's own read time gives.
     fields: dict[str, tuple[object, ...]] = {
@@ -77,11 +84,13 @@ def bound_read(
         "n": (line.n, evaluation.n),
         "labels": (line.labels, evaluation.labels()),
         "at": (line.at, receipt.at),
-        "early": (line.early, read_early(horizon, line.at)),
+        "early": (line.early, read_early(rule.horizon, line.at)),
+        "amendments": (line.amendments, tuple(amendment.id for amendment in rule.amendments)),
+        "post_hoc": (line.post_hoc, tuple(sorted(labelled))),
     }
     wrong = [name for name, (recorded, *wanted) in fields.items() if any(value != recorded for value in wanted)]
     if wrong:
         raise PreregError(
             f"the read at line sha256 {line.sha256} does not record this evaluation of this data: its {wrong} differ"
         )
-    return line, lines[: lines.index(line)]
+    return line, earlier, labelled

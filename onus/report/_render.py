@@ -169,11 +169,25 @@ def _re_read(kind: str | None, first: str | None, *, early: bool) -> list[str]:
     return [f"{_RE_READ[kind]}; first read {first[:12]}"]
 
 
+# What every count-horizon sentence says: the gap Amendment 1 left open, disclosed as a v0.1 limit L2 owns (E24).
+COUNT_HORIZON = "count horizon: unit dates not checked against registration"
+
+
+def _post_hoc(amendment: str | None) -> list[str]:
+    """Return the clause labelling a hypothesis post hoc, naming the ``amendment`` that made it so; none if None."""
+    return [] if amendment is None else [f"post hoc: amended by {amendment} after its first read"]
+
+
 def _decided(
-    rule: Rule, hypothesis: Hypothesis, outcome: HypothesisResult, kind: str | None, first: str | None
+    rule: Rule,
+    hypothesis: Hypothesis,
+    outcome: HypothesisResult,
+    kind: str | None,
+    first: str | None,
+    amendment: str | None,
 ) -> list[str]:
-    """Return a decided read's clauses: verdict, re-read if any, test and counts, p-values, MDE if not met, warnings."""
-    clauses = [f"{hypothesis.name}: {outcome.label}", *_re_read(kind, first, early=False)]
+    """Return a decided read's clauses: verdict, post hoc and re-read if so, counts, p-values, MDE, warnings."""
+    clauses = [f"{hypothesis.name}: {outcome.label}", *_post_hoc(amendment), *_re_read(kind, first, early=False)]
     clauses += [describe(outcome.result), _p_values(rule, hypothesis, outcome)]
     if not outcome.met:
         clauses.append(_mde(hypothesis, outcome.result, _members(rule, hypothesis)))
@@ -189,21 +203,26 @@ def _sentence(
     read_early_at: datetime | None,
     kind: str | None,
     first: str | None,
+    amendment: str | None,
 ) -> str:
     """Return the sentence for hypothesis ``index``.
 
-    ``read_early_at`` is the read time of an early read, else None; ``kind`` is ``re_read_kind``'s, and ``first`` the
-    line sha256 of the first read a re-read superseded.
+    ``read_early_at`` is the read time of an early read, else None; ``kind`` is ``re_read_kind``'s, ``first`` the
+    line sha256 of the first read a re-read superseded, and ``amendment`` the id of the amendment that made the
+    hypothesis post hoc, else None.
     """
     hypothesis, outcome = rule.hypotheses[index], evaluation.hypotheses[index]
     if read_early_at is not None:
         # E8: an early read reveals nothing about the result, so it states no verdict, count, p-value, α, family, MDE,
         # test, or warning; only when it was read, when the window closed everywhere, and the provenance. E12: that a
         # read was a re-read on different data is its history, not its result, so an early re-read says that too.
-        clauses = [f"{hypothesis.name}: {_early(rule.horizon, read_early_at)}"]
+        # That it is post hoc is its history too, and says nothing of a label.
+        clauses = [f"{hypothesis.name}: {_early(rule.horizon, read_early_at)}", *_post_hoc(amendment)]
         clauses += _re_read(kind, first, early=True)
     else:
-        clauses = _decided(rule, hypothesis, outcome, kind, first)
+        clauses = _decided(rule, hypothesis, outcome, kind, first, amendment)
+    if rule.horizon.kind == "count":
+        clauses.append(COUNT_HORIZON)
     clauses.append(f"prereg {rule.id}, data sha256 {evaluation.data_sha256[:12]} over {evaluation.n} units")
     clauses.append(f"onus {onus.__version__}")
     sentence = "; ".join(clauses) + "."
@@ -245,8 +264,12 @@ def render(
     read <hash>" when none did and one of them was read under another record, which gave the same data another
     label; the first read named may itself be of this record. An early read says nothing in that second case, where
     saying it would give away that a label changed. Where the lines before a re-read show neither, as in no reads
-    file written from honest evaluations, a read that is not early says only "re-read; first read <hash>". Every
-    sentence ends with the prereg id, a data hash, the number of units used, and the onus version. It reads no
+    file written from honest evaluations, a read that is not early says only "re-read; first read <hash>". A
+    hypothesis an amendment touched that was signed after its first read says, just after its verdict or its "read
+    early (...)", "post hoc: amended by <the amendment's id> after its first read", re-derived from the rule and
+    the lines before the read and required to match the line's. A count horizon's sentence says "count horizon:
+    unit dates not checked against registration", since nothing checks them (E24). Every sentence ends with the
+    prereg id, a data hash, the number of units used, and the onus version. It reads no
     clock: the read time it prints is the one the reads file records. p-values have four significant digits; alphas
     are exact; the MDE is the null plus a gap of four significant digits, rounded away from the null, or the exact
     gap where those digits would print an effect outside [0, 1].
@@ -261,7 +284,7 @@ def render(
     if name not in names:
         raise PreregError(f"{rule.id!r} has no hypothesis named {name!r}; it has {names}")
     evaluation = evaluate(rule, data, as_of=as_of)
-    read, earlier = bound_read(evaluation, horizon=rule.horizon, receipt=receipt, reads_path=reads_path)
+    read, earlier, labelled = bound_read(rule, evaluation, receipt=receipt, reads_path=reads_path)
     return _sentence(
         rule,
         evaluation,
@@ -269,6 +292,7 @@ def render(
         read_early_at=read.at if read.early else None,
         kind=re_read_kind(read, earlier),
         first=read.supersedes,
+        amendment=labelled.get(name),
     )
 
 
