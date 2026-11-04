@@ -474,8 +474,9 @@ written here. Each binds v0.1:
   sign-off's `at`, which the record's author does not type, is kept on the rule. A field patch naming the
   hypotheses it changes was set aside.
 - **E23, what an amendment touches.** A hypothesis whose own fields it changed, or that is new under its name; every
-  member of a family whose correction or set of members it changed; and all of them when it changed `registered`,
-  `unit`, `order_key`, `horizon`, `looks`, or `bound_artifacts`. A change to the experiment's name, the provenance,
+  member of a family whose correction or set of members it changed; and all of them when it changed `unit`,
+  `order_key`, `horizon`, `looks`, or `bound_artifacts` (`registered` is listed with them, though as built an
+  amendment may not change it). A change to the experiment's name, the provenance,
   or the hypotheses' order touches none. "Any amendment touches every hypothesis" was set aside.
 - **E24, the count-horizon gap is disclosed, not checked (2026-10-08).** This closes Amendment 1's open item: a
   count horizon's units are not dated, so nothing checks them against registration, and this stays a v0.1 limit
@@ -514,6 +515,12 @@ written here. Each binds v0.1:
       is checked.
   - Known limits:
     - One amendment per record per day, since the day is in the file's name.
+    - An amendment cannot correct a mistyped `registered`; the record is registered again, under a new stem.
+    - A record whose path holds a character outside the sign-off id's (any non-ASCII letter included) can never
+      have an amendment applied: `load` refuses it, naming the remedy.
+    - Post hoc compares amendments by id, which names the file's stem, so a copy of a record under another stem,
+      amended with the same content and read after the original, is labelled post hoc; the label errs toward
+      being given.
     - A sign-off revoked after a read was recorded leaves that read's line as it was; the next `load` refuses.
     - A read recorded in another reads file is not a first read here: post hoc, like the seal, binds only the
       reads file it is given. The lines of a reads file carry no chain, so an edit to an earlier line changes what

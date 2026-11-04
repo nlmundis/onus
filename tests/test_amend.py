@@ -291,6 +291,13 @@ class LoadMoreTest(Amended):
         with self.assertRaisesRegex(PreregError, "amend-2026-01-10.json"):
             load(base, ledger=self.ledger)
 
+    def test_a_record_with_no_amendment_loads_under_either_unicode_normal_form(self):
+        decomposed, composed = "cafe\u0301", "caf\u00e9"
+        self.write(record(), name=f"{decomposed}.json")
+        if not (self.folder / f"{composed}.json").exists():
+            self.skipTest("this file system tells names apart by normal form, so the other form opens nothing")
+        self.assertEqual(load(self.folder / f"{composed}.json").amendments, ())
+
     def test_an_amendment_named_in_another_case_is_refused_as_misnamed(self):
         path = self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
         path.rename(self.folder / "Layout.amend-2026-01-10.json")
