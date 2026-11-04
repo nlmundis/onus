@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -513,6 +514,11 @@ def _amended(previous: Rule, stem: str, name: str, raw: bytes, signed_at: dateti
         after = _build(value["record"], rule_id=amendment_id, raw=raw, root=root)
     except PreregError as error:  # BoundArtifactError too, kept as itself
         raise type(error)(f"the record in {name}: {error}") from None
+    if after.registered != previous.registered:
+        raise PreregError(
+            f"the record in {name} is registered on {after.registered}, but {previous.id!r} was registered on "
+            f"{previous.registered}: an amendment cannot move the day a record was registered"
+        )
     amendment = Amendment(name, amendment_id, reason, signed_at, _touches(previous, after), raw)
     return replace(after, raw=previous.raw, amendments=(*previous.amendments, amendment))
 
@@ -535,8 +541,10 @@ def _amendment_names(path: Path) -> list[str]:
         PreregError: one is not named ``<stem>.amend-YYYY-MM-DD.json`` with a real day, or is not a file; it is
             refused rather than passed over, since an amendment left out unseen would leave the rule unamended.
     """
-    prefix = f"{path.stem}.amend-"
-    names = sorted(entry.name for entry in path.parent.iterdir() if entry.name.startswith(prefix))
+    # Matched without case, so that on a file system that ignores case an amendment whose name differs from the
+    # record's only in case is refused as misnamed rather than passed over.
+    prefix = f"{path.stem}.amend-".casefold()
+    names = sorted(entry.name for entry in path.parent.iterdir() if entry.name.casefold().startswith(prefix))
     for name in names:
         found = re.fullmatch(rf"{re.escape(path.stem)}{_AMEND_STEM}\.json", name, re.DOTALL)
         if found is None or not (path.parent / name).is_file():
@@ -572,7 +580,10 @@ def _signed_at(ledger: Path, path: Path, raw: bytes) -> datetime:
     try:
         check = check_signoff(ledger, artifact, path)
     except SignoffError as error:
-        raise PreregError(f"{path.name} cannot be signed as {artifact!r}: {error}") from None
+        raise PreregError(
+            f"{path.name} cannot be signed as {artifact!r}: {error}; rename the record and its amendments, or the "
+            "folders between them and the ledger, with letters, digits, '.', '_', and '-' alone"
+        ) from None
     if check.status is not Status.SIGNED or check.line is None or check.line.sha256 != hashlib.sha256(raw).hexdigest():
         raise PreregError(
             f"{path.name} is not signed: {ledger} says {check.status.value.upper()} for {artifact!r} ({check.detail}); "
@@ -592,11 +603,18 @@ def load(path: str | Path, *, ledger: str | Path | None = None) -> Rule:
 
     Raises:
         PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires; it, or
-            its file stem, gives a name holding a line break; ``path`` is itself an amendment; amendments lie beside
-            it and no ``ledger`` is given; or an amendment is misnamed, malformed, out of its chain, or not signed.
+            its file stem, gives a name holding a line break; ``path`` is not spelled as its folder spells it, or is
+            itself an amendment; amendments lie beside it and no ``ledger`` is given; or an amendment is misnamed,
+            dated before the record was registered, moves its registration, is malformed, is out of its chain, lies
+            outside the ledger's folder, or is not signed for exactly the bytes read.
         BoundArtifactError: a bound file is missing or has changed.
     """
     path = Path(path)
+    if path.name not in os.listdir(path.parent):
+        raise PreregError(
+            f"{path} names no file as its folder spells it; on a file system that ignores case, load the record by "
+            "its name as written there, so that its amendments are found by it"
+        )
     if re.fullmatch(rf".+{_AMEND_STEM}", path.stem, re.DOTALL):
         raise PreregError(f"{path.name} is an amendment: load the record it amends, and its amendments come with it")
     raw = path.read_bytes()
@@ -616,6 +634,9 @@ def load(path: str | Path, *, ledger: str | Path | None = None) -> Rule:
 
 def check_intact(rule: Rule) -> None:
     """Refuse a rule that no longer matches the record and amendments it was loaded from, as one built by replace().
+
+    It binds the bytes: the record's, and each amendment's, which the rule's id names through the chain. It does not
+    consult the ledger again, so an amendment's ``signed_at`` is taken from the rule; nothing decides a label by it.
 
     Raises:
         PreregError: its id does not name its newest file's bytes, or its fields are not what those bytes say.

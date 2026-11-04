@@ -80,7 +80,7 @@ FIELDS_2: dict[str, Callable[[Any], bool]] = {
     "onus": text_field,
 }
 # A read/3 line adds the ids of the amendments its rule was loaded with, oldest first, and the hypotheses labelled
-# post hoc: those an amendment touched that was signed after the hypothesis was first read.
+# post hoc: those an amendment touched that was not applied when the hypothesis was first read.
 FIELDS: dict[str, Callable[[Any], bool]] = {
     **FIELDS_2,
     "schema": lambda value: value == READ_SCHEMA,

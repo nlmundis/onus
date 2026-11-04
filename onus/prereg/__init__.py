@@ -8,7 +8,7 @@ write: under a lock, it appends a ``read/3`` line to a reads file, with the read
 a flag for a read made before a days window closed everywhere, and returns a receipt. It refuses a re-read on
 different data unless the line names the first read it supersedes and why. An amendment is a dated file beside
 the record holding a whole new record; ``load`` applies it only once an ``onus.signoff`` ledger says it is signed,
-and each read labels post hoc the hypotheses an amendment touched that was signed after they were first read.
+and each read labels post hoc the hypotheses an amendment touched that was not applied when they were first read.
 """
 
 from onus.prereg._evaluate import Evaluation, HypothesisResult, ReadReceipt, evaluate, record_read, status

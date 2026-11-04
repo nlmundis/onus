@@ -1798,7 +1798,7 @@ name = "render_without_a_receipt"
 why = "render would quote a verdict from the data alone, with no recorded read behind it: a hand-built receipt, or none, would render."
 suites = ["tests.test_report.RenderTest"]
 file = "onus/report/_render.py"
-find = "    read, earlier, labelled = bound_read(rule, evaluation, receipt=receipt, reads_path=reads_path)\n    return _sentence(\n        rule,\n        evaluation,\n        names.index(name),\n        read_early_at=read.at if read.early else None,\n        kind=re_read_kind(read, earlier),\n        first=read.supersedes,\n        amendment=labelled.get(name),\n    )\n"
+find = "    read, earlier = bound_read(rule, evaluation, receipt=receipt, reads_path=reads_path)\n    return _sentence(\n        rule,\n        evaluation,\n        names.index(name),\n        read_early_at=read.at if read.early else None,\n        kind=re_read_kind(read, earlier),\n        first=read.supersedes,\n        amendment=post_hoc(rule, earlier).get(name),\n    )\n"
 replace = "    return _sentence(rule, evaluation, names.index(name), read_early_at=None, kind=None, first=None, amendment=None)\n"
 
 [[mutant]]
@@ -3332,15 +3332,15 @@ replace = '''    except (SignoffError, NotImplementedError) as error:
 [[mutant]]
 name = "an_amendment_after_a_read_accepted"
 why = "An amendment signed after a hypothesis was read would leave it unlabelled, so a rule changed after the data were seen would be quoted as if fixed before them."
-suites = ["tests.test_amend.PostHocTest"]
+suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/prereg/_evaluate.py"
-find = "        late = [each for each in rule.amendments if hypothesis.name in each.touches and each.signed_at > first.at]\n"
-replace = "        late: list[Amendment] = []\n"
+find = "        late = [each for each in rule.amendments if hypothesis.name in each.touches and each.id not in first.amendments]\n"
+replace = "        late: list[Any] = []\n"
 
 [[mutant]]
 name = "the_latest_read_taken_as_the_first"
 why = "An amendment signed between a first read and a later one would be judged against the later read, and pass as made before the data were seen."
-suites = ["tests.test_amend.PostHocTest"]
+suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/prereg/_evaluate.py"
 find = "        first = next((line for line in related if hypothesis.name in line.labels), related[0])\n"
 replace = "        first = next((line for line in reversed(related) if hypothesis.name in line.labels), related[-1])\n"
@@ -3348,7 +3348,7 @@ replace = "        first = next((line for line in reversed(related) if hypothesi
 [[mutant]]
 name = "a_hypothesis_added_after_a_read_not_post_hoc"
 why = "A hypothesis an amendment added or renamed after the data were read has no read of its own, and would never be labelled post hoc."
-suites = ["tests.test_amend.PostHocTest"]
+suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/prereg/_evaluate.py"
 find = "        first = next((line for line in related if hypothesis.name in line.labels), related[0])\n"
 replace = "        first = next((line for line in related if hypothesis.name in line.labels), None)  # type: ignore[arg-type]\n        if first is None:\n            continue\n"
@@ -3356,7 +3356,7 @@ replace = "        first = next((line for line in related if hypothesis.name in 
 [[mutant]]
 name = "an_amendment_not_signed_applied"
 why = "An amendment whose sign-off was revoked, or whose file changed after it, would be applied as if signed."
-suites = ["tests.test_amend.LoadTest"]
+suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
 find = "    if check.status is not Status.SIGNED or check.line is None or check.line.sha256 != hashlib.sha256(raw).hexdigest():\n"
 replace = "    if check.line is None:\n"
@@ -3364,7 +3364,7 @@ replace = "    if check.line is None:\n"
 [[mutant]]
 name = "amendments_passed_over_without_a_ledger"
 why = "Loaded with no ledger, a record would be read as it was first written, with every amendment beside it silently left out."
-suites = ["tests.test_amend.LoadTest"]
+suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
 find = "        if ledger is None:\n            raise PreregError(\n                f\"{path.name} has the amendment {name} beside it: load it with ledger=, the sign-off ledger that binds \"\n                \"its amendments, so that each applies only once signed\"\n            )\n"
 replace = "        if ledger is None:\n            return _parse(raw, rule_id=_id(path.stem, raw), root=path.parent)\n"
@@ -3372,7 +3372,7 @@ replace = "        if ledger is None:\n            return _parse(raw, rule_id=_i
 [[mutant]]
 name = "the_amendment_chain_unchecked"
 why = "An amendment written against an older rule would apply over a newer one, undoing an amendment signed between them unseen."
-suites = ["tests.test_amend.LoadTest"]
+suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
 find = "    if value[\"amends\"] != previous.id:\n"
 replace = "    if False:\n"
@@ -3380,15 +3380,15 @@ replace = "    if False:\n"
 [[mutant]]
 name = "a_misnamed_amendment_passed_over"
 why = "A file meant as an amendment but misnamed would be passed over, and the rule load as if it were never amended."
-suites = ["tests.test_amend.LoadTest"]
+suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
-find = "    names = sorted(entry.name for entry in path.parent.iterdir() if entry.name.startswith(prefix))\n"
+find = "    names = sorted(entry.name for entry in path.parent.iterdir() if entry.name.casefold().startswith(prefix))\n"
 replace = "    names = sorted(entry.name for entry in path.parent.iterdir() if re.fullmatch(rf\"{re.escape(path.stem)}{_AMEND_STEM}\\.json\", entry.name))\n"
 
 [[mutant]]
 name = "an_amendment_dated_before_its_record_accepted"
 why = "An amendment could claim a day before its record was registered, out of order with the record it amends."
-suites = ["tests.test_amend.LoadTest"]
+suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
 find = "    if iso_date(found.group(1), f\"the day in {name}\") < previous.registered:\n"
 replace = "    if False:\n"
@@ -3396,7 +3396,7 @@ replace = "    if False:\n"
 [[mutant]]
 name = "check_intact_blind_to_amendments"
 why = "A rule whose amendments were replaced or dropped after load, by replace(), would still be evaluated and read."
-suites = ["tests.test_amend.LoadTest"]
+suites = ["tests.test_amend.LoadTest", "tests.test_amend.LoadMoreTest"]
 file = "onus/prereg/_rule.py"
 find = "    rebuilt = _chain(stem, rule.raw, [(each.name, each.raw, each.signed_at) for each in rule.amendments], None)\n"
 replace = "    rebuilt = rule if rule.amendments else _chain(stem, rule.raw, [], None)\n"
@@ -3420,7 +3420,7 @@ replace = "            pass\n"
 [[mutant]]
 name = "render_drops_the_post_hoc_label"
 why = "A post hoc hypothesis would be quoted with no word that its rule was amended after its first read."
-suites = ["tests.test_amend.PostHocTest"]
+suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/report/_render.py"
 find = "    return [] if amendment is None else [f\"post hoc: amended by {amendment} after its first read\"]\n"
 replace = "    return []\n"
@@ -3428,15 +3428,15 @@ replace = "    return []\n"
 [[mutant]]
 name = "render_trusts_the_line_s_post_hoc"
 why = "A reads file edited by hand to drop a post hoc label would render without it."
-suites = ["tests.test_amend.PostHocTest"]
+suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/report/_receipts.py"
-find = "        \"post_hoc\": (line.post_hoc, tuple(sorted(labelled))),\n"
+find = "        \"post_hoc\": (line.post_hoc, tuple(sorted(post_hoc(rule, earlier)))),\n"
 replace = ""
 
 [[mutant]]
 name = "render_trusts_the_line_s_amendments"
 why = "A reads file edited by hand to drop the amendments its rule was loaded with would render."
-suites = ["tests.test_amend.PostHocTest"]
+suites = ["tests.test_amend.PostHocTest", "tests.test_amend.PostHocMoreTest"]
 file = "onus/report/_receipts.py"
 find = "        \"amendments\": (line.amendments, tuple(amendment.id for amendment in rule.amendments)),\n"
 replace = ""
@@ -3456,3 +3456,75 @@ suites = ["tests.test_amend.ReadLineTest"]
 file = "onus/prereg/_reads.py"
 find = "            wrong.append(\"post_hoc, which names only hypotheses it labels\")\n"
 replace = "            pass\n"
+
+[[mutant]]
+name = "post_hoc_relates_reads_by_the_amendments_stem"
+why = "Under an amendment that renames the experiment, reads of the record would not count as first reads, and what it changed would never be post hoc."
+suites = ["tests.test_amend.PostHocMoreTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    related = related_reads(earlier, rule.experiment, base_stem(rule.id.rpartition(\"@\")[0]))\n    if not related:\n"
+replace = "    related = related_reads(earlier, rule.experiment, rule.id.rpartition(\"@\")[0])\n    if not related:\n"
+
+[[mutant]]
+name = "the_seal_relates_reads_by_the_amendments_stem"
+why = "An amendment that renames the experiment and changes a label would escape the seal, recording a different verdict with no supersedes."
+suites = ["tests.test_amend.PostHocMoreTest"]
+file = "onus/prereg/_evaluate.py"
+find = "    related = related_reads(earlier, rule.experiment, base_stem(rule.id.rpartition(\"@\")[0]))\n    this ="
+replace = "    related = related_reads(earlier, rule.experiment, rule.id.rpartition(\"@\")[0])\n    this ="
+
+[[mutant]]
+name = "a_read_lines_stem_keeps_its_amendments_day"
+why = "A read under an amendment would not be related by stem to later reads, so a renaming amendment after it would label nothing post hoc."
+suites = ["tests.test_amend.PostHocMoreTest"]
+file = "onus/prereg/_reads.py"
+find = "        return base_stem(self.prereg.rpartition(\"@\")[0])\n"
+replace = "        return self.prereg.rpartition(\"@\")[0]\n"
+
+[[mutant]]
+name = "post_hoc_written_in_rule_order"
+why = "Two post hoc labels would be written in rule order, which parse_line refuses, so the reads file would stop every later read and render."
+suites = ["tests.test_amend.PostHocMoreTest"]
+file = "onus/prereg/_evaluate.py"
+find = "                \"post_hoc\": sorted(post_hoc(rule, earlier)),\n"
+replace = "                \"post_hoc\": list(post_hoc(rule, earlier)),\n"
+
+[[mutant]]
+name = "the_newest_late_amendment_named"
+why = "The sentence would name the newest amendment that made a hypothesis post hoc, not the first, as the docstring says."
+suites = ["tests.test_amend.PostHocMoreTest"]
+file = "onus/prereg/_evaluate.py"
+find = "            labelled[hypothesis.name] = late[0].id\n"
+replace = "            labelled[hypothesis.name] = late[-1].id\n"
+
+[[mutant]]
+name = "an_amendment_moves_its_records_registration"
+why = "A signed amendment could move the day a record was registered, and with it the earliest day a days window may open."
+suites = ["tests.test_amend.LoadMoreTest"]
+file = "onus/prereg/_rule.py"
+find = "    if after.registered != previous.registered:\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "a_record_named_in_another_case_loaded"
+why = "On a file system that ignores case, a record loaded as LAYOUT.json would find none of its layout.amend files and load unamended."
+suites = ["tests.test_amend.LoadMoreTest"]
+file = "onus/prereg/_rule.py"
+find = "    if path.name not in os.listdir(path.parent):\n"
+replace = "    if False:\n"
+
+[[mutant]]
+name = "the_bytes_signed_not_compared_with_those_read"
+why = "An amendment changed between load reading it and the ledger check would be applied on a sign-off of other bytes."
+suites = ["tests.test_amend.LoadMoreTest"]
+file = "onus/prereg/_rule.py"
+find = "    if check.status is not Status.SIGNED or check.line is None or check.line.sha256 != hashlib.sha256(raw).hexdigest():\n"
+replace = "    if check.status is not Status.SIGNED or check.line is None:\n"
+
+[[mutant]]
+name = "a_bound_artifact_change_touches_none"
+why = "An amendment that rebinds the record's artifacts would touch no hypothesis, though every result rests on them."
+suites = ["tests.test_amend.TouchesTest"]
+file = "onus/prereg/_rule.py"
+find = "_SHARED = (\"registered\", \"unit\", \"order_key\", \"horizon\", \"looks\", \"bound_artifacts\")\n"
+replace = "_SHARED = (\"registered\", \"unit\", \"order_key\", \"horizon\", \"looks\")\n"

@@ -48,16 +48,14 @@ def re_read_kind(read: ReadLine, earlier: list[ReadLine]) -> str | None:
 
 def bound_read(
     rule: Rule, evaluation: Evaluation, *, receipt: ReadReceipt, reads_path: str | Path
-) -> tuple[ReadLine, list[ReadLine], dict[str, str]]:
-    """Return the read ``receipt`` names, the lines before it, and what it labels post hoc, once shown to record it.
-
-    The read is returned once its line is shown to record ``evaluation``; what it labels post hoc is each hypothesis
-    by name, with the id of the amendment that made it so.
+) -> tuple[ReadLine, list[ReadLine]]:
+    """Return the recorded read ``receipt`` names, once its line is shown to record ``evaluation``, and those before it.
 
     The line's ``early`` must be the one its read time gives under the rule's horizon (``read_early``), so a
     hand-edited flag can neither state the verdict of a read made before its window closed nor withhold one. Its
     ``amendments`` must be the rule's, and its ``post_hoc`` the hypotheses ``post_hoc`` finds from the lines before
-    it, so a hand-edited line can neither drop the post hoc label nor add one.
+    it, so editing this line alone can neither drop the post hoc label nor add one; the lines before it carry no
+    chain, so an edit to them changes what is found.
 
     Raises:
         TypeError: ``receipt`` is not a ReadReceipt.
@@ -74,7 +72,6 @@ def bound_read(
     lines = read_file(path)
     line = find_line(lines, receipt.line_sha256, path)
     earlier = lines[: lines.index(line)]
-    labelled = post_hoc(rule, earlier)
     # Each field as the line records it, then what it must equal: the evaluation re-derived here, the receipt, and
     # the flag the line's own read time gives.
     fields: dict[str, tuple[object, ...]] = {
@@ -86,11 +83,11 @@ def bound_read(
         "at": (line.at, receipt.at),
         "early": (line.early, read_early(rule.horizon, line.at)),
         "amendments": (line.amendments, tuple(amendment.id for amendment in rule.amendments)),
-        "post_hoc": (line.post_hoc, tuple(sorted(labelled))),
+        "post_hoc": (line.post_hoc, tuple(sorted(post_hoc(rule, earlier)))),
     }
     wrong = [name for name, (recorded, *wanted) in fields.items() if any(value != recorded for value in wanted)]
     if wrong:
         raise PreregError(
             f"the read at line sha256 {line.sha256} does not record this evaluation of this data: its {wrong} differ"
         )
-    return line, earlier, labelled
+    return line, earlier

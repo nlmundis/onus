@@ -282,11 +282,14 @@ def read_early(horizon: Horizon, at: datetime) -> bool:
 def post_hoc(rule: Rule, earlier: list[ReadLine]) -> dict[str, str]:
     """Return, by name, each hypothesis of ``rule`` labelled post hoc, with the amendment that made it so.
 
-    A hypothesis is post hoc when an amendment that touches it was signed after its first read: the first of
-    ``earlier`` that is a read of the rule's experiment or of a record with its file stem and labels it. One that
-    no such read labels, because an amendment added it or renamed it, counts the experiment's first read as its
-    own, so that a hypothesis added after the data were seen is post hoc too. The amendment named is the first
-    such. A rule read before any read of it is post hoc in nothing.
+    A hypothesis is post hoc when an amendment that touches it was not applied at its first read: the first of
+    ``earlier`` that is a read of the rule's experiment or of a record with its file stem and labels it, whose line
+    lists the amendments its rule was loaded with. Any amendment signed after that read was not applied at it, and
+    neither was one signed before but placed beside the record only after it. Which amendments a read applied is
+    read from its line, never from a clock, so neither a sign-off time nor two machines' clocks can move the label.
+    A hypothesis no such read labels, because an amendment added or renamed it, takes the first related read as its
+    own, so one added after the data were read is post hoc too. The amendment named is the first such, oldest
+    first. A rule read before any read of it is post hoc in nothing.
     """
     related = related_reads(earlier, rule.experiment, base_stem(rule.id.rpartition("@")[0]))
     if not related:
@@ -294,7 +297,7 @@ def post_hoc(rule: Rule, earlier: list[ReadLine]) -> dict[str, str]:
     labelled: dict[str, str] = {}
     for hypothesis in rule.hypotheses:
         first = next((line for line in related if hypothesis.name in line.labels), related[0])
-        late = [each for each in rule.amendments if hypothesis.name in each.touches and each.signed_at > first.at]
+        late = [each for each in rule.amendments if hypothesis.name in each.touches and each.id not in first.amendments]
         if late:
             labelled[hypothesis.name] = late[0].id
     return labelled
@@ -344,7 +347,7 @@ def record_read(
     ``as_of`` and ``early``: whether a days horizon's read was recorded before noon UTC on the window's end day,
     when the window has closed in every time zone. A count horizon's read is never early. It records too the ids
     of the amendments the rule was loaded with and the hypotheses ``post_hoc`` labels post hoc: those an amendment
-    touched that was signed after the hypothesis was first read in this reads file.
+    touched that was not applied when the hypothesis was first read in this reads file.
 
     The reads file is sealed: once it holds a read of the rule's experiment, or of a record with the rule's file
     stem, a read whose data hash, n, or labels differ from any such earlier read is refused, unless

@@ -17,7 +17,7 @@ declared families, and exact power, minimum detectable effect, and peeking size.
 sign or binomial test, and records each read under a file lock (POSIX only), timed by its own clock, flagging a
 read made before a days window closed and refusing a re-read on different data unless it names the first read.
 It applies an amendment, a dated file beside the record, only once the `onus.signoff` ledger says it is signed,
-and labels post hoc each hypothesis an amendment touched that was signed after the hypothesis was first read.
+and labels post hoc each hypothesis an amendment touched that was not applied when the hypothesis was first read.
 `onus.report` renders a verdict only against the recorded read its receipt names, re-deriving it from the data,
 with the minimum detectable effect whenever a read that is not early is not met, and nothing about the result on
 an early read; quotes exploratory results with no verdict; and fails a test unless the quotes a document marks,

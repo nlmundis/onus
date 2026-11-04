@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from onus.prereg import Amendment, PreregError, ReadReceipt, Rule, evaluate, load, prereg_id, record_read
+from onus.prereg import Amendment, PreregError, ReadReceipt, Rule, _rule, evaluate, load, prereg_id, record_read
 from onus.prereg._reads import parse_line
 from onus.report import receipt_from_line, render
 from onus.report._render import COUNT_HORIZON
+from onus.signoff import Check, check_signoff
 from tests.test_prereg import Folder, at, days_record, days_sample, record, sample
 
 BEFORE_READ = "2026-01-09T10:00:00+00:00"
@@ -49,7 +50,15 @@ class Amended(Folder):
         self.reads = self.folder / "reads.jsonl"
         self.base = self.write(record())
 
-    def sign(self, path: Path, when: str, *, artifact: str | None = None, content: bytes | None = None) -> None:
+    def sign(
+        self,
+        path: Path,
+        when: str,
+        *,
+        artifact: str | None = None,
+        content: bytes | None = None,
+        bound: dict[str, str] | None = None,
+    ) -> None:
         """Append a signoff/1 line signing ``path``'s content (or ``content``) at ``when``, as record would."""
         artifact = artifact or f"prereg:{path.name}"
         earlier = [json.loads(line) for line in self.ledger_lines if json.loads(line)["artifact"] == artifact]
@@ -59,7 +68,7 @@ class Amended(Folder):
             "artifact": artifact,
             "sha256": sha(data),
             "bytes": len(data),
-            "bound": {},
+            "bound": bound or {},
             "supersedes": sha(json.dumps(earlier[-1], sort_keys=True, separators=(",", ":"))) if earlier else None,
             "reviewed_by": "A Reviewer",
             "at": when,
@@ -257,8 +266,77 @@ class LoadTest(Amended):
         self.assertEqual(evaluate(rule, sample()).prereg, rule.id)
 
 
+class LoadMoreTest(Amended):
+    """load's refusals the first review found unpinned: case, the sign-off's path, bound files, and exact bytes."""
+
+    def test_an_amendment_cannot_move_the_day_its_record_was_registered(self):
+        self.amend(record(registered="2026-01-06"))
+        with self.assertRaisesRegex(PreregError, "an amendment cannot move the day a record was registered"):
+            self.loaded()
+
+    def test_a_record_named_in_another_case_is_refused_not_loaded_without_its_amendments(self):
+        self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
+        with self.assertRaisesRegex(PreregError, "names no file as its folder spells it"):
+            load(self.folder / "LAYOUT.json", ledger=self.ledger)
+
+    def test_an_amendment_named_in_another_case_is_refused_as_misnamed(self):
+        path = self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
+        path.rename(self.folder / "Layout.amend-2026-01-10.json")
+        with self.assertRaisesRegex(PreregError, "Layout.amend-2026-01-10.json beside layout.json is named as"):
+            self.loaded()
+
+    def test_the_sign_off_names_the_amendments_path_from_the_ledgers_folder(self):
+        sub = self.folder / "sub"
+        sub.mkdir()
+        self.base = sub / "layout.json"
+        self.base.write_text(json.dumps(record()))
+        path = sub / "layout.amend-2026-01-10.json"
+        path.write_text(
+            json.dumps(amendment(prereg_id(self.base), with_hypothesis(record(), "completes", alpha="0.05")))
+        )
+        self.sign(path, AFTER_READ, artifact="prereg:layout.amend-2026-01-10.json")
+        with self.assertRaisesRegex(PreregError, "says UNSIGNED for 'prereg:sub/layout.amend-2026-01-10.json'"):
+            self.loaded()
+        self.sign(path, AFTER_READ, artifact="prereg:sub/layout.amend-2026-01-10.json")
+        self.assertEqual(self.loaded().id, prereg_id(path))
+
+    def test_an_amendment_whose_bound_file_changed_since_its_sign_off_is_refused(self):
+        bound = self.folder / "bound.txt"
+        bound.write_bytes(b"synthetic\n")
+        path = self.amend(with_hypothesis(record(), "completes", alpha="0.05"), signed=None)
+        self.sign(path, AFTER_READ, bound={"bound.txt": sha(b"synthetic\n")})
+        self.assertEqual(len(self.loaded().amendments), 1)
+        bound.write_bytes(b"changed\n")
+        with self.assertRaisesRegex(PreregError, "says CHANGED"):
+            self.loaded()
+
+    def test_a_sign_off_of_other_bytes_than_those_read_is_refused(self):
+        path = self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
+        real = check_signoff(self.ledger, f"prereg:{path.name}", path)
+        assert real.line is not None
+        other = Check(real.status, real.detail, dataclasses.replace(real.line, sha256=sha(b"other bytes\n")))
+        with mock.patch("onus.signoff.check_signoff", return_value=other):
+            with self.assertRaisesRegex(PreregError, "is not signed: .* says SIGNED"):
+                self.loaded()
+
+
 class TouchesTest(Amended):
     """What an amendment touches: a hypothesis's own fields, its family, and the fields every result depends on."""
+
+    def setUp(self):
+        super().setUp()
+        (self.folder / "notes.txt").write_bytes(b"synthetic notes\n")
+
+    def test_every_field_of_a_rule_is_classified(self):
+        # A field added to Rule must be placed here, in what touches every hypothesis or in what touches none, so
+        # that _touches never passes over a change it was not told about.
+        shared = set(_rule._SHARED)
+        per_hypothesis = {"hypotheses", "families"}
+        touches_none = {"experiment", "provenance"}
+        not_record_fields = {"id", "sha256", "raw", "amendments"}
+        fields = {field.name for field in dataclasses.fields(Rule)}
+        self.assertEqual(fields, shared | per_hypothesis | touches_none | not_record_fields)
+        self.assertEqual(len(fields), len(shared) + len(per_hypothesis) + len(touches_none) + len(not_record_fields))
 
     def touches(self, content: dict[str, Any]) -> tuple[str, ...]:
         self.amend(content)
@@ -286,7 +364,7 @@ class TouchesTest(Amended):
             "the horizon": (record(horizon={"kind": "count", "n": 7}, looks=[7]), everyone),
             "the order key": (record(order_key="joined"), everyone),
             "the unit": (record(unit="person"), everyone),
-            "the registered day": (record(registered="2026-01-06"), everyone),
+            "a bound artifact": (record(bound_artifacts={"notes.txt": sha(b"synthetic notes\n")}), everyone),
             "the experiment's name": (record(experiment="a renamed synthetic comparison"), ()),
             "the provenance": (record(provenance={"author": "another synthetic example"}), ()),
             "the hypotheses' order": ({**record(), "hypotheses": record()["hypotheses"][::-1]}, ()),
@@ -315,9 +393,10 @@ class PostHocTest(Amended):
         self.assertEqual(self.last_line()["post_hoc"], [])
 
     def test_the_first_read_decides_and_not_the_latest(self):
+        # Read before the amendment, then twice after it: the latest earlier read applied it, the first did not.
         self.read(load(self.base), READ)
-        self.read(load(self.base), "2026-01-12T10:00:00+00:00")
-        self.amend(with_hypothesis(record(), "completes", alpha="0.05"), signed="2026-01-11T00:00:00+00:00")
+        self.amend(with_hypothesis(record(), "completes", alpha="0.05"), signed=AFTER_READ)
+        self.read(self.loaded(), "2026-01-12T10:00:00+00:00")
         self.read(self.loaded(), "2026-01-13T10:00:00+00:00")
         self.assertEqual(self.last_line()["post_hoc"], ["completes"])
 
@@ -391,6 +470,62 @@ class PostHocTest(Amended):
             sentence,
         )
         self.assertNotIn(COUNT_HORIZON, sentence)
+
+
+class PostHocMoreTest(Amended):
+    """Post hoc is decided by what a hypothesis's first read applied, never by a clock."""
+
+    def test_an_amendment_signed_before_a_read_but_placed_after_it_is_post_hoc(self):
+        self.read(load(self.base))
+        path = self.amend(with_hypothesis(record(), "completes", alpha="0.05"), signed=BEFORE_READ)
+        self.read(self.loaded(), "2026-01-12T10:00:00+00:00")
+        self.assertEqual(
+            (self.last_line()["post_hoc"], self.last_line()["amendments"]), (["completes"], [prereg_id(path)])
+        )
+
+    def test_a_backdated_sign_off_time_on_the_rule_does_not_move_the_label(self):
+        self.read(load(self.base))
+        self.amend(with_hypothesis(record(), "completes", alpha="0.05"), signed=AFTER_READ)
+        rule = self.loaded()
+        backdated = dataclasses.replace(
+            rule.amendments[0], signed_at=datetime.fromisoformat("2000-01-01T00:00:00+00:00")
+        )
+        self.read(dataclasses.replace(rule, amendments=(backdated,)), "2026-01-12T10:00:00+00:00")
+        self.assertEqual(self.last_line()["post_hoc"], ["completes"])
+
+    def test_labels_are_written_sorted_by_name(self):
+        self.read(load(self.base))
+        families = {"primary": {"correction": "benjamini-hochberg"}, "guard": {"correction": "benjamini-hochberg"}}
+        self.amend(record(families=families), signed=AFTER_READ)
+        self.read(self.loaded(), "2026-01-12T10:00:00+00:00")
+        self.assertEqual(self.last_line()["post_hoc"], ["clearer", "faster"])
+
+    def test_the_amendment_named_is_the_oldest_that_made_it_post_hoc(self):
+        self.read(load(self.base))
+        first = self.amend(with_hypothesis(record(), "completes", alpha="0.05"), "2026-01-10")
+        self.amend(with_hypothesis(record(), "completes", alpha="0.02"), "2026-01-12")
+        rule = self.loaded()
+        receipt = self.read(rule, "2026-01-13T10:00:00+00:00")
+        sentence = render(rule, sample(), "completes", receipt=receipt, reads_path=self.reads)
+        self.assertIn(f"post hoc: amended by {prereg_id(first)} after its first read", sentence)
+
+    def test_an_amendment_that_renames_the_experiment_is_related_to_the_records_reads_by_its_stem(self):
+        # The first read is under one amendment, and a second amendment renames the experiment, so only the record's
+        # stem relates the reads: through the rule's id, which names an amendment, and through the earlier line's.
+        self.amend(record(provenance={"author": "another synthetic example"}), "2026-01-06", signed=BEFORE_READ)
+        self.read(self.loaded())
+        renamed = with_hypothesis(record(experiment="a renamed synthetic comparison"), "completes", alpha="0.05")
+        self.amend(renamed, "2026-01-12", signed=AFTER_READ)
+        self.read(self.loaded(), "2026-01-13T10:00:00+00:00")
+        self.assertEqual(self.last_line()["post_hoc"], ["completes"])
+        # And the seal holds a read whose labels the renaming amendment changed to the first read.
+        self.reset()
+        self.reads.unlink()
+        self.read(load(self.base))
+        loosened = with_hypothesis(record(experiment="a renamed synthetic comparison"), "completes", alpha="0.2")
+        self.amend(loosened, "2026-01-12", signed=AFTER_READ)
+        with self.assertRaisesRegex(PreregError, "was already read on other data or with other labels"):
+            self.read(self.loaded(), "2026-01-13T10:00:00+00:00")
 
 
 class CountHorizonTest(Amended):

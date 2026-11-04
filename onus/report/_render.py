@@ -18,7 +18,7 @@ from onus.prereg import (
     Rule,
     evaluate,
 )
-from onus.prereg._evaluate import CLOSED_EVERYWHERE
+from onus.prereg._evaluate import CLOSED_EVERYWHERE, post_hoc
 from onus.report._receipts import bound_read, re_read_kind
 from onus.stats import TestResult, binomial_mde, binomial_power, rejection_region
 
@@ -265,7 +265,7 @@ def render(
     label; the first read named may itself be of this record. An early read says nothing in that second case, where
     saying it would give away that a label changed. Where the lines before a re-read show neither, as in no reads
     file written from honest evaluations, a read that is not early says only "re-read; first read <hash>". A
-    hypothesis an amendment touched that was signed after its first read says, just after its verdict or its "read
+    hypothesis an amendment touched that was not applied at its first read says, just after its verdict or its "read
     early (...)", "post hoc: amended by <the amendment's id> after its first read", re-derived from the rule and
     the lines before the read and required to match the line's. A count horizon's sentence says "count horizon:
     unit dates not checked against registration", since nothing checks them (E24). Every sentence ends with the
@@ -284,7 +284,7 @@ def render(
     if name not in names:
         raise PreregError(f"{rule.id!r} has no hypothesis named {name!r}; it has {names}")
     evaluation = evaluate(rule, data, as_of=as_of)
-    read, earlier, labelled = bound_read(rule, evaluation, receipt=receipt, reads_path=reads_path)
+    read, earlier = bound_read(rule, evaluation, receipt=receipt, reads_path=reads_path)
     return _sentence(
         rule,
         evaluation,
@@ -292,7 +292,7 @@ def render(
         read_early_at=read.at if read.early else None,
         kind=re_read_kind(read, earlier),
         first=read.supersedes,
-        amendment=labelled.get(name),
+        amendment=post_hoc(rule, earlier).get(name),
     )
 
 
