@@ -264,6 +264,9 @@ class LoadTest(Amended):
             with self.subTest(label), self.assertRaisesRegex(PreregError, "no longer matches"):
                 evaluate(wrong, sample())
         self.assertEqual(evaluate(rule, sample()).prereg, rule.id)
+        renamed = dataclasses.replace(rule.amendments[0], name="other.amend-2026-01-10.json")
+        with self.assertRaisesRegex(PreregError, "is not named as an amendment of 'layout' is"):
+            evaluate(dataclasses.replace(rule, amendments=(renamed,)), sample())
 
 
 class LoadMoreTest(Amended):
@@ -276,8 +279,9 @@ class LoadMoreTest(Amended):
 
     def test_a_record_opened_in_another_case_finds_its_amendments_and_refuses_them(self):
         self.amend(with_hypothesis(record(), "completes", alpha="0.05"))
-        if not (self.folder / "LAYOUT.json").exists():
-            self.skipTest("this file system tells names apart by case, so no other case opens the record")
+        # Where the file system ignores case this names the record itself; where it does not, it is a copy, as the
+        # same bytes under the other spelling. Either way the amendments are found and refused, on every machine.
+        (self.folder / "LAYOUT.json").write_bytes(self.base.read_bytes())
         with self.assertRaisesRegex(PreregError, "layout.amend-2026-01-10.json beside LAYOUT.json is named as"):
             load(self.folder / "LAYOUT.json", ledger=self.ledger)
 
@@ -294,8 +298,9 @@ class LoadMoreTest(Amended):
     def test_a_record_with_no_amendment_loads_under_either_unicode_normal_form(self):
         decomposed, composed = "cafe\u0301", "caf\u00e9"
         self.write(record(), name=f"{decomposed}.json")
-        if not (self.folder / f"{composed}.json").exists():
-            self.skipTest("this file system tells names apart by normal form, so the other form opens nothing")
+        # Where the file system ignores normal form this opens the record by its other spelling, which a check on
+        # the spelling would refuse; where it does not, it is a copy under that spelling. It loads on every machine.
+        self.write(record(), name=f"{composed}.json")
         self.assertEqual(load(self.folder / f"{composed}.json").amendments, ())
 
     def test_an_amendment_named_in_another_case_is_refused_as_misnamed(self):
