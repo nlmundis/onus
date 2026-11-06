@@ -2934,9 +2934,9 @@ name = "a_wrapper_judged_only_by_what_it_wraps"
 why = "A function written in the tests could set __wrapped__ to real code and be recorded as that code."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    for each in (found, inspect.unwrap(found)):
+find = '''    for link in (*wrappers, innermost):
 '''
-replace = '''    for each in (inspect.unwrap(found),):
+replace = '''    for link in (innermost,):
 '''
 
 [[mutant]]
@@ -2944,9 +2944,91 @@ name = "a_wrapper_judged_only_by_itself"
 why = "A test function behind a wrapper with no source file of its own, as functools.lru_cache gives, would not be seen as written among the tests."
 suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    for each in (found, inspect.unwrap(found)):
+find = '''    for link in (*wrappers, innermost):
 '''
-replace = '''    for each in (found,):
+replace = '''    for link in (found,):
+'''
+
+[[mutant]]
+name = "a_wrapper_chain_judged_only_at_its_two_ends"
+why = "A test function carrying functools.wraps of real code, behind functools.lru_cache, has real code at both ends and would be recorded as that code while its canned text ran."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    for link in (*wrappers, innermost):
+'''
+replace = '''    for link in (found, innermost):
+'''
+
+[[mutant]]
+name = "a_link_that_cannot_be_placed_passed_over"
+why = "A callable object or a built-in in the chain would be taken on trust, though nothing shows where it was written."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if source is None:
+            return f"{who} has no source file, so nothing shows it is not a built-in or made up at run time"
+'''
+replace = '''        if source is None:
+            continue
+'''
+
+[[mutant]]
+name = "a_mock_judged_only_at_the_front_of_the_chain"
+why = "functools.lru_cache around a mock would be recorded as real: the mock's own class is written outside the tests."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if _is_mock(link):
+'''
+replace = '''        if link is found and _is_mock(link):
+'''
+
+[[mutant]]
+name = "a_wrapper_with_no_file_not_placed_by_its_class"
+why = "Real code behind functools.lru_cache is common and is code under test; refusing it would leave a memoized function no way to be approved."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    things: tuple[Callable[..., object], ...] = (link, type(link)) if wrapper else (link,)
+'''
+replace = '''    things: tuple[Callable[..., object], ...] = (link,)
+'''
+
+[[mutant]]
+name = "the_innermost_link_placed_by_its_class"
+why = "A functools.partial would be placed in functools.py and pass, though it can hold a function written among the tests; so would a callable object of a class outside them."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    things: tuple[Callable[..., object], ...] = (link, type(link)) if wrapper else (link,)
+'''
+replace = '''    things: tuple[Callable[..., object], ...] = (link, type(link))
+'''
+
+[[mutant]]
+name = "a_file_name_taken_without_the_file"
+why = "A function from eval has the file name <string>, which resolves to a path outside the tests, so a function made up at run time would pass."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if source.is_file():
+'''
+replace = '''        if True:
+'''
+
+[[mutant]]
+name = "a_class_of_a_fileless_main_raises"
+why = "inspect.getfile raises OSError for a class of a __main__ with no file, so the check would stop with an error in place of a reason."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        except (TypeError, OSError):  # OSError: a class of a __main__ that has no file
+'''
+replace = '''        except TypeError:
+'''
+
+[[mutant]]
+name = "a_circular_chain_raises"
+why = "A record check must report a bad record; a ValueError from inspect.unwrap would stop on it with an error and name no record."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except ValueError:  # the chain comes back to a link it has passed, or is longer than the recursion limit
+'''
+replace = '''    except ZeroDivisionError:
 '''
 
 [[mutant]]

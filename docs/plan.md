@@ -374,12 +374,19 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   the approved file, where a JSON baseline would stop being JSON.
   - As built, chosen in the build and open to veto:
     - **What "real" means.** A producer is real when importing its recorded name gives it back, it is callable
-      and no mock (an autospec stand-in included), and it is written outside the tests: both the function and,
-      when it wraps another, the one it wraps. The tests are the top folder of the test's own package (`tests`
+      and no mock (an autospec stand-in included), and every link of its `__wrapped__` chain is no mock and is
+      written, in a file that exists, outside the tests. A link that cannot be placed is refused, and so is a
+      chain that never ends. A wrapper with no file of its own is placed by its class, so `functools.lru_cache`
+      around real code stays real; the innermost link is never placed that way, since a `functools.partial`'s
+      class says nothing of what it holds. The tests are the top folder of the test's own package (`tests`
       for `tests.unit.test_x`; a module in no package has its own folder) and the folder that holds the
       approved folder. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in
       the test package are refused, and so is every function when tests sit in the same folder as the code,
       until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
+    - **What the walk cannot see.** It reads what code says of itself: `__wrapped__`, a function's compiled file
+      name, and a class's `__module__`. A function compiled under another file's name, a class that names another
+      module, and real code that calls a test function in its body with no `__wrapped__` to show for it all pass.
+      The check stops a fake made by habit, not one written to get past it.
     - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
       must have the record's four keys and name a real producer, each approved file must have one record and
       each record one file, and a folder that is missing or holds no record fails, so that passing means

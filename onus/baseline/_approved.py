@@ -83,35 +83,52 @@ def _tests_of(case: object, folder: Path) -> tuple[Path, ...]:
     return tuple(dict.fromkeys((top, folder.resolve().parent)))
 
 
+def _written_in(link: Callable[..., object], *, wrapper: bool) -> Path | None:
+    """Return the file that holds ``link``, or None when nothing places it in a file that exists.
+
+    A wrapper with no file of its own, as ``functools.lru_cache`` gives, is placed by its class. Only a wrapper is:
+    the innermost link is what runs, and its class says nothing of what it does, as a ``functools.partial`` shows.
+    """
+    things: tuple[Callable[..., object], ...] = (link, type(link)) if wrapper else (link,)
+    for thing in things:
+        try:
+            source = Path(inspect.getfile(thing)).resolve()
+        except (TypeError, OSError):  # OSError: a class of a __main__ that has no file
+            continue
+        if source.is_file():
+            return source
+    return None
+
+
 def unreal(name: str, tests: Iterable[Path]) -> str | None:
     """Return why the producer recorded as ``name`` is not real code under test, or None when it is.
 
-    A real producer is a callable that importing its name gives, that is no mock, and that is written outside
-    every folder of ``tests``: both the function itself and, when it wraps another (``functools.wraps``), the one
-    it wraps. A function written among the tests, or a mock, can produce any text a baseline wants, so its
-    baseline shows nothing about the code.
+    A real producer is a callable that importing its name gives, and every link of its ``__wrapped__`` chain is
+    no mock and is written, in a file that exists, outside every folder of ``tests``. A function written among
+    the tests, or a mock, can produce any text a baseline wants, so its baseline shows nothing about the code.
     """
     try:
         found = _resolved(name)
     except LookupError as error:
         return f"it cannot be imported: {error}"
-    if _is_mock(found):
-        return "it is a mock"
     if not callable(found):
         return "it is not callable"
-    sources = []
-    for each in (found, inspect.unwrap(found)):
-        try:
-            sources.append(Path(inspect.getfile(each)).resolve())
-        except TypeError:
-            continue
-    if not sources:
-        return "it has no source file, so nothing shows it is not a built-in or made up at run time"
-    for source in sources:
+    wrappers: list[Callable[..., object]] = []
+    try:
+        innermost = inspect.unwrap(found, stop=lambda link: wrappers.append(link))
+    except ValueError:  # the chain comes back to a link it has passed, or is longer than the recursion limit
+        return "its __wrapped__ chain never ends, so nothing shows what would run"
+    for link in (*wrappers, innermost):
+        who = "it" if link is found else "what it wraps"
+        if _is_mock(link):
+            return f"{who} is a mock"
+        source = _written_in(link, wrapper=link is not innermost)
+        if source is None:
+            return f"{who} has no source file, so nothing shows it is not a built-in or made up at run time"
         for folder in tests:
             if source.is_relative_to(folder.resolve()):
                 return (
-                    f"it is defined among the tests, in {source.name} under {folder.name}/: a baseline is of code "
+                    f"{who} is defined among the tests, in {source.name} under {folder.name}/: a baseline is of code "
                     "under test, kept outside the folder that holds the tests"
                 )
     return None
