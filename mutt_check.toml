@@ -2528,6 +2528,22 @@ find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"'
 replace = '_ZONE = ""'
 
 [[mutant]]
+name = "a_number_after_a_timestamp_read_as_a_fraction"
+why = "The next field of a CSV row would vanish into the token, so a changed count would still match the approved file."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''(?:\\.[0-9]+)?)?"'''
+replace = '''(?:[.,][0-9]+)?)?"'''
+
+[[mutant]]
+name = "a_fraction_after_seconds_not_read"
+why = "The fraction is the part of a timestamp that changes most from run to run."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''(?:\\.[0-9]+)?)?"'''
+replace = ''')?"'''
+
+[[mutant]]
 name = "a_timestamp_that_runs_on_cut_back"
 why = "Backing off to a shorter form replaces a prefix and leaves the fraction in the text, so two moments share a number."
 suites = ["tests.test_scrub.TimestampsTest"]
