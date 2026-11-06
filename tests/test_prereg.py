@@ -597,7 +597,7 @@ class ReadTest(Folder):
         self.assertEqual(
             line,
             {
-                "schema": "read/2",
+                "schema": "read/3",
                 "prereg": rule.id,
                 "experiment": rule.experiment,
                 "data_sha256": result.data_sha256,
@@ -608,6 +608,8 @@ class ReadTest(Folder):
                 "supersedes": None,
                 "reason": None,
                 "onus": onus.__version__,
+                "amendments": [],
+                "post_hoc": [],
             },
         )
         self.assertEqual(first.line_sha256, hashlib.sha256(lines[0].encode()).hexdigest())
@@ -854,7 +856,7 @@ class ReadTest(Folder):
         for label, bad in cases.items():
             with self.subTest(label):
                 self.reads.write_bytes(bad + b"\n")
-                with self.assertRaisesRegex(PreregError, "is not a read/2 line|is not UTF-8"):
+                with self.assertRaisesRegex(PreregError, "is not a read/3 line|is not UTF-8"):
                     record_read(rule, result, reads_path=self.reads)
                 self.assertEqual(self.reads.read_bytes(), bad + b"\n")
         # Each with its partner well formed, so only the field's own check can refuse it.
@@ -866,7 +868,7 @@ class ReadTest(Folder):
             with self.subTest(field=field):
                 bad = json.dumps({**good, **edit}).encode() + b"\n"
                 self.reads.write_bytes(bad)
-                with self.assertRaisesRegex(PreregError, rf"is not a read/2 line: it holds malformed \['{field}'\]$"):
+                with self.assertRaisesRegex(PreregError, rf"is not a read/3 line: it holds malformed \['{field}'\]$"):
                     record_read(rule, result, reads_path=self.reads)
                 self.assertEqual(self.reads.read_bytes(), bad)
 

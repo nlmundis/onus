@@ -1,8 +1,9 @@
-"""The reads file's format: one ``read/2`` JSON line per recorded read, read back with every field checked.
+"""The reads file's format: one ``read/3`` JSON line per recorded read, read back with every field checked.
 
-``record_read`` appends the lines, and ``onus.report`` reads them back to bind a rendered verdict to its read.
-A line that is not exactly a read/2 line is refused wherever the file is read, never skipped: a reads file that
-cannot be trusted whole can neither seal a read nor bind a render.
+``record_read`` appends the lines, and ``onus.report`` reads them back to bind a rendered verdict to its read. A
+``read/2`` line, written before amendments existed, is still read, as a read of a rule with no amendment and no
+hypothesis labelled post hoc. A line that is not exactly a read/3 or read/2 line is refused wherever the file is
+read, never skipped: a reads file that cannot be trusted whole can neither seal a read nor bind a render.
 """
 
 import hashlib
@@ -14,9 +15,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from onus.prereg._rule import PreregError, iso_date
+from onus.prereg._rule import PreregError, base_stem, iso_date
 
-READ_SCHEMA = "read/2"
+READ_SCHEMA = "read/3"
 SHA256 = re.compile(r"[0-9a-f]{64}")
 _PREREG_ID = re.compile(r".+@[0-9a-f]{12}", re.DOTALL)
 LABELS = ("met", "not met")
@@ -56,9 +57,14 @@ def _sha256(value: object) -> bool:
     return isinstance(value, str) and SHA256.fullmatch(value) is not None
 
 
+def _names(value: object) -> bool:
+    """Return whether ``value`` is a list of distinct names, sorted, as ``post_hoc`` lists them."""
+    return isinstance(value, list) and all(text_field(name) for name in value) and value == sorted(set(value))
+
+
 # Every key a read/2 line holds, and what its value must be; a line holding any other key, or lacking one, is refused.
-FIELDS: dict[str, Callable[[Any], bool]] = {
-    "schema": lambda value: value == READ_SCHEMA,
+FIELDS_2: dict[str, Callable[[Any], bool]] = {
+    "schema": lambda value: value == "read/2",
     "prereg": lambda value: isinstance(value, str) and _PREREG_ID.fullmatch(value) is not None,
     "experiment": text_field,
     "data_sha256": _sha256,
@@ -72,6 +78,16 @@ FIELDS: dict[str, Callable[[Any], bool]] = {
     "supersedes": lambda value: value is None or _sha256(value),
     "reason": lambda value: value is None or text_field(value),
     "onus": text_field,
+}
+# A read/3 line adds the ids of the amendments its rule was loaded with, oldest first, and the hypotheses labelled
+# post hoc: those an amendment touched that was not applied when the hypothesis was first read.
+FIELDS: dict[str, Callable[[Any], bool]] = {
+    **FIELDS_2,
+    "schema": lambda value: value == READ_SCHEMA,
+    "amendments": lambda value: (
+        isinstance(value, list) and all(isinstance(each, str) and _PREREG_ID.fullmatch(each) for each in value)
+    ),
+    "post_hoc": _names,
 }
 
 
@@ -94,6 +110,9 @@ class ReadLine:
             supersedes.
         reason: why such a re-read was recorded; None when ``supersedes`` is.
         onus: the onus version that recorded the read.
+        schema: "read/3", or "read/2" for a line written before amendments existed.
+        amendments: the ids of the amendments the rule was loaded with, oldest first; empty on a read/2 line.
+        post_hoc: the hypotheses labelled post hoc, sorted by name; empty on a read/2 line.
     """
 
     text: str
@@ -109,11 +128,14 @@ class ReadLine:
     supersedes: str | None
     reason: str | None
     onus: str
+    schema: str = READ_SCHEMA
+    amendments: tuple[str, ...] = ()
+    post_hoc: tuple[str, ...] = ()
 
     @property
     def stem(self) -> str:
-        """The stem of the rule's record file: its ``prereg_id`` without the hash."""
-        return self.prereg.rpartition("@")[0]
+        """The stem of the rule's record file: its ``prereg_id`` without the hash, and without an amendment's day."""
+        return base_stem(self.prereg.rpartition("@")[0])
 
 
 def _no_repeats(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -125,23 +147,29 @@ def _no_repeats(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def parse_line(text: str, where: str) -> ReadLine:
-    """Return the read/2 line ``text``, checked field by field.
+    """Return the read/3 or read/2 line ``text``, checked field by field.
 
     Raises:
-        PreregError: ``text`` is not JSON, not an object with exactly read/2's keys, or holds a field of the wrong
-            kind, or gives ``supersedes`` without ``reason`` or the other way round.
+        PreregError: ``text`` is not JSON, not an object with exactly the keys of the schema it names, or holds a
+            field of the wrong kind; gives ``supersedes`` without ``reason`` or the other way round; or labels
+            post hoc a hypothesis it holds no label for.
     """
     try:
         record = json.loads(text, object_pairs_hook=_no_repeats)
     except (ValueError, RecursionError) as error:  # a PreregError from _no_repeats is a ValueError too
         raise PreregError(f"{where} is not a {READ_SCHEMA} line: {error}") from None
-    if not isinstance(record, dict) or sorted(record) != sorted(FIELDS):
-        raise PreregError(f"{where} is not a {READ_SCHEMA} line: its keys must be exactly {sorted(FIELDS)}")
-    wrong = [key for key, valid in FIELDS.items() if not valid(record[key])]
+    fields = FIELDS_2 if isinstance(record, dict) and record.get("schema") == "read/2" else FIELDS
+    named = "read/2" if fields is FIELDS_2 else READ_SCHEMA
+    if not isinstance(record, dict) or sorted(record) != sorted(fields):
+        raise PreregError(f"{where} is not a {named} line: its keys must be exactly {sorted(fields)}")
+    wrong = [key for key, valid in fields.items() if not valid(record[key])]
     if (record["supersedes"] is None) != (record["reason"] is None):
         wrong.append("supersedes and reason, which come together")
+    if "post_hoc" in fields and "post_hoc" not in wrong and "labels" not in wrong:
+        if not set(record["post_hoc"]) <= set(record["labels"]):
+            wrong.append("post_hoc, which names only hypotheses it labels")
     if wrong:
-        raise PreregError(f"{where} is not a {READ_SCHEMA} line: it holds malformed {wrong}")
+        raise PreregError(f"{where} is not a {named} line: it holds malformed {wrong}")
     return ReadLine(
         text=text,
         sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -156,6 +184,9 @@ def parse_line(text: str, where: str) -> ReadLine:
         supersedes=record["supersedes"],
         reason=record["reason"],
         onus=record["onus"],
+        schema=record["schema"],
+        amendments=tuple(record.get("amendments", ())),
+        post_hoc=tuple(record.get("post_hoc", ())),
     )
 
 
@@ -164,14 +195,14 @@ def parse_reads(raw: bytes, path: Path) -> list[ReadLine]:
 
     Raises:
         PreregError: the file does not end in a newline (its last write was cut short), is not UTF-8, or holds a
-            line that is not a read/2 line.
+            line that is not a read/3 or read/2 line.
     """
     if raw and not raw.endswith(b"\n"):
         raise PreregError(f"{path} does not end in a newline: its last write was cut short; repair it")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
-        raise PreregError(f"{path} is not UTF-8, so it holds no read/2 line onus wrote") from None
+        raise PreregError(f"{path} is not UTF-8, so it holds no read line onus wrote") from None
     return [parse_line(line, f"line {i} of {path}") for i, line in enumerate(text.split("\n")[:-1], start=1)]
 
 

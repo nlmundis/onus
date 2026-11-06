@@ -66,7 +66,8 @@ maintainer approved. Each default binds v0.1 and is revisited only by a later da
   `registered` date).
 - **`Rule` holds read-only mappings**, so it cannot be pickled or deep-copied. A dated amendment revisits this
   when the first adopter needs either.
-- **Open, owner: the session that starts L1 step 4.** A count horizon has no equivalent check: `evaluate`
+- **Closed 2026-10-08 by disclosure (Amendment 7, E24); kept as written.** A count horizon has no equivalent
+  check: `evaluate`
   takes the first N units by `order_key` with no date test, so they can predate registration. Decide whether
   to add a check (for example, a date-valued `order_key`, or a `start` for count horizons) or to disclose it
   as a limit, and decide it before the first adopter writes a count-horizon record; if that record comes
@@ -458,7 +459,72 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       own profile, and `GEMINI_CLI` also matches a longer name that starts so.
     - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,
       which any process could do, so these checks stay tripwires and step H stays the control.
-    - Nothing here binds a prereg amendment yet, which arrives with the prereg work.
+    - Nothing here bound a prereg amendment until Amendment 7's E22.
+
+## Amendment 7 (2026-11-04): the prereg work, and `forbid=` on every run
+
+The maintainer chose E22, E23, E25, and E26 from options on 2026-11-04, and E24 on 2026-10-08, when it was not yet
+written here. Each binds v0.1:
+
+- **E22, an amendment is a whole record, applied only once signed.** `<stem>.amend-YYYY-MM-DD.json` beside the
+  record holds `{"schema": "amend/1", "amends": <prereg id>, "reason": <one line>, "record": <a whole prereg/1
+  record>}`. `load(path, *, ledger=None)` applies each amendment oldest first; `amends` names the prereg id of the
+  record, or of the amendment before it; and the rule takes the newest amendment's prereg id. Each amendment must
+  be SIGNED in `ledger` as `prereg:<its path from the ledger's folder>`, for exactly the bytes read, and the
+  sign-off's `at`, which the record's author does not type, is kept on the rule. A field patch naming the
+  hypotheses it changes was set aside.
+- **E23, what an amendment touches.** A hypothesis whose own fields it changed, or that is new under its name; every
+  member of a family whose correction or set of members it changed; and all of them when it changed `unit`,
+  `order_key`, `horizon`, `looks`, or `bound_artifacts` (`registered` is listed with them, though as built an
+  amendment may not change it). A change to the experiment's name, the provenance,
+  or the hypotheses' order touches none. "Any amendment touches every hypothesis" was set aside.
+- **E24, the count-horizon gap is disclosed, not checked (2026-10-08).** This closes Amendment 1's open item: a
+  count horizon's units are not dated, so nothing checks them against registration, and this stays a v0.1 limit
+  owned by L2. `render` says "count horizon: unit dates not checked against registration" in every count-horizon
+  sentence.
+- **E25, the read line moves to `read/3`.** It adds `amendments`, the ids of the amendments the rule was loaded
+  with, oldest first, and `post_hoc`, the hypotheses labelled post hoc, sorted. `record_read` writes only `read/3`;
+  a `read/2` line is still read, as a read with no amendment and nothing post hoc. Widening `read/2` with an
+  optional key was set aside, since each schema names one exact set of keys.
+- **E26, `forbid=` reads the scrubbed output on every run.** E17's "as built" choice is ratified; the library
+  section's first wording, "while recording", gives way to it.
+  - As built, chosen in the build and open to veto:
+    - **Post hoc** is decided by the first read, in the reads file, of the rule's experiment or of a record with its
+      stem: an amendment touching the hypothesis that this read's own `amendments` does not list labels it. The
+      first read is the experiment's, not the first that labels the hypothesis, so a hypothesis an amendment added
+      or renamed after the data were read stays post hoc on every later read. This is wider than "signed after the
+      first read", which it contains: an amendment signed before a read but placed beside the record only after it
+      is post hoc too. It reads no clock, so no sign-off time, backdated on the rule or moved by a revocation and a
+      later re-signing, and no gap between two machines' clocks, can move the label; `signed_at` is kept on the rule
+      but decides nothing. `render` re-derives `post_hoc` and `amendments` from the rule and the lines before the
+      read and refuses a line whose fields differ, as it does `early`, and says "post hoc: amended by <the
+      amendment's id> after its first read" just after the verdict or the "read early (...)", on an early read too,
+      since that is the rule's history and not its result.
+    - **load refuses rather than passing over:** amendments beside a record loaded with no ledger; a file whose
+      name starts, in any case and either Unicode normal form, as an amendment's and is not
+      `<stem>.amend-YYYY-MM-DD.json` in the record's case with a real day, so a record opened under another case
+      finds its amendments and refuses them as misnamed; an amendment dated before the rule it amends was registered, or one that
+      moves `registered`; an amendment outside the ledger's folder, or one whose path the sign-off id cannot
+      spell; and `load` of an amendment file itself.
+    - An amended rule's reads are related to the record's by the record's stem, so the seal treats a read under an
+      amended rule as one under another record of the same stem: a read whose labels the amendment changed needs
+      `supersedes` and `reason`, and renders "re-read after a read under a different record".
+    - `check_intact` rebuilds the rule from the record's bytes and each amendment's bytes, so a rule whose
+      amendments' bytes, touches, or order were replaced after `load` is refused. It does not consult the ledger
+      again, so a hand-built `Amendment` holding bytes no one signed passes it; `load` is the one place a sign-off
+      is checked.
+  - Known limits:
+    - One amendment per record per day, since the day is in the file's name.
+    - An amendment cannot correct a mistyped `registered`; the record is registered again, under a new stem.
+    - A record whose path holds a character outside the sign-off id's (any non-ASCII letter included) can never
+      have an amendment applied: `load` refuses it, naming the remedy.
+    - Post hoc compares amendments by id, which names the file's stem, so a copy of a record under another stem,
+      amended with the same content and read after the original, is labelled post hoc; the label errs toward
+      being given.
+    - A sign-off revoked after a read was recorded leaves that read's line as it was; the next `load` refuses.
+    - A read recorded in another reads file is not a first read here: post hoc, like the seal, binds only the
+      reads file it is given. The lines of a reads file carry no chain, so an edit to an earlier line changes what
+      `render` re-derives for a later one.
 
 ## The library
 
@@ -523,19 +589,20 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   record's folder. These are as built, not among the five defaults Amendment 1 ratifies. Since Amendment 3's E10,
   `load` also refuses a hypothesis name, family, experiment, unit or order_key field, or file stem holding a line
   break.
-- **Amendments** are separate `<stem>.amend-YYYY-MM-DD.json` files, each bound by a tier-2 sign-off (L1 step 4).
+- **Amendments** are separate `<stem>.amend-YYYY-MM-DD.json` files, each bound by a tier-2 sign-off and applied by
+  `load(path, *, ledger=)` only once signed (Amendment 7, E22).
 - **Evaluation and read-recording are split**, because a name must not hide a write:
   - `evaluate(rule, data, *, as_of=None)` is pure. It refuses before the horizon. A count horizon uses exactly
     the first N units in `order_key` order; a days horizon needs `as_of` past its window and uses the units
     dated inside it.
-  - `record_read(rule, evaluation, *, reads_path, supersedes=None, reason=None)` appends a `read/2` line to a
-    reads file and returns a `ReadReceipt`. The read time is the clock's (D8), and the seal and its override
+  - `record_read(rule, evaluation, *, reads_path, supersedes=None, reason=None)` appends a `read/3` line (E25) to
+    a reads file and returns a `ReadReceipt`. The read time is the clock's (D8), and the seal and its override
     are D6's.
   - `report.render` requires a receipt, so displaying a verdict records it. Its signature and checks are
     Amendment 2's D1, D5, and D6; exploratory results use `render_exploratory` (D4).
 - **Post hoc:** an amendment signed after the first read of a hypothesis it touches labels that hypothesis
   post hoc. The labels are met / not met / pending today, and render shows "read early" in place of a verdict
-  (D5); post hoc arrives with L1 step 4, and needs a `read/3` or a widened `read/2` (Amendment 3).
+  (D5); post hoc is recorded in `read/3` and shown by render (Amendment 7, E23 and E25).
 - **render's sentence** is one line: load refuses a record whose names would break it, and render refuses such
   a sentence too (Amendment 3, E1 and E10). It carries n, discordant pairs and ties, sidedness, the family
   correction, **the MDE whenever a read that is not early is not met** (D2, D3; Amendment 3, E2, E3, and E7), the
@@ -564,7 +631,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   - **Recording** happens only under `make approve`, which sets `ONUS_APPROVE_ROOT` to the invoking checkout's
     top level. The helper refuses unless the approved path resolves under that root and the root is a git work
     tree, so a mutation sandbox refuses.
-  - `forbid=` patterns apply while recording. Each approved file's sidecar carries the producer,
+  - `forbid=` patterns apply on every run, recording or not (Amendment 7, E26). Each approved file's sidecar
+    carries the producer,
     `inputs_sha256`, and the scrubbers, never a timestamp (E17). `ApprovedProducersAreReal` refuses test-local or mock producers.
 - **Tier 2 (`signoff`):**
   - **Ledger:** the adopter passes the ledger path. Lines are `{"schema": "signoff/1", artifact, sha256, bytes,
@@ -646,7 +714,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
 4. `scrub`, `baseline`, and `signoff` (built, to Amendment 6's E16 to E21), each its own pull request, plus the
    prereg work PR #5 deferred: amendment files and their sign-off
    binding, the post hoc label in `prereg` and `render` (with the `read/3` or widened `read/2` it needs,
-   Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision.
+   Amendment 3), the "amendment after a read accepted" mutant, and Amendment 1's open count-horizon decision
+   (built to Amendment 7's E22 to E26).
 5. `invariants`.
 6. The v0.1 mutants: each part brings its own, and the no-op spec (`mutt_check.noop.toml`) is already enforced,
    so this step checks that the whole list below is present and caught.

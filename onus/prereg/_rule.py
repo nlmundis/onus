@@ -3,9 +3,10 @@
 import hashlib
 import json
 import re
+import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from datetime import date
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime
 from fractions import Fraction
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
@@ -36,6 +37,12 @@ _TOP = (
     "provenance",
 )
 _HYPOTHESIS = ("name", "test", "alternative", "method", "alpha", "family")
+AMEND_SCHEMA = "amend/1"
+_AMEND = ("schema", "amends", "reason", "record")
+# What ends an amendment's file stem, after the record's: the day it was written.
+_AMEND_STEM = r"\.amend-(\d{4}-\d{2}-\d{2})"
+# The fields of a record whose change touches every hypothesis, since each one's result depends on them.
+_SHARED = ("registered", "unit", "order_key", "horizon", "looks", "bound_artifacts")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 # An exact number as ASCII digits: "0.05", "1", or "1/3"; no signs, exponents, underscores, or other scripts.
@@ -98,12 +105,35 @@ class Horizon:
 
 
 @dataclass(frozen=True)
-class Rule:
-    """A loaded pre-registration record.
+class Amendment:
+    """One signed amendment a rule was loaded with.
 
     Attributes:
-        id: ``prereg_id`` of the file it was loaded from.
-        sha256: the sha256 of that file's bytes.
+        name: its file's name, ``<stem>.amend-YYYY-MM-DD.json``, beside the record.
+        id: its file's ``prereg_id``, which the rule takes when it is the newest amendment.
+        reason: why the record was amended, as the amendment states it.
+        signed_at: when the tier-2 sign-off that binds it was recorded, from the ledger: the one time here that
+            the record's author does not type.
+        touches: the hypotheses it touches, by name: those whose own fields it changed or added, every member of
+            a family whose correction or members it changed, and all of them when it changed a shared field.
+        raw: its file's bytes.
+    """
+
+    name: str
+    id: str
+    reason: str
+    signed_at: datetime
+    touches: tuple[str, ...]
+    raw: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
+class Rule:
+    """A loaded pre-registration record, as its newest signed amendment leaves it.
+
+    Attributes:
+        id: ``prereg_id`` of the file it was loaded from, or of its newest amendment when it has one.
+        sha256: the sha256 of the bytes of the file its id names.
         experiment: what the experiment is called.
         registered: the day it was registered.
         hypotheses: its hypotheses, in the record's order.
@@ -114,8 +144,9 @@ class Rule:
         looks: when its result is planned to be read; in this release, only at the horizon.
         bound_artifacts: the sha256 of each file the record binds, by path relative to the record.
         provenance: free-form notes on where the record came from.
-        raw: the record's bytes, which ``evaluate`` and ``record_read`` check the rule still matches; the bound
-            files are checked only by ``load``.
+        raw: the record's own bytes, which ``evaluate`` and ``record_read`` check the rule still matches, with its
+            amendments' bytes; the bound files and the sign-offs are checked only by ``load``.
+        amendments: the signed amendments applied, oldest first; empty for a record never amended.
     """
 
     id: str
@@ -131,6 +162,17 @@ class Rule:
     bound_artifacts: Mapping[str, str]
     provenance: Mapping[str, str]
     raw: bytes = field(repr=False)
+    amendments: tuple[Amendment, ...] = ()
+
+
+def base_stem(stem: str) -> str:
+    """Return the stem of the record that ``stem`` names: itself, or, for an amendment's, the record's it amends.
+
+    A read under an amended rule is named by the amendment's id, and is related to reads of the record it amends
+    by this stem, as an edited record's reads are.
+    """
+    found = re.fullmatch(rf"(.+?){_AMEND_STEM}", stem, re.DOTALL)
+    return stem if found is None else found.group(1)
 
 
 def _id(stem: str, raw: bytes) -> str:
@@ -313,6 +355,26 @@ def _unicode(value: object) -> None:
             pending.extend(item)
 
 
+def _decode(raw: bytes, what: str) -> object:
+    """Return the JSON value ``raw`` holds, refusing what a record may not: a float, a repeated key, bad Unicode.
+
+    Raises:
+        PreregError: ``raw`` is not UTF-8 or not JSON onus can read, or holds one of those.
+    """
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise PreregError(f"{what} is not UTF-8") from None
+    try:
+        value = json.loads(text, object_pairs_hook=_no_duplicates, parse_float=_no_float, parse_constant=_no_constant)
+    except PreregError:
+        raise
+    except (ValueError, RecursionError) as error:
+        raise PreregError(f"{what} is not JSON onus can read: {error}") from None
+    _unicode(value)
+    return value
+
+
 def _parse(raw: bytes, *, rule_id: str, root: Path | None) -> Rule:
     """Return the rule a prereg/1 record's bytes describe, checking each file it binds under ``root``.
 
@@ -322,18 +384,17 @@ def _parse(raw: bytes, *, rule_id: str, root: Path | None) -> Rule:
         PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires.
         BoundArtifactError: a bound file is missing or has changed.
     """
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise PreregError("the record is not UTF-8") from None
-    try:
-        record = json.loads(text, object_pairs_hook=_no_duplicates, parse_float=_no_float, parse_constant=_no_constant)
-    except PreregError:
-        raise
-    except (ValueError, RecursionError) as error:
-        raise PreregError(f"the record is not JSON onus can read: {error}") from None
-    _unicode(record)
-    record = _object(record, "the record", _TOP)
+    return _build(_decode(raw, "the record"), rule_id=rule_id, raw=raw, root=root)
+
+
+def _build(value: object, *, rule_id: str, raw: bytes, root: Path | None) -> Rule:
+    """Return the rule the decoded prereg/1 record ``value`` describes, with ``rule_id`` and ``raw`` as given.
+
+    Raises:
+        PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires.
+        BoundArtifactError: a bound file is missing or has changed.
+    """
+    record = _object(value, "the record", _TOP)
     if record["schema"] != SCHEMA:
         raise PreregError(f"schema must be {SCHEMA!r}, not {record['schema']!r}")
     if not isinstance(record["hypotheses"], list) or not record["hypotheses"]:
@@ -396,26 +457,193 @@ def _parse(raw: bytes, *, rule_id: str, root: Path | None) -> Rule:
     )
 
 
-def load(path: str | Path) -> Rule:
-    """Load and check the prereg/1 record at ``path``; bound artifacts are read relative to its folder.
+def _touches(before: Rule, after: Rule) -> tuple[str, ...]:
+    """Return the hypotheses of ``after`` that an amendment from ``before`` to it touches, in its order (E23).
+
+    A change to a field every result depends on (``_SHARED``) touches all of them. Otherwise a hypothesis is touched
+    when it is new under its name or any of its own fields changed, and so is every member of a family whose
+    correction or set of members changed. A change to the experiment's name or the provenance touches none.
+    """
+    names = [hypothesis.name for hypothesis in after.hypotheses]
+    if any(getattr(before, name) != getattr(after, name) for name in _SHARED):
+        return tuple(names)
+
+    def members(rule: Rule, family: str) -> set[str]:
+        return {hypothesis.name for hypothesis in rule.hypotheses if hypothesis.family == family}
+
+    earlier = {hypothesis.name: hypothesis for hypothesis in before.hypotheses}
+    touched = {hypothesis.name for hypothesis in after.hypotheses if earlier.get(hypothesis.name) != hypothesis}
+    for family, correction in after.families.items():
+        if before.families.get(family) != correction or members(before, family) != members(after, family):
+            touched |= members(after, family)
+    return tuple(name for name in names if name in touched)
+
+
+def _amended(previous: Rule, stem: str, name: str, raw: bytes, signed_at: datetime, root: Path | None) -> Rule:
+    """Return ``previous`` as the amend/1 file ``name``, whose bytes are ``raw``, leaves it.
+
+    ``stem`` is the original record's file stem. The amendment holds a whole prereg/1 record, checked as ``load``
+    checks one, and names in ``amends`` the id of the rule it amends: the record's, or the amendment before it's.
 
     Raises:
-        PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires; or it,
-            or its file stem, gives a name holding a line break.
+        PreregError: ``name`` is not ``<stem>.amend-YYYY-MM-DD.json`` with a real day no earlier than the day
+            ``previous`` was registered; the file is not an amend/1 object, names another rule in ``amends``, gives
+            no one-line reason, or holds a record ``load`` would refuse.
+        BoundArtifactError: the record it holds binds a file that is missing or has changed.
+    """
+    found = re.fullmatch(rf"{re.escape(_nfc(stem))}{_AMEND_STEM}\.json", _nfc(name), re.DOTALL)
+    if found is None:
+        raise PreregError(f"{name!r} is not named as an amendment of {stem!r} is: {stem}.amend-YYYY-MM-DD.json")
+    if iso_date(found.group(1), f"the day in {name}") < previous.registered:
+        raise PreregError(f"{name} is dated before {previous.id!r} was registered, on {previous.registered}")
+    try:
+        decoded = _decode(raw, name)
+    except PreregError as error:
+        raise PreregError(f"{name}: {error}") from None
+    value = _object(decoded, name, _AMEND)
+    if value["schema"] != AMEND_SCHEMA:
+        raise PreregError(f"{name}'s schema must be {AMEND_SCHEMA!r}, not {value['schema']!r}")
+    if value["amends"] != previous.id:
+        raise PreregError(
+            f"{name} amends {value['amends']!r}, but the rule before it is {previous.id!r}: each amendment names the "
+            "record, or the amendment before it, by its prereg id"
+        )
+    reason = _text(value["reason"], f"{name}'s reason")
+    amendment_id = _id(Path(name).stem, raw)
+    try:
+        after = _build(value["record"], rule_id=amendment_id, raw=raw, root=root)
+    except PreregError as error:  # BoundArtifactError too, kept as itself
+        raise type(error)(f"the record in {name}: {error}") from None
+    if after.registered != previous.registered:
+        raise PreregError(
+            f"the record in {name} is registered on {after.registered}, but {previous.id!r} was registered on "
+            f"{previous.registered}: an amendment cannot move the day a record was registered"
+        )
+    amendment = Amendment(name, amendment_id, reason, signed_at, _touches(previous, after), raw)
+    return replace(after, raw=previous.raw, amendments=(*previous.amendments, amendment))
+
+
+def _chain(stem: str, raw: bytes, amendments: list[tuple[str, bytes, datetime]], root: Path | None) -> Rule:
+    """Return the rule the record ``raw``, with file stem ``stem``, describes once each amendment is applied in turn.
+
+    Each amendment is its file's name, its bytes, and when its sign-off was recorded.
+    """
+    rule = _parse(raw, rule_id=_id(stem, raw), root=root)
+    for name, amendment_raw, signed_at in amendments:
+        rule = _amended(rule, stem, name, amendment_raw, signed_at, root)
+    return rule
+
+
+def _nfc(name: str) -> str:
+    """Return ``name`` in Unicode normal form C, as a file system that ignores normal form compares names."""
+    return unicodedata.normalize("NFC", name)
+
+
+def _amendment_names(path: Path) -> list[str]:
+    """Return the names of the files beside the record ``path`` that start as its amendments do, oldest first.
+
+    Raises:
+        PreregError: one is not named ``<stem>.amend-YYYY-MM-DD.json`` with a real day, or is not a file; it is
+            refused rather than passed over, since an amendment left out unseen would leave the rule unamended.
+    """
+    # Found without case and in one Unicode normal form, so that on a file system that ignores either an amendment
+    # whose name differs from the record's in case or in form is seen, and refused as misnamed when its case
+    # differs, rather than passed over; a difference of form alone is no difference.
+    stem = _nfc(path.stem)
+    prefix = f"{stem}.amend-".casefold()
+    names = sorted(entry.name for entry in path.parent.iterdir() if _nfc(entry.name).casefold().startswith(prefix))
+    for name in names:
+        found = re.fullmatch(rf"{re.escape(stem)}{_AMEND_STEM}\.json", _nfc(name), re.DOTALL)
+        if found is None or not (path.parent / name).is_file():
+            raise PreregError(
+                f"{name} beside {path.name} is named as its amendments are, but is not a file named "
+                f"{path.stem}.amend-YYYY-MM-DD.json; rename it or remove it"
+            )
+        iso_date(found.group(1), f"the day in {name}")
+    return names
+
+
+def _signed_at(ledger: Path, path: Path, raw: bytes) -> datetime:
+    """Return when the sign-off that binds the amendment at ``path``, whose bytes are ``raw``, was recorded.
+
+    The sign-off's artifact is ``prereg:`` and the amendment's path from the ledger's folder, so two records of one
+    stem in two folders are signed apart. The time is the ledger line's, which the record's author does not type.
+
+    Raises:
+        PreregError: the amendment is outside the ledger's folder, or the ledger does not say SIGNED for exactly
+            these bytes: UNSIGNED, CHANGED, REVOKED, or CORRUPT, each refused, so an amendment is applied only once
+            a person has signed it.
+    """
+    from onus.signoff import SignoffError, Status, check_signoff  # here, so onus.prereg imports without it loaded
+
+    ledger = ledger.resolve()
+    try:
+        relative = path.resolve().relative_to(ledger.parent)
+    except ValueError:
+        raise PreregError(
+            f"{path.name} is not inside {ledger.parent}, the folder of the ledger that signs it"
+        ) from None
+    artifact = f"prereg:{relative.as_posix()}"
+    try:
+        check = check_signoff(ledger, artifact, path)
+    except SignoffError as error:
+        raise PreregError(
+            f"{path.name} cannot be signed as {artifact!r}: {error}; rename the record and its amendments, or the "
+            "folders between them and the ledger, with letters, digits, '.', '_', and '-' alone"
+        ) from None
+    if check.status is not Status.SIGNED or check.line is None or check.line.sha256 != hashlib.sha256(raw).hexdigest():
+        raise PreregError(
+            f"{path.name} is not signed: {ledger} says {check.status.value.upper()} for {artifact!r} ({check.detail}); "
+            "an amendment is applied only once its sign-off is recorded, from the maintainer's terminal"
+        )
+    return check.line.at
+
+
+def load(path: str | Path, *, ledger: str | Path | None = None) -> Rule:
+    """Load and check the prereg/1 record at ``path``, with each amendment beside it, once each is signed.
+
+    Bound artifacts are read relative to the record's folder. An amendment is a file ``<stem>.amend-YYYY-MM-DD.json``
+    beside the record, holding ``{"schema": "amend/1", "amends": <prereg id>, "reason": ..., "record": <a whole
+    prereg/1 record>}``; amendments apply oldest first, and the rule takes the newest one's prereg id. Each must be
+    SIGNED in ``ledger`` as ``prereg:<its path from the ledger's folder>``, and the sign-off's time is kept on the
+    rule, so a read can be labelled post hoc when an amendment came after it.
+
+    Raises:
+        PreregError: the record is malformed, holds a key prereg/1 does not define, or lacks one it requires; it, or
+            its file stem, gives a name holding a line break; ``path`` is itself an amendment; amendments lie
+            beside it and no ``ledger`` is given; or an amendment is misnamed,
+            dated before the record was registered, moves its registration, is malformed, is out of its chain, lies
+            outside the ledger's folder, or is not signed for exactly the bytes read.
         BoundArtifactError: a bound file is missing or has changed.
     """
     path = Path(path)
+    if re.fullmatch(rf".+{_AMEND_STEM}", path.stem, re.DOTALL):
+        raise PreregError(f"{path.name} is an amendment: load the record it amends, and its amendments come with it")
     raw = path.read_bytes()
     _one_line(path.stem, "the record's file stem")  # the stem begins its prereg id, which every sentence names
-    return _parse(raw, rule_id=_id(path.stem, raw), root=path.parent)
+    signed = []
+    for name in _amendment_names(path):
+        if ledger is None:
+            raise PreregError(
+                f"{path.name} has the amendment {name} beside it: load it with ledger=, the sign-off ledger that binds "
+                "its amendments, so that each applies only once signed"
+            )
+        amendment = path.parent / name
+        amendment_raw = amendment.read_bytes()
+        signed.append((name, amendment_raw, _signed_at(Path(ledger), amendment, amendment_raw)))
+    return _chain(path.stem, raw, signed, path.parent)
 
 
 def check_intact(rule: Rule) -> None:
-    """Refuse a rule that no longer matches the record it was loaded from, such as one built by replace().
+    """Refuse a rule that no longer matches the record and amendments it was loaded from, as one built by replace().
+
+    It binds the bytes: the record's, and each amendment's, which the rule's id names through the chain. It does not
+    consult the ledger again, so an amendment's ``signed_at`` is taken from the rule; nothing decides a label by it.
 
     Raises:
-        PreregError: its id does not name its bytes, or its fields are not what those bytes say.
+        PreregError: its id does not name its newest file's bytes, or its fields are not what those bytes say.
     """
-    stem = rule.id.rpartition("@")[0]
-    if _id(stem, rule.raw) != rule.id or _parse(rule.raw, rule_id=rule.id, root=None) != rule:
+    stem = base_stem(rule.id.rpartition("@")[0])
+    rebuilt = _chain(stem, rule.raw, [(each.name, each.raw, each.signed_at) for each in rule.amendments], None)
+    if rebuilt != rule:
         raise PreregError(f"rule {rule.id!r} no longer matches the record it was loaded from; load it again")
