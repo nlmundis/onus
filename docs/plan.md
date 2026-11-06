@@ -448,6 +448,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **Messages name what clears them.** The environment refusal says to run from a terminal where the
       variable is not set, and every CORRUPT says that onus repairs nothing and the ledger is restored from
       version control.
+    - **`record` reads the kept copy before it says "already signed",** so signing the same content over a bad
+      copy says CORRUPT, as `check` does.
     - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
   - Known limits, most from this step's review:
     - A refused first sign-off leaves an empty ledger file behind.

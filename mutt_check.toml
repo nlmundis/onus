@@ -3263,6 +3263,16 @@ replace = '''.strip()
 '''
 
 [[mutant]]
+name = "already_signed_said_over_a_bad_kept_copy"
+why = "check says CORRUPT while record says all is well, so the operator is told the opposite of what the ledger can support."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if newest is not None and newest.sha256 is not None:
+            _kept(ledger, newest.sha256)  # first, so a bad copy'''
+replace = '''        if False:
+            _kept(ledger, newest.sha256)  # first, so a bad copy'''
+
+[[mutant]]
 name = "a_dropped_binding_not_shown"
 why = "A re-signing that leaves out a file the sign-off before bound would loosen the approval with nothing on the screen saying so."
 suites = ["tests.test_signoff.BoundTest"]

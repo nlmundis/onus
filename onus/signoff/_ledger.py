@@ -508,6 +508,8 @@ def record(
                     f"{each} is the ledger or a copy it keeps, which signing changes: it cannot be bound"
                 )
             bound[file.relative_to(ledger.parent).as_posix()] = _sha256(file.read_bytes())
+        if newest is not None and newest.sha256 is not None:
+            _kept(ledger, newest.sha256)  # first, so a bad copy reads as it does in check, not as "already signed"
         if newest is not None and (newest.sha256, dict(newest.bound)) == (digest, bound):
             raise SignoffError(f"{artifact!r} is already signed with this content and these bound files")
         signed_before = b""
