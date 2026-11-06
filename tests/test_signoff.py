@@ -596,7 +596,7 @@ class FlushTest(unittest.TestCase):
         plain.assert_not_called()
 
     def test_a_refused_full_flush_falls_back_to_fsync(self):
-        for code in (errno.EINVAL, errno.ENOTSUP, errno.ENOTTY):
+        for code in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOTTY):
             with self.subTest(code=code), self.full_sync(side_effect=OSError(code, "refused")):
                 with mock.patch.object(os, "fsync") as plain:
                     _ledger._flush(7)
@@ -624,6 +624,14 @@ class FlushTest(unittest.TestCase):
                 with mock.patch.object(os, "fsync") as plain:
                     _ledger._flush(7)
                 plain.assert_called_once_with(7)
+
+    def test_a_failed_fsync_is_raised_where_there_is_no_full_flush(self):
+        for what, module in (("no such command", types.SimpleNamespace()), ("no fcntl", None)):
+            with self.subTest(what=what), mock.patch.dict(sys.modules, {"fcntl": module}):
+                with mock.patch.object(os, "fsync", side_effect=OSError(errno.EIO, "failed")):
+                    with self.assertRaises(OSError) as raised:
+                        _ledger._flush(7)
+                self.assertEqual(raised.exception.errno, errno.EIO)
 
     def test_a_real_file_and_a_real_folder_flush(self):
         with tempfile.TemporaryDirectory() as folder:

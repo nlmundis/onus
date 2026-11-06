@@ -28,7 +28,7 @@ _TTY = "/dev/tty"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PREFIX = 8
 # What a file system answers when it cannot do F_FULLFSYNC, as opposed to trying and failing.
-_FULL_FLUSH_REFUSED = frozenset({errno.EINVAL, errno.ENOTSUP, errno.ENOTTY})
+_FULL_FLUSH_REFUSED = frozenset({errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOTTY})
 
 
 class SignoffError(ValueError):

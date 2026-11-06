@@ -3295,6 +3295,23 @@ replace = '''    if command is None:
 '''
 
 [[mutant]]
+name = "a_failed_fsync_swallowed_where_there_is_no_full_flush"
+why = "This is the only path Linux takes: a failed flush would pass silently and the line would be written behind it."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if command is None:
+        os.fsync(descriptor)
+        return
+'''
+replace = '''    if command is None:
+        try:
+            os.fsync(descriptor)
+        except OSError:
+            pass
+        return
+'''
+
+[[mutant]]
 name = "a_copy_already_there_not_flushed_before_the_line"
 why = "A copy a run left behind, or one restored by hand, may never have reached the disk; the line would outlive it."
 suites = ["tests.test_signoff.RecordTest"]

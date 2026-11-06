@@ -433,8 +433,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, written whole under another name
       and then renamed, so CHANGED can show a diff. The copy, however it got there, its folder, and the ledger's
       folder are flushed before the line that names it is written, with `F_FULLFSYNC` where the platform has it
-      (`fsync` on macOS stops at the drive's cache), so a line does not outlive its copy in a power loss. A kept
-      copy that no longer hashes to its name makes the
+      (`fsync` on macOS stops at the drive's cache), so a line does not outlive its copy in a power loss, as far as
+      the drive honours the request. A kept copy that no longer hashes to its name makes the
       artifact whose newest line signed it CORRUPT, whether or not its content changed, and stops the next
       `record`; one that is gone leaves CHANGED without a diff.
     - **The terminal is `/dev/tty`, opened by descriptor,** and must be a terminal: a file or pipe in its
