@@ -206,7 +206,7 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(pattern("x", "dates")("x"), "<dates-1>")
 
     def test_a_name_that_cannot_stand_in_a_token_is_refused(self):
-        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None):
+        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None, 5, ["run"], {"run": 1}):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)  # type: ignore[arg-type]
 

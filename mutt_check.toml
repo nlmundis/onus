@@ -2640,6 +2640,16 @@ find = '    if not callable(function) or not isinstance(module, str)'
 replace = '    if not isinstance(module, str)'
 
 [[mutant]]
+name = "a_name_that_cannot_be_hashed_given_a_bare_type_error"
+why = "A list as a name would raise 'unhashable type' from inside the check, where the docstring promises a ValueError that says what a name is."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if isinstance(name, str) and name in _OWN_NAMES:
+'''
+replace = '''    if name in _OWN_NAMES:
+'''
+
+[[mutant]]
 name = "a_plain_function_chained"
 why = "A chain's name lists its scrubbers; a bare function has none to list, so the record of what shaped an output would have a hole."
 suites = ["tests.test_scrub.ChainTest"]
@@ -2726,7 +2736,7 @@ name = "a_pattern_named_as_a_built_in_token"
 why = "A pattern writing <date-N> beside iso_dates would number from 1 as it does, so two different values would share a token."
 suites = ["tests.test_scrub.PatternTest"]
 file = "onus/scrub/_scrub.py"
-find = '''    if name in _OWN_NAMES:
+find = '''    if isinstance(name, str) and name in _OWN_NAMES:
 '''
 replace = '''    if False:
 '''

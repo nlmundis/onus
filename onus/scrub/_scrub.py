@@ -186,7 +186,7 @@ def pattern(regex: str, name: str) -> Scrubber:
     """
     if not isinstance(regex, str):
         raise TypeError(f"pattern takes the regex as a string, not {type(regex).__name__}")
-    if name in _OWN_NAMES:
+    if isinstance(name, str) and name in _OWN_NAMES:
         raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
     replace = _numbered(re.compile(regex), _named(name), same=_as_written, real=lambda text: True)
     return Scrubber(f"pattern({regex!r}, {name!r})", replace)
