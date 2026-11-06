@@ -28,6 +28,8 @@ _NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")
 _OWN_NAMES = frozenset({"date", "timestamp", "uuid", "hex"})
 # What may stand in a file's name beside letters and digits, so a path next to one of these is part of a longer path.
 _IN_A_NAME = r"\w.~+@-"
+# What the scrubbers here write. It stands where a value stood, so a path that runs on into one runs on all the same.
+_TOKEN = r"<[a-z][a-z0-9_]*(?:-[0-9]+)?>"
 _UUIDS = re.compile(f"{_BEFORE}[0-9A-Fa-f]{{8}}(?:-[0-9A-Fa-f]{{4}}){{3}}-[0-9A-Fa-f]{{12}}{_AFTER}")
 _HEX_RUNS = re.compile(f"{_BEFORE}[0-9A-Fa-f]+{_AFTER}")
 
@@ -207,9 +209,13 @@ def paths(mapping: Mapping[str | os.PathLike[str], str]) -> Scrubber:
 
     A path is replaced where it stands whole: at the start of a longer path too ("/srv/app/x" becomes "<app>/x"),
     but not where its last folder's name runs on ("/srv/app2" stays), nor where it is the end or the middle of
-    another path ("/home/u/srv/app" stays, as does the path of a URL). A letter or digit of any script, or one
-    of "_", ".", "~", "+", "@", "-", on either side makes it part of something longer, save a full stop that ends
-    a sentence; so a path glued to a flag, as in "-I/srv/app", stays too. The longest path is tried first, so a
+    another path ("/home/u/srv/app" stays, as do "https://h/srv/app" and "file:///srv/app"). A letter or digit of
+    any script, or one of "_", ".", "~", "+", "@", "-", on either side makes it part of something longer, save a
+    full stop that ends a sentence; so does a "/" before it, as in "a//srv/app", and a token shaped like this
+    module's on either side, so "/srv/app.<date-1>" stays as "/srv/app.2026-01-08" does. A path glued to a flag,
+    as in "-I/srv/app", stays too. When a mapped path holds a value another scrubber reads, such as a run's id,
+    put ``paths`` first in the ``chain``, or that value's token leaves the path unrecognized. The longest path
+    is tried first, so a
     folder mapped inside another mapped folder gets its own name. A path under /var, /tmp, or /etc is replaced in
     its /private spelling as well, and the reverse, because macOS reports a temporary folder either way. Two
     paths may share a name. The tokens are not numbered: the caller named each. The scrubber's own name lists
@@ -237,12 +243,20 @@ def paths(mapping: Mapping[str | os.PathLike[str], str]) -> Scrubber:
                 raise ValueError(f"{spelling!r} is given two names, {names[spelling]!r} and {name!r}")
     longest_first = sorted(names, key=lambda spelling: (-len(spelling), spelling))
     # Not the end of another path, and not where the last folder's name runs on; a full stop that ends a
-    # sentence does not run it on.
-    starts = f"(?<![{_IN_A_NAME}])"
-    ends = f"(?![{_IN_A_NAME}]*[{_IN_A_NAME.replace('.', '')}])"
-    regex = re.compile(starts + "(?:" + "|".join(re.escape(spelling) for spelling in longest_first) + ")" + ends)
+    # sentence does not run it on. A lookbehind cannot read a token, whose length varies, so a token is matched
+    # with all that runs on from it, and left.
+    starts = f"(?<![/{_IN_A_NAME}])"
+    ends = f"(?![{_IN_A_NAME}]*(?:[{_IN_A_NAME.replace('.', '')}]|{_TOKEN}))"
+    after_a_token = f"{_TOKEN}[/{_IN_A_NAME}]*"
+    regex = re.compile(
+        after_a_token + "|" + starts + "(" + "|".join(re.escape(spelling) for spelling in longest_first) + ")" + ends
+    )
     listed = ", ".join(sorted(set(names.values())))
-    return Scrubber(f"paths({listed})", lambda text: regex.sub(lambda match: f"<{names[match[0]]}>", text))
+
+    def replace(text: str) -> str:
+        return regex.sub(lambda match: f"<{names[match[1]]}>" if match[1] else match[0], text)
+
+    return Scrubber(f"paths({listed})", replace)
 
 
 def redactor(function: Callable[[str], str]) -> Scrubber:

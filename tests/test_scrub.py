@@ -291,10 +291,48 @@ class PathsTest(unittest.TestCase):
             "a@/srv/app",
             "caf\u00e9/srv/app",
             "-I/srv/app",
+            "/home/u//srv/app",
+            "a//srv/app",
+            "//srv/app",
+            "http://srv/app",
+            "file:///srv/app",
         ):
             with self.subTest(text=text):
                 self.assertEqual(scrubber(text), text)
-        self.assertEqual(scrubber("--root=/srv/app file:///srv/app (/srv/app)"), "--root=<app> file://<app> (<app>)")
+        self.assertEqual(scrubber("--root=/srv/app (/srv/app) x=/srv/app/y"), "--root=<app> (<app>) x=<app>/y")
+
+    def test_a_token_stands_where_its_value_stood(self):
+        scrubber = paths({"/srv/app": "app"})
+        user = pattern(r"(?<=/home/)[a-z]+", "user")
+        for earlier, text in (
+            (iso_dates(), "/srv/app.2026-01-08.log"),
+            (iso_timestamps(), "/srv/app.2026-01-08T11:00:00Z"),
+            (hex_ids(40), f"/srv/app.{SHA_A}/x"),
+            (hex_ids(40), f"/srv/app{SHA_A}"),
+            (uuids(), f"/data/{UUID_A}/srv/app/x"),
+            (uuids(), f"{UUID_A}-/srv/app"),
+            (user, "/home/alice/srv/app/x"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(chain(earlier, scrubber)(text), chain(scrubber, earlier)(text))
+                self.assertNotIn("<app>", chain(earlier, scrubber)(text))
+
+    def test_a_token_apart_from_a_path_does_not_hide_it(self):
+        scrubber = chain(iso_dates(), paths({"/srv/app": "app"}))
+        for text, expected in (
+            ("/srv/app/2026-01-08.log", "<app>/<date-1>.log"),
+            ("2026-01-08 /srv/app", "<date-1> <app>"),
+            ("2026-01-08:/srv/app", "<date-1>:<app>"),
+            ("/srv/app. 2026-01-08", "<app>. <date-1>"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(scrubber(text), expected)
+
+    def test_what_paths_wrote_scrubs_to_itself(self):
+        scrubber = paths({"/srv/app": "app", "/data": "data"})
+        once = scrubber("/data/srv/app/x and /srv/app/y")
+        self.assertEqual(once, "<data>/srv/app/x and <app>/y")
+        self.assertEqual(scrubber(once), once)
 
     def test_a_trailing_slash_and_a_pathlike_are_read_as_the_folder(self):
         self.assertEqual(paths({"/srv/app/": "app"})("/srv/app/x"), "<app>/x")

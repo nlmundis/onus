@@ -347,7 +347,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - `paths` also replaces the other spelling of a path under `/var`, `/tmp`, or `/etc`, with or without
       `/private`; the plan named only `/var`. It replaces a path only where it stands whole: not where its last
       folder's name runs on ("/srv/app2"), and not where it is the end or the middle of another path
-      ("/home/u/srv/app", or a URL's path). It tries the longest mapped path first. Its own name lists the
+      ("/home/u/srv/app", "a//srv/app", "https://h/srv/app", or "file:///srv/app"). A token shaped like this
+      module's on either side counts as part of a longer name, so "/srv/app.<date-1>" stays as
+      "/srv/app.2026-01-08" does. It tries the longest mapped path first. Its own name lists the
       names it writes and never the paths, which differ by machine and by run and would otherwise be recorded
       beside every approved file.
     - A token's name is a lower-case letter followed by lower-case letters, digits, or underscores; `pattern`
@@ -356,6 +358,17 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   - Known limits, most from this step's review:
     - A text that already holds something shaped like a token ("<date-1>") is not told apart from a scrubbed
       one, and a token whose name is itself a hex run of a listed length is replaced again by a later `hex_ids`.
+      `paths` reads such a shape as a value too, so the path in "<b>/srv/app" stays and fails its comparison.
+    - A file URL's path stays, though it names a local path, so a `file:///` URL into a folder that changes from
+      run to run fails its comparison, visibly; `pattern` can name it.
+    - `paths`'s boundary reads one character on each side, from a fixed class, so what stands outside that class
+      does not mark a longer path: "file:/srv/app", "http://[::1]/srv/app", "/mnt/*/srv/app", and "(1)/srv/app"
+      are replaced, as is the path before a combining mark or before "./x". A ":" cannot join the class, since
+      it separates the entries of a search path.
+    - The order of a chain can change what `paths` does. A mapped path that holds a value another scrubber reads,
+      as "/tmp/<a uuid>" does, is no longer that path once the value is a token, so `paths` goes first there; and
+      a value whose first or last character is not a name's, as `pattern` may match ("/srv/app:8080"), or text a
+      `redactor` writes, is not read as part of the name its value would have been.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
       read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
     - Two patterns given one name in a chain each number from 1, so two different values can share a token.
