@@ -3272,6 +3272,72 @@ find = '''            + "".join(f"  no longer bound: {name}\n" for name in unbou
 replace = ''
 
 [[mutant]]
+name = "a_changed_bound_file_hidden_behind_a_content_change"
+why = "A check that stops at the content would leave the reader to re-sign without knowing the approval's other input moved."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    note = f"; bound files changed or missing since the sign-off: {changed}" if changed else ""
+'''
+replace = '''    note = ""
+'''
+
+[[mutant]]
+name = "a_changed_bound_file_not_marked_at_a_re_signing"
+why = "The screen would list a new hash for the file with nothing to say it differs from what the person approved before."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''if before not in (None, digest) else ""'''
+replace = '''if False else ""'''
+
+[[mutant]]
+name = "every_file_bound_before_marked_as_changed"
+why = "A mark on an unchanged file says nothing, and hides the one that did change."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''if before not in (None, digest) else ""'''
+replace = '''if before is not None else ""'''
+
+[[mutant]]
+name = "bound_files_compared_with_a_revocation"
+why = "A revocation binds nothing, so a re-signing after one would show no changed file and no dropped binding."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        last_signed = _newest((line for line in lines if not line.revokes), artifact)
+'''
+replace = '''        last_signed = newest
+'''
+
+[[mutant]]
+name = "an_unreadable_bound_file_turns_a_changed_content_into_a_refusal"
+why = "The content already decides CHANGED; raising would take the verdict and its diff from the reader."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        except OSError:
+            unreadable.append(name)
+'''
+replace = '''        except ZeroDivisionError:
+            unreadable.append(name)
+'''
+
+[[mutant]]
+name = "an_unreadable_bound_file_not_named"
+why = "The reader would take the list of changed files as the whole of what could not be vouched for."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    return note + (f"; bound files that cannot be read: {unreadable}" if unreadable else "")
+'''
+replace = '''    return note
+'''
+
+[[mutant]]
+name = "a_newly_bound_file_marked_as_changed"
+why = "A file bound for the first time has nothing to have changed from; marking every line trains the eye past the mark."
+suites = ["tests.test_signoff.BoundTest"]
+file = "onus/signoff/_ledger.py"
+find = '''if before not in (None, digest) else ""'''
+replace = '''if before != digest else ""'''
+
+[[mutant]]
 name = "the_ledger_bound_to_its_own_sign_off"
 why = "The append changes the ledger, so such a sign-off could never read SIGNED."
 suites = ["tests.test_signoff.BoundTest"]

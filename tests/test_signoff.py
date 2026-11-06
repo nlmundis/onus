@@ -520,6 +520,74 @@ class BoundTest(Desk):
         self.rubric.unlink()
         self.assertEqual(self.status(), Status.CHANGED)
 
+    def test_a_changed_bound_file_is_named_when_the_content_changed_too(self):
+        self.sign(bind=[self.rubric])
+        self.rubric.write_text("be harsh\n", encoding="utf-8")
+        self.truth.write_bytes(SECOND)
+        check = check_signoff(self.ledger, ARTIFACT, self.truth)
+        self.assertEqual(check.status, Status.CHANGED)
+        self.assertIn("is not the content signed", check.detail)
+        self.assertIn("['rubrics/v3.md']", check.detail)
+        assert check.diff is not None
+        self.assertIn('+{"a": "dog"}', check.diff)
+
+    def test_a_changed_bound_file_is_named_when_the_content_is_missing_or_its_copy_is_not_kept(self):
+        self.sign(bind=[self.rubric])
+        self.rubric.write_text("be harsh\n", encoding="utf-8")
+        self.truth.write_bytes(SECOND)
+        shutil.rmtree(self.folder / "ledger.jsonl.blobs")
+        self.assertIn("['rubrics/v3.md']", check_signoff(self.ledger, ARTIFACT, self.truth).detail)
+        self.truth.unlink()
+        self.assertIn("['rubrics/v3.md']", check_signoff(self.ledger, ARTIFACT, self.truth).detail)
+
+    def test_a_re_signing_marks_the_bound_files_that_changed_since_the_line_it_supersedes(self):
+        steady = self.folder / "rubrics" / "steady.md"
+        steady.write_text("steady\n", encoding="utf-8")
+        self.sign(bind=[self.rubric, steady])
+        self.rubric.write_text("be harsh\n", encoding="utf-8")
+        added = self.folder / "rubrics" / "added.md"
+        added.write_text("added\n", encoding="utf-8")
+        self.truth.write_bytes(SECOND)
+        self.sign(bind=[self.rubric, steady, added])
+        second_screen = self.terminal.shown().rpartition("Sign-off of")[2]
+        self.assertIn(
+            f"  bound: rubrics/v3.md {sha('be harsh' + chr(10))} (changed since the last sign-off)\n", second_screen
+        )
+        self.assertIn(f"  bound: rubrics/steady.md {sha('steady' + chr(10))}\n", second_screen)
+        self.assertIn(f"  bound: rubrics/added.md {sha('added' + chr(10))}\n", second_screen)
+
+    def test_a_re_signing_after_a_revocation_compares_bound_files_with_the_last_sign_off(self):
+        steady = self.folder / "rubrics" / "steady.md"
+        steady.write_text("steady\n", encoding="utf-8")
+        line = self.sign(bind=[self.rubric, steady])
+        self.terminal.type(line.line_sha256[:8])
+        revoke(self.ledger, ARTIFACT, reviewed_by="A Reviewer")
+        self.rubric.write_text("be harsh\n", encoding="utf-8")
+        self.sign(bind=[self.rubric])
+        screen = self.terminal.shown().rpartition("Sign-off of")[2]
+        marked = f"  bound: rubrics/v3.md {sha('be harsh' + chr(10))} (changed since the last sign-off)\n"
+        self.assertIn(marked, screen)
+        self.assertIn("  no longer bound: rubrics/steady.md\n", screen)
+
+    def test_a_bound_file_that_cannot_be_read_leaves_a_changed_content_changed(self):
+        other = self.folder / "rubrics" / "notes.md"
+        other.write_text("notes\n", encoding="utf-8")
+        self.sign(bind=[self.rubric, other])
+        self.truth.write_bytes(SECOND)
+        self.rubric.write_text("be harsh\n", encoding="utf-8")
+        real = pathlib.Path.read_bytes
+
+        def read(path: pathlib.Path) -> bytes:
+            if path.name == "notes.md":
+                raise PermissionError(13, "denied")
+            return real(path)
+
+        with mock.patch.object(pathlib.Path, "read_bytes", read):
+            check = check_signoff(self.ledger, ARTIFACT, self.truth)
+        self.assertEqual(check.status, Status.CHANGED)
+        self.assertIn("bound files changed or missing since the sign-off: ['rubrics/v3.md']", check.detail)
+        self.assertIn("bound files that cannot be read: ['rubrics/notes.md']", check.detail)
+
     def test_the_same_content_is_signed_again_when_what_it_is_bound_to_changed(self):
         self.sign(bind=[self.rubric])
         self.rubric.write_text("be harsh\n", encoding="utf-8")
