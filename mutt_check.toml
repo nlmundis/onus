@@ -2790,6 +2790,28 @@ find = '        folder = Path(tempfile.mkdtemp(prefix="onus-received-"))'
 replace = '        folder = approved.parent'
 
 [[mutant]]
+name = "a_received_write_that_fails_raises"
+why = "A file name too long, or a full disk, would raise from inside the failure and replace the diff with an OSError."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except OSError as error:
+        return f"The received text could not be written to the temporary folder ({error})."
+'''
+replace = '''    except NotADirectoryError as error:
+        return f"The received text could not be written to the temporary folder ({error})."
+'''
+
+[[mutant]]
+name = "a_failed_received_write_keeps_the_reason_to_itself"
+why = "Without the system's reason, the reader cannot tell a full disk from a name too long."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        return f"The received text could not be written to the temporary folder ({error})."
+'''
+replace = '''        return f"The received text could not be written to the temporary folder ({type(error)})."
+'''
+
+[[mutant]]
 name = "the_received_file_written_to_a_path_anyone_can_work_out"
 why = "Where the temporary folder is shared, another user could plant a link at that path first, and a failing run would overwrite the link's target with the received text."
 suites = ["tests.test_baseline.ComparingTest"]

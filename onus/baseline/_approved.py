@@ -253,7 +253,7 @@ class ApprovedMixin:
         if not approved.is_file() or not meta.is_file():
             self.fail(
                 f"{approved.name} has no approved file, or no record beside it, in {folder}. "
-                f"{_received(approved, received)} Read it, then {_REMEDY}."
+                f"{_received(approved, received)} Once what it produces has been read, {_REMEDY}."
             )
         if approved.read_bytes() != received.encode("utf-8"):
             expected = approved.read_bytes().decode("utf-8", "replace")

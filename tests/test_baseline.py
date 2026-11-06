@@ -7,6 +7,7 @@ import importlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import stat
 import sys
@@ -148,7 +149,7 @@ class RecordingTest(Sandbox):
         self.assertEqual(self.files(self.repo), before)
         self.assertEqual(self.received().read_text(encoding="utf-8"), RECEIPT)
         message = str(raised.exception)
-        self.assertIn(f"The received text is at {self.received()}. Read it, then run the suite once with", message)
+        self.assertIn(f"The received text is at {self.received()}. Once what it produces has been read, run", message)
         self.assertIn("ONUS_APPROVE_ROOT set to the checkout's top level", message)
 
     def test_a_differing_approved_file_is_never_overwritten_by_a_plain_run(self):
@@ -251,6 +252,7 @@ class ComparingTest(Sandbox):
         with self.assertRaises(AssertionError) as raised:
             self.case().assertApproved(self.shop.receipt, 7, total="9.99")
         message = str(raised.exception)
+        self.assertEqual(self.files(self.repo), [path for path in before if path.startswith("repo/")])
         received = self.received()
         self.assertEqual(received.read_bytes(), b"order 7\ntotal 9.99\nprinted 2026-01-08\n")
         self.assertEqual(self.files(), sorted([*before, received.relative_to(self.top).as_posix()]))
@@ -277,11 +279,13 @@ class ComparingTest(Sandbox):
         for _ in range(2):
             with self.assertRaises(AssertionError) as raised:
                 self.case().assertApproved(self.shop.receipt, 7, total="9.99")
-            paths.append(pathlib.Path(str(raised.exception).split("The received text is at ")[1].split(". ")[0]))
+            found = re.search(r"The received text is at (.+\.received\.md)\.", str(raised.exception))
+            assert found is not None
+            paths.append(pathlib.Path(found[1]))
         self.assertNotEqual(paths[0].parent, paths[1].parent)
         for path in paths:
             self.assertEqual(path.parent.parent, self.scratch)
-            self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode) & 0o777, 0o700)  # setgid may be inherited
 
     def test_a_received_text_that_cannot_be_written_still_fails_with_the_diff(self):
         self.record()
@@ -291,6 +295,14 @@ class ComparingTest(Sandbox):
             self.case().assertApproved(self.shop.receipt, 7, total="9.99")
         self.assertIn("The received text could not be written to ", str(raised.exception))
         self.assertIn("-total 0.00\n+total 9.99\n", str(raised.exception))
+
+    def test_a_write_that_fails_after_the_folder_is_made_is_reported_and_asks_nothing_of_what_was_not_written(self):
+        with self.assertRaises(AssertionError) as raised:
+            self.case().assertApproved(self.shop.receipt, 7, label="x" * 300)
+        message = str(raised.exception)
+        self.assertIn("The received text could not be written to the temporary folder (", message)
+        self.assertIn("too long", message)
+        self.assertNotIn("Read it", message)
 
     def test_a_forbidden_text_fails_a_plain_run_too(self):
         self.record()
