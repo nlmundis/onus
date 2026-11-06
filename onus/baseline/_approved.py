@@ -86,9 +86,9 @@ def _tests_of(case: object, folder: Path) -> tuple[Path, ...]:
     # The last name is the folder that holds the test's file, and each name before it is one folder further up.
     folders = [own, *own.parents][: len(names)][::-1]
     named = [path for name, path in zip(names, folders, strict=False) if name in _TEST_PACKAGES]
-    top = (named or folders or [own])[0]
     others = [path for path in folders[0].rglob("*") if path.name in _TEST_PACKAGES] if named else []
-    return tuple(dict.fromkeys((top, *others, folder.resolve().parent)))
+    tests = (named + others) or (folders or [own])[:1]
+    return tuple(dict.fromkeys((*tests, folder.resolve().parent)))
 
 
 def unreal(name: str, tests: Iterable[Path]) -> str | None:

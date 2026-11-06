@@ -2904,7 +2904,7 @@ name = "only_the_approved_folder_s_parent_counted_as_the_tests"
 why = "With approved files kept in a subfolder, or outside the tests, a helper elsewhere in the test package would be accepted as code under test."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    return tuple(dict.fromkeys((top, *others, folder.resolve().parent)))
+find = '''    return tuple(dict.fromkeys((*tests, folder.resolve().parent)))
 '''
 replace = '''    return (folder.resolve().parent,)
 '''
@@ -2914,9 +2914,9 @@ name = "only_the_test_package_counted_as_the_tests"
 why = "Approved files kept beside product code would let that folder's own helpers through."
 suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    return tuple(dict.fromkeys((top, *others, folder.resolve().parent)))
+find = '''    return tuple(dict.fromkeys((*tests, folder.resolve().parent)))
 '''
-replace = '''    return (top,)
+replace = '''    return tuple(tests)
 '''
 
 [[mutant]]
@@ -2924,9 +2924,9 @@ name = "a_nested_test_package_s_top_misplaced"
 why = "For tests two packages deep, only their own folder would count, and a shared helper one level up would be accepted."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    top = (named or folders or [own])[0]
+find = '''    tests = (named + others) or (folders or [own])[:1]
 '''
-replace = '''    top = own
+replace = '''    tests = [own]
 '''
 
 [[mutant]]
@@ -2950,23 +2950,13 @@ replace = '''_TEST_PACKAGES = frozenset({"tests"})
 '''
 
 [[mutant]]
-name = "the_innermost_package_named_tests_taken"
-why = "A tests package nested in tests would narrow the tests to it, so a helper in the outer tests package would pass as code under test."
-suites = ["tests.test_baseline.ProducerTest"]
-file = "onus/baseline/_approved.py"
-find = '''    top = (named or folders or [own])[0]
-'''
-replace = '''    top = (named[::-1] or folders or [own])[0]
-'''
-
-[[mutant]]
 name = "any_package_read_as_the_test_package"
 why = "With no name to go by, the innermost package would be taken for the tests, and a code package would pass with its helpers beside its tests; nothing there shows where the code ends, so it must fail toward refusing."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    top = (named or folders or [own])[0]
+find = '''    tests = (named + others) or (folders or [own])[:1]
 '''
-replace = '''    top = (named or [own])[0]
+replace = '''    tests = (named + others) or [own]
 '''
 
 [[mutant]]
@@ -2984,9 +2974,9 @@ name = "a_module_in_no_package_has_no_folder"
 why = "A test run by discover from its own folder has no package names, so the tests would be an empty list and the check would stop with an IndexError."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    top = (named or folders or [own])[0]
+find = '''    tests = (named + others) or (folders or [own])[:1]
 '''
-replace = '''    top = (named or folders)[0]
+replace = '''    tests = (named + others) or folders[:1]
 '''
 
 [[mutant]]
