@@ -64,10 +64,14 @@ def _named(name: str) -> str:
     """Return ``name`` when it can stand in a token.
 
     Raises:
-        ValueError: ``name`` is not a lower-case letter followed by lower-case letters, digits, or underscores.
+        ValueError: ``name`` is not a plain ``str`` of a lower-case letter followed by lower-case letters, digits,
+            or underscores. A subclass of ``str`` is refused, since it can hash or print as anything.
     """
     if type(name) is not str or not _NAME.match(name):
-        raise ValueError(f"a token's name is a lower-case letter, then lower-case letters, digits, or _: not {name!r}")
+        raise ValueError(
+            "a token's name is a lower-case letter, then lower-case letters, digits, or _, in a plain str: "
+            f"not {name!r}"
+        )
     return name
 
 
@@ -192,7 +196,8 @@ def pattern(regex: str, name: str) -> Scrubber:
     """
     if not isinstance(regex, str):
         raise TypeError(f"pattern takes the regex as a string, not {type(regex).__name__}")
-    if _named(name) in _OWN_NAMES:
+    name = _named(name)
+    if name in _OWN_NAMES:
         raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
     replace = _numbered(re.compile(regex), name, same=_as_written, real=lambda text: True)
     return Scrubber(f"pattern({regex!r}, {name!r})", replace, _numbers=frozenset({name}))

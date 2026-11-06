@@ -2654,9 +2654,13 @@ name = "a_name_that_cannot_be_hashed_given_a_bare_type_error"
 why = "A list as a name would raise 'unhashable type' from inside the check, where the docstring promises a ValueError that says what a name is."
 suites = ["tests.test_scrub.PatternTest"]
 file = "onus/scrub/_scrub.py"
-find = '''    if _named(name) in _OWN_NAMES:
+find = '''    name = _named(name)
+    if name in _OWN_NAMES:
+        raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
 '''
 replace = '''    if name in _OWN_NAMES:
+        raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
+    name = _named(name)
 '''
 
 [[mutant]]
@@ -2784,7 +2788,7 @@ name = "a_pattern_named_as_a_built_in_token"
 why = "A pattern writing <date-N> beside iso_dates would number from 1 as it does, so two different values would share a token."
 suites = ["tests.test_scrub.PatternTest"]
 file = "onus/scrub/_scrub.py"
-find = '''    if _named(name) in _OWN_NAMES:
+find = '''    if name in _OWN_NAMES:
 '''
 replace = '''    if False:
 '''
