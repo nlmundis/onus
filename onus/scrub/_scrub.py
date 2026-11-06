@@ -44,7 +44,7 @@ class Scrubber:
 
     name: str
     _replace: Callable[[str], str]
-    _numbers: frozenset[str] = field(default=frozenset())
+    _numbers: frozenset[str] = field(default=frozenset(), kw_only=True)
 
     def __call__(self, text: str) -> str:
         """Return ``text`` scrubbed.
@@ -66,7 +66,7 @@ def _named(name: str) -> str:
     Raises:
         ValueError: ``name`` is not a lower-case letter followed by lower-case letters, digits, or underscores.
     """
-    if not isinstance(name, str) or not _NAME.match(name):
+    if type(name) is not str or not _NAME.match(name):
         raise ValueError(f"a token's name is a lower-case letter, then lower-case letters, digits, or _: not {name!r}")
     return name
 
@@ -122,7 +122,8 @@ def iso_dates() -> Scrubber:
     that ``iso_timestamps`` does not read, such as "2026-01-08 25:00", is replaced here; one followed by "T" runs
     on into a letter, and stays.
     """
-    return Scrubber("iso_dates", _numbered(_DATES, "date", same=_as_written, real=_is_date), frozenset({"date"}))
+    replace = _numbered(_DATES, "date", same=_as_written, real=_is_date)
+    return Scrubber("iso_dates", replace, _numbers=frozenset({"date"}))
 
 
 def iso_timestamps() -> Scrubber:
@@ -135,7 +136,7 @@ def iso_timestamps() -> Scrubber:
     alike; the same moment in two zones is two values.
     """
     replace = _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp)
-    return Scrubber("iso_timestamps", replace, frozenset({"timestamp"}))
+    return Scrubber("iso_timestamps", replace, _numbers=frozenset({"timestamp"}))
 
 
 def uuids() -> Scrubber:
@@ -144,7 +145,7 @@ def uuids() -> Scrubber:
     Letter case does not make two values: a UUID in capitals and the same one in lower case share a number.
     """
     replace = _numbered(_UUIDS, "uuid", same=str.lower, real=lambda text: True)
-    return Scrubber("uuids", replace, frozenset({"uuid"}))
+    return Scrubber("uuids", replace, _numbers=frozenset({"uuid"}))
 
 
 def hex_ids(*lengths: int) -> Scrubber:
@@ -172,7 +173,7 @@ def hex_ids(*lengths: int) -> Scrubber:
 
     listed = ", ".join(str(length) for length in sorted(wanted))
     replace = _numbered(_HEX_RUNS, "hex", same=str.lower, real=real)
-    return Scrubber(f"hex_ids({listed})", replace, frozenset({"hex"}))
+    return Scrubber(f"hex_ids({listed})", replace, _numbers=frozenset({"hex"}))
 
 
 def pattern(regex: str, name: str) -> Scrubber:
@@ -191,10 +192,10 @@ def pattern(regex: str, name: str) -> Scrubber:
     """
     if not isinstance(regex, str):
         raise TypeError(f"pattern takes the regex as a string, not {type(regex).__name__}")
-    if name in _OWN_NAMES:
+    if _named(name) in _OWN_NAMES:
         raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
-    replace = _numbered(re.compile(regex), _named(name), same=_as_written, real=lambda text: True)
-    return Scrubber(f"pattern({regex!r}, {name!r})", replace, frozenset({name}))
+    replace = _numbered(re.compile(regex), name, same=_as_written, real=lambda text: True)
+    return Scrubber(f"pattern({regex!r}, {name!r})", replace, _numbers=frozenset({name}))
 
 
 def _spellings(path: str) -> list[str]:
@@ -301,4 +302,4 @@ def chain(*scrubbers: Scrubber) -> Scrubber:
             text = scrubber(text)
         return text
 
-    return Scrubber("chain(" + ", ".join(scrubber.name for scrubber in scrubbers) + ")", replace, numbers)
+    return Scrubber("chain(" + ", ".join(scrubber.name for scrubber in scrubbers) + ")", replace, _numbers=numbers)

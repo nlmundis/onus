@@ -1,5 +1,6 @@
 """onus.scrub: run-to-run values replaced by tokens numbered by value, and nothing else touched."""
 
+import dataclasses
 import functools
 import pathlib
 import re
@@ -17,6 +18,12 @@ UUID_B = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
 def shout(text: str) -> str:
     return text.upper()
+
+
+class Unhashable(str):
+    """A string that cannot be hashed, as any subclass that defines ``__eq__`` alone cannot be."""
+
+    __hash__ = None  # type: ignore[assignment]
 
 
 class Rules:
@@ -206,9 +213,20 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(pattern("x", "dates")("x"), "<dates-1>")
 
     def test_a_name_that_cannot_stand_in_a_token_is_refused(self):
-        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None):
+        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None, 5, ["run"], {"run": 1}):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)  # type: ignore[arg-type]
+
+    def test_a_subclass_of_str_is_not_a_name(self):
+        for name in (Unhashable("run"), Unhashable("date")):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+                pattern("x", name)
+
+    def test_a_bad_name_is_refused_whatever_the_regex(self):
+        with self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+            pattern("(", ["run"])  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "own scrubbers write"):
+            pattern("(", "date")
 
     def test_a_regex_that_matches_nothing_at_all_is_refused_when_it_does(self):
         scrubber = pattern("x*", "x")
@@ -389,6 +407,13 @@ class ChainTest(unittest.TestCase):
     def test_names_that_differ_and_paths_that_share_a_name_may_stand_in_one_chain(self):
         scrubber = chain(hex_ids(40), pattern("run-[a-z]+", "run"), paths({"/srv/a": "w"}), paths({"/srv/b": "w"}))
         self.assertEqual(scrubber(f"{SHA_A} run-a /srv/a /srv/b"), "<hex-1> <run-1> <w> <w>")
+
+    def test_what_a_scrubber_numbers_is_no_field_a_subclass_must_follow(self):
+        @dataclasses.dataclass(frozen=True)
+        class Noted(Scrubber):
+            note: str
+
+        self.assertEqual(Noted("noted", shout, "why")("a"), "A")
 
     def test_it_needs_a_scrubber_and_takes_nothing_else(self):
         with self.assertRaisesRegex(ValueError, "at least one scrubber"):

@@ -2586,9 +2586,9 @@ name = "a_token_name_that_breaks_the_token_accepted"
 why = 'A name holding ">", a space, or a line break would write a token no reader or later scrubber can tell from text.'
 suites = ["tests.test_scrub.PatternTest", "tests.test_scrub.PathsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''    if not isinstance(name, str) or not _NAME.match(name):
+find = '''    if type(name) is not str or not _NAME.match(name):
 '''
-replace = '''    if not isinstance(name, str):
+replace = '''    if type(name) is not str:
 '''
 
 [[mutant]]
@@ -2640,6 +2640,26 @@ find = '    if not callable(function) or not isinstance(module, str)'
 replace = '    if not isinstance(module, str)'
 
 [[mutant]]
+name = "a_subclass_of_str_taken_as_a_name"
+why = "A subclass can hash or print as anything, so it could write a built-in token past the refusal."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if type(name) is not str or not _NAME.match(name):
+'''
+replace = '''    if not isinstance(name, str) or not _NAME.match(name):
+'''
+
+[[mutant]]
+name = "a_name_that_cannot_be_hashed_given_a_bare_type_error"
+why = "A list as a name would raise 'unhashable type' from inside the check, where the docstring promises a ValueError that says what a name is."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if _named(name) in _OWN_NAMES:
+'''
+replace = '''    if name in _OWN_NAMES:
+'''
+
+[[mutant]]
 name = "a_plain_function_chained"
 why = "A chain's name lists its scrubbers; a bare function has none to list, so the record of what shaped an output would have a hole."
 suites = ["tests.test_scrub.ChainTest"]
@@ -2664,11 +2684,11 @@ name = "a_nested_chain_forgets_what_it_numbers"
 why = "A chain inside a chain would hide its names from the outer one, so nesting would be the way round the refusal."
 suites = ["tests.test_scrub.ChainTest"]
 file = "onus/scrub/_scrub.py"
-find = '''scrubber in scrubbers) + ")", replace, numbers)'''
+find = '''scrubber in scrubbers) + ")", replace, _numbers=numbers)'''
 replace = '''scrubber in scrubbers) + ")", replace)'''
 
 [[mutant]]
-name = "a_chain_compares_only_the_first_name"
+name = "a_chain_that_remembers_no_names"
 why = "With nothing added after each scrubber, no two would ever overlap, and the refusal would never fire."
 suites = ["tests.test_scrub.ChainTest"]
 file = "onus/scrub/_scrub.py"
@@ -2764,7 +2784,7 @@ name = "a_pattern_named_as_a_built_in_token"
 why = "A pattern writing <date-N> beside iso_dates would number from 1 as it does, so two different values would share a token."
 suites = ["tests.test_scrub.PatternTest"]
 file = "onus/scrub/_scrub.py"
-find = '''    if name in _OWN_NAMES:
+find = '''    if _named(name) in _OWN_NAMES:
 '''
 replace = '''    if False:
 '''
@@ -2784,8 +2804,8 @@ name = "a_pattern_s_values_compared_without_case"
 why = "Two texts that differ in case are two values to a caller's regex unless the regex says otherwise."
 suites = ["tests.test_scrub.PatternTest"]
 file = "onus/scrub/_scrub.py"
-find = '_named(name), same=_as_written, real=lambda text: True)'
-replace = '_named(name), same=str.lower, real=lambda text: True)'
+find = 're.compile(regex), name, same=_as_written,'
+replace = 're.compile(regex), name, same=str.lower,'
 
 # --- onus.baseline ---
 
