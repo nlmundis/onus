@@ -439,9 +439,12 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       digits, lower case, with nothing round them. What is shown has every control character written as its
       escape, so content cannot move the cursor or erase the lines being confirmed.
     - **A re-signing binds only what it is told to.** A file the line before bound and this one does not is
-      shown as "no longer bound" before the digits are asked for. The ledger and its kept copies cannot be
-      bound. The same content with the same files bound, when that is the artifact's newest line, is not
-      signed again.
+      shown as "no longer bound" before the digits are asked for, and one it bound to other bytes is marked as
+      changed; after a revocation, "the line before" means the last sign-off. `check` names a changed bound
+      file whether or not the content changed too, and one it cannot read leaves a changed content CHANGED,
+      with the file reported in the detail. The ledger and its
+      kept copies cannot be bound. The same content with the same files bound, when that is the artifact's
+      newest line, is not signed again.
     - **The command line** is `python -m onus.signoff record|revoke|check`. `check` exits 0 only for SIGNED
       (10 UNSIGNED, 11 CHANGED, 12 REVOKED, 13 CORRUPT); a refusal, or a ledger or content that cannot be read
       or written, exits 20.
@@ -455,6 +458,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       message and no time limit.
     - Digits already waiting on the terminal when the prompt appears are read as the answer.
     - The bound files' contents are not kept, so a changed one is named without a diff.
+    - A bound file is compared by the path it was bound under, so on a case-insensitive disk the same file bound
+      under another spelling reads as a new binding and the old one as no longer bound, with no change marked.
     - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
       own profile, and `GEMINI_CLI` also matches a longer name that starts so.
     - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,

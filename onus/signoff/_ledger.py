@@ -291,15 +291,38 @@ def _bound_now(ledger: Path, bound: Mapping[str, str]) -> list[str]:
     return changed
 
 
+def _bound_note(ledger: Path, line: Line) -> str:
+    """Return what to add to a CHANGED already decided by the content: which bound files moved too, if any.
+
+    The verdict stands either way, so a bound file that cannot be read is named here and not raised, and the others
+    are still compared.
+    """
+    changed, unreadable = [], []
+    for name, digest in sorted(line.bound.items()):
+        try:
+            changed += _bound_now(ledger, {name: digest})
+        except OSError:
+            unreadable.append(name)
+    note = f"; bound files changed or missing since the sign-off: {changed}" if changed else ""
+    return note + (f"; bound files that cannot be read: {unreadable}" if unreadable else "")
+
+
+def _mark_if_changed(name: str, digest: str, signed: Line | None) -> str:
+    """Return what a sign-off's screen adds to a bound file that the artifact's last sign-off bound to other bytes."""
+    before = signed.bound.get(name) if signed else None
+    return " (changed since the last sign-off)" if before not in (None, digest) else ""
+
+
 def check_signoff(ledger: str | os.PathLike[str], artifact: str, path: str | os.PathLike[str]) -> Check:
     """Return what the ledger at ``ledger`` says of ``artifact``, whose content is the file at ``path``.
 
     SIGNED: the newest line for the artifact signs exactly this content, and every file it bound is unchanged.
     UNSIGNED: no line names the artifact, or there is no ledger. CHANGED: the content, or a bound file, differs
-    from what was signed, or is missing; ``diff`` shows the content's change when the signed copy is kept beside
-    the ledger. REVOKED: the newest line revokes the sign-off. CORRUPT: the ledger cannot be relied on, because a
-    line is malformed, the chain is broken, or the kept copy of the content this artifact's newest line signed is
-    not that content. It fails closed: one bad line anywhere makes every artifact CORRUPT.
+    from what was signed, or is missing; ``detail`` names both when both did, and ``diff`` shows the content's
+    change when the signed copy is kept beside the ledger. REVOKED: the newest line revokes the sign-off. CORRUPT:
+    the ledger cannot be relied on, because a line is malformed, the chain is broken, or the kept copy of the
+    content this artifact's newest line signed is not that content. It fails closed: one bad line anywhere makes
+    every artifact CORRUPT.
 
     Raises:
         SignoffError: ``artifact`` is not an exact id.
@@ -320,13 +343,17 @@ def check_signoff(ledger: str | os.PathLike[str], artifact: str, path: str | os.
     except CorruptLedgerError as error:
         return Check(Status.CORRUPT, str(error), line)
     if not path.is_file():
-        return Check(Status.CHANGED, f"{path} is missing", line)
+        return Check(Status.CHANGED, f"{path} is missing{_bound_note(ledger, line)}", line)
     content = path.read_bytes()
     if _sha256(content) != line.sha256:
+        also = _bound_note(ledger, line)
         if signed is None:
-            return Check(Status.CHANGED, f"{path} is not the content signed; the signed copy is not kept", line)
+            return Check(Status.CHANGED, f"{path} is not the content signed; the signed copy is not kept{also}", line)
         return Check(
-            Status.CHANGED, f"{path} is not the content signed", line, _diff(signed, content, "signed", str(path))
+            Status.CHANGED,
+            f"{path} is not the content signed{also}",
+            line,
+            _diff(signed, content, "signed", str(path)),
         )
     changed = _bound_now(ledger, line.bound)
     if changed:
@@ -469,6 +496,7 @@ def record(
     is no controlling terminal. Then it shows, at the terminal, the artifact, the reviewer, the content's sha256
     and size, the files bound, and the diff from what was signed before (the whole content, the first time), and
     reads back the first eight hex digits of the content's sha256 from the terminal, never from standard input.
+    A bound file the artifact's last sign-off bound to other bytes is marked as changed.
     It holds the ledger's lock from before it reads the ledger until the line is on disk, the time the person
     takes to answer included, so a second sign-off on the same ledger waits. Once confirmed, it keeps a
     read-only copy of the content beside the ledger and appends the line, flushed to disk. What it shows has
@@ -478,7 +506,7 @@ def record(
 
     ``bind`` names other files the approval depends on, inside the ledger's folder; ``check_signoff`` reports
     CHANGED when one of them changes. A re-signing names the line it supersedes itself, and binds only what
-    this call binds: a file the line before bound and this one does not is shown as no longer bound.
+    this call binds: a file the last sign-off bound and this one does not is shown as no longer bound.
 
     Raises:
         SignoffRefused: a session variable is set, there is no terminal, or the confirmation was not typed.
@@ -513,11 +541,16 @@ def record(
         signed_before = b""
         if newest is not None and newest.sha256 is not None:
             signed_before = _kept(ledger, newest.sha256) or b""
-        unbound = sorted(set(newest.bound) - set(bound)) if newest else []
+        # Against the last sign-off, not the newest line: a revocation binds nothing, and would hide every change.
+        last_signed = _newest((line for line in lines if not line.revokes), artifact)
+        unbound = sorted(set(last_signed.bound) - set(bound)) if last_signed else []
         shown = (
             f"\nSign-off of {artifact}\n  reviewed by: {reviewed_by}\n  content: {path}\n  sha256: {digest}\n"
             f"  bytes: {len(content)}\n"
-            + "".join(f"  bound: {name} {value}\n" for name, value in sorted(bound.items()))
+            + "".join(
+                f"  bound: {name} {value}{_mark_if_changed(name, value, last_signed)}\n"
+                for name, value in sorted(bound.items())
+            )
             + "".join(f"  no longer bound: {name}\n" for name in unbound)
             + (f"  supersedes: {newest.line_sha256}\n" if newest else "  first sign-off of this artifact\n")
             + _diff(signed_before, content, "signed before", str(path))
