@@ -184,6 +184,20 @@ class TimestampsTest(unittest.TestCase):
                 with self.subTest(first=order[0].name, text=text):
                     self.assertEqual(chain(*order)(text), "<timestamp-1>-<date-1>")
 
+    def test_a_real_offset_before_a_date_is_read_in_either_order(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            for offset in ("+0530", "+05:30", "-14"):
+                with self.subTest(first=order[0].name, offset=offset):
+                    self.assertEqual(chain(*order)(f"2026-01-08T12:00{offset}-2026-01-09"), "<timestamp-1>-<date-1>")
+            self.assertEqual(
+                chain(*order)("2026-01-08T12:00+05:30-2026-01-09T13:00+05:30"), "<timestamp-1>-<timestamp-2>"
+            )
+
+    def test_an_offset_is_read_whole_or_not_at_all(self):
+        for following in ("+05:30-01-09", "+05:301"):
+            with self.subTest(following=following):
+                self.assertEqual(iso_timestamps()(f"2026-01-08T12:00{following}"), f"<timestamp-1>{following}")
+
     def test_its_name_is_its_functions(self):
         self.assertEqual(
             (iso_timestamps().name, iso_dates().name, uuids().name), ("iso_timestamps", "iso_dates", "uuids")
