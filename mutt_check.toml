@@ -2524,8 +2524,24 @@ name = "a_timestamp_s_zone_not_read"
 why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"'
+find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?(?![0-9]))?"'
 replace = '_ZONE = ""'
+
+[[mutant]]
+name = "a_date_after_a_colon_taken_for_seconds"
+why = "':20' of ':2026-01-09' would read as seconds and then run on, so a real timestamp and its neighbour's order would both be lost."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''|60)(?![0-9])(?:'''
+replace = '''|60)(?:'''
+
+[[mutant]]
+name = "digits_past_an_offset_taken_for_a_longer_form"
+why = "'+0560' would read as '+05' that runs on, while '+05:60' does not, so one shape would be left or replaced by its digits."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''(?::?{_SIXTY})?(?![0-9]))?"'''
+replace = '''(?::?{_SIXTY})?)?"'''
 
 [[mutant]]
 name = "a_timestamp_that_runs_on_cut_back"
