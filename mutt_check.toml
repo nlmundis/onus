@@ -2524,7 +2524,7 @@ name = "a_timestamp_s_zone_not_read"
 why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'
+find = '_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?{_AFTER})?"'
 replace = '_ZONE = ""'
 
 [[mutant]]
@@ -2532,32 +2532,32 @@ name = "a_number_after_a_timestamp_read_as_a_fraction"
 why = "The next field of a CSV row would vanish into the token, so a changed count would still match the approved file."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''(?![0-9])(?:\\.[0-9]+)?)?"'''
-replace = '''(?![0-9])(?:[.,][0-9]+)?)?"'''
+find = '''(?!(?!Z)[^\\W_])(?:\\.[0-9]+)?)?"'''
+replace = '''(?!(?!Z)[^\\W_])(?:[.,][0-9]+)?)?"'''
 
 [[mutant]]
 name = "a_fraction_after_seconds_not_read"
 why = "The fraction is the part of a timestamp that changes most from run to run."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''(?![0-9])(?:\\.[0-9]+)?)?"'''
-replace = '''(?![0-9]))?"'''
+find = '''(?!(?!Z)[^\\W_])(?:\\.[0-9]+)?)?"'''
+replace = '''(?!(?!Z)[^\\W_]))?"'''
 
 [[mutant]]
 name = "a_date_after_a_colon_taken_for_seconds"
 why = "':20' of ':2026-01-09' would read as seconds and then run on, so a real timestamp and its neighbour's order would both be lost."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''|60)(?![0-9])(?:'''
+find = '''|60)(?!(?!Z)[^\\W_])(?:'''
 replace = '''|60)(?:'''
 
 [[mutant]]
-name = "digits_past_an_offset_taken_for_a_longer_form"
-why = "'+0560' would read as '+05' that runs on, while '+05:60' does not, so one shape would be left or replaced by its digits."
+name = "seconds_refused_before_a_z"
+why = "'Z' is a letter, so without its exception every stamp in UTC would lose its seconds' place and stay half read."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
-replace = '''(?::?{_SIXTY})?+(?!-[0-9]{{2}}-[0-9]{{2}}))?"'''
+find = '''|60)(?!(?!Z)[^\\W_])(?:'''
+replace = '''|60){_AFTER}(?:'''
 
 [[mutant]]
 name = "a_year_joined_on_read_as_an_offset"
@@ -2576,20 +2576,12 @@ find = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"'''
 replace = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-3])"'''
 
 [[mutant]]
-name = "a_date_joined_on_read_as_an_offset"
-why = "'-1400' of '-1400-01-09' is a well-formed offset, so without the check a date's year would vanish into the token."
+name = "an_id_joined_on_taken_for_an_offset"
+why = "'-12' of '-12abcdef-...' would run on, so a timestamp before about one random UUID in forty would stay in the text."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
-replace = '''(?::?{_SIXTY})?+(?![0-9]))?"'''
-
-[[mutant]]
-name = "an_offset_cut_in_half"
-why = "The minutes would be given back when what follows refuses the offset, leaving ':30' of a real zone behind the token."
-suites = ["tests.test_scrub.TimestampsTest"]
-file = "onus/scrub/_scrub.py"
-find = '''(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
-replace = '''(?::?{_SIXTY})?(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
+find = '''(?::?{_SIXTY})?{_AFTER})?"'''
+replace = '''(?::?{_SIXTY})?)?"'''
 
 [[mutant]]
 name = "a_timestamp_that_runs_on_cut_back"

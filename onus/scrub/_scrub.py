@@ -18,17 +18,16 @@ _DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 _HOUR = r"(?:[01][0-9]|2[0-3])"
 _SIXTY = r"[0-5][0-9]"
 _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
-# A field is two digits and no more: digits that run past it are no field, and stay in the text behind the token.
-# A fraction takes only a full stop: after a comma, digits could be the next field of a row.
-_SECONDS = f"(?::(?:{_SIXTY}|60)(?![0-9])(?:\\.[0-9]+)?)?"
-# No offset in use passes 14 hours, and four digits that "-MM-DD" follows are a year, so a date joined on by a
-# hyphen, as in "T12:00-2026-01-09" or "T12:00-1400-01-09", is not read as one. An offset is read whole or not at
-# all, so its minutes are never given back.
+# Seconds or an offset that runs on into a letter or digit is no field, and stays in the text behind the token: its
+# ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds. A
+# fraction takes only a full stop: after a comma, digits could be the next field of a row.
+_SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:\\.[0-9]+)?)?"
+# No offset in use passes 14 hours, so a year joined on by a hyphen, as in "T12:00-2026-01-09", is not read as one.
 _OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"
-_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"
+_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?{_AFTER})?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
-# Atomic: seconds and zone are read as far as they go and never given back, so a form that runs on into a letter
-# or digit fails whole, where backing off would replace a prefix and leave the part that changes in the text.
+# Atomic: a fraction or "Z" that runs on into a letter or digit fails whole, where backing off would replace a
+# prefix and leave the part that changes in the text.
 _TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")
 # Digits alone, or digits then an exponent: a count, or the digits of a float, never an id.
 _NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")
@@ -141,10 +140,11 @@ def iso_timestamps() -> Scrubber:
     ",42", and so does the stamp Python's logging writes by default, whose ",123" the comparison then shows; a
     ``pattern`` placed before this scrubber can name that whole form. Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
-    written this way, and what follows it stays in the text, as ":611" does after "2026-01-08T12:00"; if a letter
-    or digit follows a form read whole, it runs on, and the whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is
-    not cut back to a shorter form. Two timestamps are one value when they are written alike; the same moment in
-    two zones is two values.
+    written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
+    digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
+    leaves ":2026-01-09". A fraction or "Z" that runs on leaves the whole timestamp in the text, and is not cut
+    back to a shorter form, as in "2026-01-08T12:00:00.5Zfoo". Two timestamps are one value when they are written
+    alike; the same moment in two zones is two values.
     """
     return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
 

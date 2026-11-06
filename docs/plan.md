@@ -336,9 +336,10 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       can record which scrubbers shaped an output; `chain` takes only these, and `redactor(fn)` is how a plain
       function gets a name (its module and qualified name).
     - Only a real value is replaced: "2026-13-45" and "2026-01-08T25:00" stay, as does anything that runs on
-      into a letter or digit, of any script, on either side; a timestamp whose fraction or zone runs on stays
-      whole, and is not cut back to a shorter form. Digits that run past a field are no field: they stay behind
-      the token, so "T12:00:2026-01-09" keeps both its timestamp and its date. The date inside a timestamp is left to
+      into a letter or digit, of any script, on either side; a timestamp whose fraction or "Z" runs on stays
+      whole, and is not cut back to a shorter form. Seconds or an offset that runs on is no field, and stays
+      behind the token, since its ":", "+", or "-" may only join on something else: "T12:00:2026-01-09" keeps
+      both its timestamp and its date. The date inside a timestamp is left to
       `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
       regex, since `datetime` reads "24:00" on some Python versions and not on others.
     - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
@@ -359,17 +360,19 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - A text that already holds something shaped like a token ("<date-1>") is not told apart from a scrubbed
       one, and a token whose name is itself a hex run of a listed length is replaced again by a later `hex_ids`.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
-      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token, and a fraction takes all
-      the digits it can, so "T12:00:00.2026-01-09" loses a date's year to it when `iso_timestamps` runs first.
+      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token, "+05:30x" leaves ":30x",
+      and a fraction takes all the digits it can, so "T12:00:00.2026-01-09" loses a date's year to it when
+      `iso_timestamps` runs first. A fraction joined straight to a value that starts with digits and holds a
+      letter, as a UUID may, stays whole if `iso_timestamps` runs first and is replaced if it runs second.
     - A date before a clock time that runs on, as in "2026-01-08 12:00pm", is replaced by neither scrubber, since
       `iso_dates` leaves the date of anything shaped like a timestamp. It stays and fails its comparison, visibly.
     - Two patterns given one name in a chain each number from 1, so two different values can share a token.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
-    - An offset's hours are read only up to 14, and none is read before "-MM-DD", so a date, or a year from 1500
-      on, joined on by a hyphen stays in the text. Other digits joined on by "+" or "-", as the hour range in
-      "2026-01-08T12:00-14" or "2026-01-08T12:00-13:00", are a well-formed offset, and are replaced with the
-      timestamp, since no reading can tell them apart. So a shipped scrubber can still take a number here, and
-      as a fraction after a full stop ("2026-01-08T12:00:00.2026").
+    - An offset's hours are read only up to 14, so a year from 1460 on joined on by a hyphen stays in the text.
+      Other digits joined on by "+" or "-", as the hour range in "2026-01-08T12:00-14" or
+      "2026-01-08T12:00-13:00", or the year in "2026-01-08T12:00-1400-01-09", are a well-formed offset, and are
+      replaced with the timestamp, since no reading can tell them apart. So a shipped scrubber can still take a
+      number here, and as a fraction after a full stop ("2026-01-08T12:00:00.2026").
     - A comma never starts a fraction, though ISO 8601 allows it: digits after a comma cannot be told from the
       next field of a row, and `iso_timestamps` replacing a count would break the promise that no scrubber
       replaces a number. So the default stamp of Python's `logging`, "2026-01-08 12:00:00,123", leaves ",123" in
