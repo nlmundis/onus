@@ -3043,7 +3043,7 @@ replace = '''    code = isinstance(link, (type, types.FunctionType, types.Method
 
 [[mutant]]
 name = "a_chain_that_raises_stops_the_check"
-why = "A __wrapped__ that raises would end a record check with that error, naming no record."
+why = "A __wrapped__ that raises would stop the check with that error in place of a reason."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
 find = '''    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
@@ -3056,9 +3056,59 @@ name = "a_staticmethod_in_a_chain_refused"
 why = "A staticmethod has __wrapped__ and no file of its own, so memoized or decorated static methods of real code would be refused as having no source."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''        if type(link) in (staticmethod, classmethod):
+find = '''        if type(link) is staticmethod:
 '''
 replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_staticmethod_recognized_by_equality"
+why = "== asks the class, so a metaclass of a test-written fake could answer that it is a staticmethod and skip judgment."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if type(link) is staticmethod:
+'''
+replace = '''        if type(link) == staticmethod:
+'''
+
+[[mutant]]
+name = "a_classmethod_object_passed_through"
+why = "A wrapper over a classmethod object cannot be called, so its record would name code that never ran."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if type(link) is staticmethod:
+'''
+replace = '''        if type(link) is staticmethod or type(link) is classmethod:
+'''
+
+[[mutant]]
+name = "a_class_of_real_code_not_placed_by_itself"
+why = "A class is callable and speaks for itself; without it a class under test would be refused."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+'''
+replace = '''    code = issubclass(type(link), (types.FunctionType, types.MethodType))
+'''
+
+[[mutant]]
+name = "a_bound_method_of_real_code_not_placed_by_itself"
+why = "A record naming a bound method would be refused as having no source, though its function has one."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+'''
+replace = '''    code = issubclass(type(link), (type, types.FunctionType))
+'''
+
+[[mutant]]
+name = "a_chain_error_formatted_by_its_own_repr"
+why = "An exception's repr can raise too, and the check would stop on it after all."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''            f"its __wrapped__ chain cannot be followed to an end ({type(error).__name__}), so nothing shows what "
+'''
+replace = '''            f"its __wrapped__ chain cannot be followed to an end ({error!r}), so nothing shows what "
 '''
 
 [[mutant]]

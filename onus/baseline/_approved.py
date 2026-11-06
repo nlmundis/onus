@@ -105,8 +105,8 @@ def unreal(name: str, tests: Iterable[Path]) -> str | None:
     """Return why the producer recorded as ``name`` is not real code under test, or None when it is.
 
     A real producer is a callable that importing its name gives, and every link of its ``__wrapped__`` chain is
-    no mock and is written, in a file that exists, outside every folder of ``tests``; a ``staticmethod`` or
-    ``classmethod`` link only passes through to the next. A function written among the tests, or a mock, can
+    no mock and is written, in a file that exists, outside every folder of ``tests``; a ``staticmethod`` link
+    only passes through to the next. A function written among the tests, or a mock, can
     produce any text a baseline wants, so its baseline shows nothing about the code.
     """
     tests = tuple(tests)
@@ -120,10 +120,13 @@ def unreal(name: str, tests: Iterable[Path]) -> str | None:
     try:
         innermost = inspect.unwrap(found, stop=lambda link: wrappers.append(link))
     except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
-        return f"its __wrapped__ chain cannot be followed to an end, so nothing shows what would run: {error!r}"
+        return (
+            f"its __wrapped__ chain cannot be followed to an end ({type(error).__name__}), so nothing shows what "
+            "would run"
+        )
     for link in (*wrappers, innermost):
         who = "it" if link is found else "what it wraps"
-        if type(link) in (staticmethod, classmethod):
+        if type(link) is staticmethod:
             continue
         if _is_mock(link):
             return f"{who} is a mock"

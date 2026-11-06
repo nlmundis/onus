@@ -79,6 +79,11 @@ PRODUCT = textwrap.dedent("""
         @staticmethod
         def dressed_static():
             return "dressed\\n"
+
+        @loud
+        @classmethod
+        def dressed_class(cls):
+            return "dressed\\n"
 """)
 AMONG_THE_TESTS = (
     "import functools\n\n\ndef canned():\n    return 'whatever the baseline wants'\n\n\n"
@@ -89,8 +94,13 @@ AMONG_THE_TESTS = (
     "    __module__ = property(lambda self: self.__wrapped__.__module__)\n\n"
     "    def __getattr__(self, name):\n        return getattr(self.__wrapped__, name)\n\n"
     "    def __call__(self):\n        return 'whatever the baseline wants'\n\n\n"
-    "class Unreadable:\n    @property\n    def __wrapped__(self):\n        raise KeyError('no such context')\n\n"
-    "    def __call__(self):\n        return 'whatever the baseline wants'\n"
+    "class BadRepr(Exception):\n    def __repr__(self):\n        raise RuntimeError('no repr either')\n\n\n"
+    "class Unreadable:\n    @property\n    def __wrapped__(self):\n        raise BadRepr()\n\n"
+    "    def __call__(self):\n        return 'whatever the baseline wants'\n\n\n"
+    "class EqualToAnything(type):\n    def __eq__(cls, other):\n        return True\n\n"
+    "    __hash__ = type.__hash__\n\n\n"
+    "class Passes(metaclass=EqualToAnything):\n    def __call__(self):\n"
+    "        return 'whatever the baseline wants'\n"
 )
 RECEIPT = "order 7\ntotal 0.00\nprinted 2026-01-08\n"
 STEM = "test_baseline.Case.test_it"
@@ -556,10 +566,30 @@ class ProducerTest(Sandbox):
         with self.assertRaisesRegex(ValueError, "its __wrapped__ chain cannot be followed"):
             self.case().assertApproved(self.shop.counted)
 
-    def test_a_static_or_class_method_inside_a_chain_is_real(self):
+    def test_a_staticmethod_inside_a_chain_is_real(self):
         for name in ("memo_static", "dressed_static"):
             with self.subTest(name=name):
                 self.assertIsNone(onus.baseline._approved.unreal(f"onus_sandbox_shop.Memo.{name}", [self.checks]))
+
+    def test_a_chain_through_a_classmethod_object_cannot_run_and_is_refused(self):
+        reason = onus.baseline._approved.unreal("onus_sandbox_shop.Memo.dressed_class", [self.checks])
+        self.assertEqual(reason.partition(",")[0], "what it wraps has no source file")  # type: ignore[union-attr]
+
+    def test_a_metaclass_cannot_pass_a_fake_off_as_a_staticmethod(self):
+        self.shop.counted = self.checks_module.Passes()
+        reason = onus.baseline._approved.unreal("onus_sandbox_shop.counted", [self.checks])
+        self.assertIn("it has no source file", str(reason))
+
+    def test_a_class_and_a_bound_method_of_real_code_speak_for_themselves(self):
+        self.shop.bound = self.shop.Slip().text
+        for name in ("Slip", "bound"):
+            with self.subTest(name=name):
+                self.assertIsNone(onus.baseline._approved.unreal(f"onus_sandbox_shop.{name}", [self.checks]))
+
+    def test_a_chain_that_raises_says_what_raised(self):
+        self.shop.counted = self.checks_module.Unreadable()
+        reason = onus.baseline._approved.unreal("onus_sandbox_shop.counted", [self.checks])
+        self.assertIn("(BadRepr)", str(reason))
 
     def test_a_file_name_that_cannot_be_read_is_no_place(self):
         loop = self.top / "loop"
