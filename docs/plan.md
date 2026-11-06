@@ -459,8 +459,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - Digits already waiting on the terminal when the prompt appears are read as the answer.
     - The bound files' contents are not kept, so a changed one is named without a diff.
     - The kept copy is read before the prompt, and the lock does not cover the copies, so one changed while the
-      person answers is not seen. A copy changed after a revocation is not seen by a later `record` either, since
-      only the newest line's copy is read, and a revocation signs none.
+      person answers is not seen. A copy changed after a revocation is not seen by a later `record` of other
+      content either, since only the newest line's copy and the new content's are read, and a revocation signs
+      none.
     - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
       own profile, and `GEMINI_CLI` also matches a longer name that starts so.
     - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,
