@@ -378,12 +378,19 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       when it wraps another, the one it wraps. The tests are the outermost package around the test named `tests`
       or `test` (`mypkg/tests` for `mypkg.tests.unit.test_x`, so `mypkg` stays code under test), else the top
       package (`suite` for `suite.unit.test_x`; a module in no package has its own folder), and the folder that
-      holds the approved folder. The name is the only sign of where the code ends, so a test package of any
-      other name inside the code leaves that code refused, and the refusal says what to rename: this fails
-      toward refusing. A helper for tests kept in the code package, outside its `tests`, reads as code under
+      holds the approved folder. Under a code package with such a name, every other folder of that name in the
+      top package counts too. The name is the only sign of where the code ends, so a test package of any other
+      name inside the code leaves that code refused, which fails toward refusing, and a helper kept in the code
+      package outside its `tests` reads as code under test; so does a helper in `e2e/` when the tests are in
+      `e2e/tests`, since nothing tells a suite that is all tests from a code package.
       test. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in the test
       package are refused, and so is every function when tests sit in the same folder as the code,
       until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
+    - **The tests are read from the name the test was imported under.** So `discover -s tests`, which imports
+      `tests/unit/test_x.py` as `unit.test_x`, narrows the tests to `tests/unit`, and a test run as a script to
+      its own folder. Only the test's own class is read, not a base class in another package. A symlinked or
+      split package maps its names to the wrong folders. A sibling top-level `tests` is not seen from
+      `mypkg/tests`. Each lets a helper pass, and each needs `-t` or a plain package layout to close it.
     - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
       must have the record's four keys and name a real producer, each approved file must have one record and
       each record one file, and a folder that is missing or holds no record fails, so that passing means

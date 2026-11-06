@@ -521,9 +521,43 @@ class ProducerTest(Sandbox):
 
     def test_a_test_package_of_any_other_name_leaves_the_code_refused_and_says_why(self):
         cases, core, approved = self.kit("checks")
-        with self.approving(), self.assertRaisesRegex(ValueError, "in a package named tests or test"):
+        with self.approving(), self.assertRaisesRegex(ValueError, "the package named tests or test"):
             cases.Case("test_it").assertApproved(core.render, 3)
         self.assertFalse(approved.exists())
+
+    def test_a_helper_in_another_package_named_tests_in_the_same_code_package_is_among_the_tests(self):
+        cases, _, _ = self.kit("sub.tests")
+        other = self.repo / "onus_sandbox_kit" / "tests"
+        other.mkdir()
+        (other / "__init__.py").touch()
+        (other / "helpers.py").write_text(AMONG_THE_TESTS, encoding="utf-8")
+        helpers = importlib.import_module("onus_sandbox_kit.tests.helpers")
+        with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under tests/"):
+            cases.Case("test_it").assertApproved(helpers.canned)
+
+    def test_a_test_module_in_no_package_has_its_own_folder(self):
+        flat = self.repo / "flat"
+        flat.mkdir()
+        (flat / "onus_sandbox_flat_cases.py").write_text(
+            "import unittest\n\nfrom onus.baseline import ApprovedMixin\n\n\n"
+            "def beside():\n    return 'whatever the baseline wants'\n\n\n"
+            "class Case(ApprovedMixin, unittest.TestCase):\n    def test_it(self):\n        pass\n",
+            encoding="utf-8",
+        )
+        self.addCleanup(lambda: sys.modules.pop("onus_sandbox_flat_cases", None))
+        with mock.patch.object(sys, "path", [str(flat), *sys.path]):
+            cases = importlib.import_module("onus_sandbox_flat_cases")
+            with self.approving(), self.assertRaisesRegex(ValueError, "under flat/"):
+                cases.Case("test_it").assertApproved(cases.beside)
+            with self.approving():
+                cases.Case("test_it").assertApproved(self.shop.receipt, 7)
+
+    def test_a_test_module_with_no_spec_goes_by_its_dotted_name(self):
+        cases, _, _ = self.kit("tests.unit")
+        helpers = importlib.import_module("onus_sandbox_kit.tests.helpers")
+        cases.__spec__ = None
+        with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under tests/"):
+            cases.Case("test_it").assertApproved(helpers.canned)
 
     def test_a_test_function_dressed_as_a_wrapper_of_real_code_is_refused(self):
         self.checks_module.canned.__wrapped__ = json.dumps

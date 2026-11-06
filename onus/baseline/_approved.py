@@ -74,8 +74,9 @@ def _tests_of(case: object, folder: Path) -> tuple[Path, ...]:
 
     The test package is the outermost package around the test named ``tests`` or ``test``, so tests kept inside
     the code, in ``mypkg/tests``, leave ``mypkg`` as code under test, and a helper anywhere under ``mypkg/tests`` is
-    among the tests. Under no such name it is the top package, ``suite`` for ``suite.unit.test_x``, which fails
-    toward refusing: nothing shows where the code ends. A test module that is in no package has its own folder.
+    among the tests, and so is one in any other folder of that name in ``mypkg``. Under no such name it is the top
+    package, ``suite`` for ``suite.unit.test_x``, which fails toward refusing: nothing shows where the code ends.
+    A test module that is in no package has its own folder.
     """
     module = sys.modules[type(case).__module__]
     own = Path(inspect.getfile(type(case))).resolve().parent
@@ -86,7 +87,8 @@ def _tests_of(case: object, folder: Path) -> tuple[Path, ...]:
     folders = [own, *own.parents][: len(names)][::-1]
     named = [path for name, path in zip(names, folders, strict=False) if name in _TEST_PACKAGES]
     top = (named or folders or [own])[0]
-    return tuple(dict.fromkeys((top, folder.resolve().parent)))
+    others = [path for path in folders[0].rglob("*") if path.name in _TEST_PACKAGES] if named else []
+    return tuple(dict.fromkeys((top, *others, folder.resolve().parent)))
 
 
 def unreal(name: str, tests: Iterable[Path]) -> str | None:
@@ -118,8 +120,8 @@ def unreal(name: str, tests: Iterable[Path]) -> str | None:
             if source.is_relative_to(folder.resolve()):
                 return (
                     f"it is defined among the tests, in {source.name} under {folder.name}/: a baseline is of code "
-                    "under test, kept outside the folder that holds the tests; tests inside the code belong "
-                    "in a package named tests or test"
+                    "under test, kept outside the tests: the package named tests or test around the test, else its "
+                    "top package, and the folder that holds the approved folder"
                 )
     return None
 
