@@ -445,6 +445,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **The command line** is `python -m onus.signoff record|revoke|check`. `check` exits 0 only for SIGNED
       (10 UNSIGNED, 11 CHANGED, 12 REVOKED, 13 CORRUPT); a refusal, or a ledger or content that cannot be read
       or written, exits 20.
+    - **A revocation reads the kept copy first.** One that is not what was signed refuses the revocation, which
+      would otherwise turn CORRUPT into REVOKED and let a later `record` read SIGNED with the copy never read
+      again. Restoring the copy, or removing it so that none is kept, clears the refusal.
     - **Messages name what clears them.** The environment refusal says to run from a terminal where the
       variable is not set, and every CORRUPT says that onus repairs nothing and the ledger is restored from
       version control.

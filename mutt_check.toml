@@ -3149,6 +3149,16 @@ replace = '''    if not expected.startswith(typed):
 '''
 
 [[mutant]]
+name = "a_revocation_passes_over_a_bad_kept_copy"
+why = "The artifact would go from CORRUPT to REVOKED, and a later record of other content would read SIGNED with the bad copy never read again."
+suites = ["tests.test_signoff.RevokeTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if newest.sha256 is not None:
+            _kept(ledger, newest.sha256)  # a bad copy reads CORRUPT'''
+replace = '''        if False:
+            _kept(ledger, newest.sha256)  # a bad copy reads CORRUPT'''
+
+[[mutant]]
 name = "a_revocation_confirmed_by_the_content_s_hash"
 why = "The digits must be the revoked line's, so the person has read which sign-off they are revoking."
 suites = ["tests.test_signoff.RevokeTest"]

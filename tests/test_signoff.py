@@ -575,6 +575,28 @@ class BoundTest(Desk):
 
 
 class RevokeTest(Desk):
+    def test_a_revocation_is_refused_over_a_kept_copy_that_is_not_what_was_signed(self):
+        line = self.sign()
+        blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
+        blob.chmod(0o644)
+        blob.write_bytes(b"tampered\n")
+        self.terminal.type(line.line_sha256[:8])
+        with self.assertRaisesRegex(CorruptLedgerError, "is not the content its name says was signed"):
+            revoke(self.ledger, ARTIFACT, reviewed_by="A Reviewer")
+        self.assertEqual(len(self.lines()), 1)
+        self.assertEqual(self.status(), Status.CORRUPT)
+        self.truth.write_bytes(SECOND)
+        with self.assertRaises(CorruptLedgerError):
+            self.sign()
+        self.assertEqual(self.status(), Status.CORRUPT)
+
+    def test_a_revocation_goes_through_when_the_copy_is_gone(self):
+        line = self.sign()
+        shutil.rmtree(self.folder / "ledger.jsonl.blobs")
+        self.terminal.type(line.line_sha256[:8])
+        revoke(self.ledger, ARTIFACT, reviewed_by="A Reviewer")
+        self.assertEqual(self.status(), Status.REVOKED)
+
     def test_a_revocation_is_a_line_that_names_the_sign_off_and_signs_nothing(self):
         signed = self.sign()
         self.terminal.type(signed.line_sha256[:8])
