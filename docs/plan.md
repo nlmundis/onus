@@ -429,7 +429,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       other is CORRUPT, as is a revocation of what is not a sign-off.
     - **Fail closed means the whole ledger.** One malformed line, one break in `prev`, a file not ending in a
       newline, or bytes that are not UTF-8 make every artifact CORRUPT, one the ledger never names included.
-      No ledger at all, or an empty one, is UNSIGNED.
+      No ledger at all, or an empty one, is UNSIGNED. A ledger path that holds something other than a regular
+      file, or one that cannot be read, is no verdict: `check_signoff` raises `OSError`, as `record` does, and
+      `prereg.load` turns that into its own refusal.
     - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, written whole under another name
       and then renamed, so CHANGED can show a diff. A kept copy that no longer hashes to its name makes the
       artifact whose newest line signed it CORRUPT, whether or not its content changed, and stops the next
@@ -455,6 +457,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       message and no time limit.
     - Digits already waiting on the terminal when the prompt appears are read as the answer.
     - The bound files' contents are not kept, so a changed one is named without a diff.
+    - Only the ledger's own path is refused when it holds no regular file. A folder or pipe at a kept copy's name
+      counts as a copy not kept, and at the content's path as content that is missing, so `check` says CHANGED.
     - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
       own profile, and `GEMINI_CLI` also matches a longer name that starts so.
     - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,

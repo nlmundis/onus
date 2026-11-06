@@ -570,13 +570,16 @@ def _signed_at(ledger: Path, path: Path, raw: bytes) -> datetime:
     stem in two folders are signed apart. The time is the ledger line's, which the record's author does not type.
 
     Raises:
-        PreregError: the amendment is outside the ledger's folder, or the ledger does not say SIGNED for exactly
-            these bytes: UNSIGNED, CHANGED, REVOKED, or CORRUPT, each refused, so an amendment is applied only once
-            a person has signed it.
+        PreregError: the amendment is outside the ledger's folder, the ledger cannot be read, or it does not say
+            SIGNED for exactly these bytes: UNSIGNED, CHANGED, REVOKED, or CORRUPT, each refused, so an amendment is
+            applied only once a person has signed it.
     """
     from onus.signoff import SignoffError, Status, check_signoff  # here, so onus.prereg imports without it loaded
 
-    ledger = ledger.resolve()
+    try:
+        ledger = ledger.resolve()
+    except (OSError, RuntimeError) as error:  # a symlink loop: RuntimeError on 3.11, OSError from 3.13
+        raise PreregError(f"{path.name} cannot be checked against the ledger {ledger}: {error}") from None
     try:
         relative = path.resolve().relative_to(ledger.parent)
     except ValueError:
@@ -591,6 +594,8 @@ def _signed_at(ledger: Path, path: Path, raw: bytes) -> datetime:
             f"{path.name} cannot be signed as {artifact!r}: {error}; rename the record and its amendments, or the "
             "folders between them and the ledger, with letters, digits, '.', '_', and '-' alone"
         ) from None
+    except OSError as error:
+        raise PreregError(f"{path.name} cannot be checked against the ledger {ledger}: {error}") from None
     if check.status is not Status.SIGNED or check.line is None or check.line.sha256 != hashlib.sha256(raw).hexdigest():
         raise PreregError(
             f"{path.name} is not signed: {ledger} says {check.status.value.upper()} for {artifact!r} ({check.detail}); "
@@ -613,7 +618,8 @@ def load(path: str | Path, *, ledger: str | Path | None = None) -> Rule:
             its file stem, gives a name holding a line break; ``path`` is itself an amendment; amendments lie
             beside it and no ``ledger`` is given; or an amendment is misnamed,
             dated before the record was registered, moves its registration, is malformed, is out of its chain, lies
-            outside the ledger's folder, or is not signed for exactly the bytes read.
+            outside the ledger's folder, is checked against a ledger that cannot be read, or is not signed for
+            exactly the bytes read.
         BoundArtifactError: a bound file is missing or has changed.
     """
     path = Path(path)

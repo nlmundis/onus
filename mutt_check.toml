@@ -3187,6 +3187,86 @@ replace = '''        if False:
 '''
 
 [[mutant]]
+name = "a_ledger_path_that_is_no_file_read_as_no_ledger"
+why = "A folder or a pipe at the ledger's path would answer UNSIGNED where record refuses it, and hide a misplaced ledger behind a verdict."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        raise OSError(errno.EINVAL, "not a regular file", str(ledger))
+'''
+replace = '''        return b""
+'''
+
+[[mutant]]
+name = "a_ledger_that_cannot_be_reached_read_as_no_ledger"
+why = "Only a path with nothing there is no ledger; a path that cannot be reached would say UNSIGNED for a ledger that may hold the sign-off."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    except FileNotFoundError:
+        return b""
+'''
+replace = '''    except OSError:
+        return b""
+'''
+
+[[mutant]]
+name = "a_symlink_loop_escapes_as_a_runtime_error"
+why = "Below Python 3.13 resolve raises RuntimeError on a loop, which no Raises lists and the command line does not catch."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    except RuntimeError:
+        raise OSError(errno.ELOOP, "a symlink loop", str(ledger)) from None
+'''
+replace = '''    except ZeroDivisionError:
+        raise OSError(errno.ELOOP, "a symlink loop", str(ledger)) from None
+'''
+
+[[mutant]]
+name = "a_symlink_loop_escapes_record_as_a_runtime_error"
+why = "record shares the ledger's path with check; left raw, a loop would crash the command line below Python 3.13."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    ledger = _resolved(ledger)
+    terminal = _open_terminal()
+'''
+replace = '''    ledger = Path(ledger).resolve()
+    terminal = _open_terminal()
+'''
+
+[[mutant]]
+name = "a_bound_file_in_a_symlink_loop_escapes_as_a_runtime_error"
+why = "record resolves each bound file too, and the command line catches no RuntimeError."
+suites = ["tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            file = _resolved(each)
+'''
+replace = '''            file = Path(each).resolve()
+'''
+
+[[mutant]]
+name = "a_ledger_in_a_symlink_loop_escapes_load_as_a_runtime_error"
+why = "load resolves the ledger before check_signoff does, so check_signoff's own handling never sees a loop below Python 3.13."
+suites = ["tests.test_amend.LoadMoreTest"]
+file = "onus/prereg/_rule.py"
+find = '''    except (OSError, RuntimeError) as error:  # a symlink loop: RuntimeError on 3.11, OSError from 3.13
+        raise PreregError(f"{path.name} cannot be checked against the ledger {ledger}: {error}") from None
+'''
+replace = '''    except ZeroDivisionError as error:
+        raise PreregError(f"{path.name} cannot be checked against the ledger {ledger}: {error}") from None
+'''
+
+[[mutant]]
+name = "an_unreadable_ledger_escapes_load_as_an_oserror"
+why = "load's callers catch PreregError; a ledger that cannot be read would leave load as an exception its docstring does not list."
+suites = ["tests.test_amend.LoadMoreTest"]
+file = "onus/prereg/_rule.py"
+find = '''    except OSError as error:
+        raise PreregError(f"{path.name} cannot be checked against the ledger {ledger}: {error}") from None
+'''
+replace = '''    except ZeroDivisionError as error:
+        raise PreregError(f"{path.name} cannot be checked against the ledger {ledger}: {error}") from None
+'''
+
+[[mutant]]
 name = "a_tampered_signed_copy_trusted"
 why = "The diff a CHANGED shows would be against content nobody signed."
 suites = ["tests.test_signoff.CheckTest"]
