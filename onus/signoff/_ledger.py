@@ -1,4 +1,4 @@
-"""Tier-2 sign-offs: a hash-chained ledger of approvals that only a person at a terminal can extend."""
+"""Tier-2 sign-offs: a hash-chained ledger of approvals, extended only after digits are typed at a terminal."""
 
 import difflib
 import enum
@@ -390,7 +390,7 @@ def _append(
     reviewed_by: str,
     build: Callable[[Path, list[Line], Line | None], tuple[dict[str, Any], str, str, str, bytes | None]],
 ) -> Line:
-    """Append one line to the ledger, under its lock, once a person at the terminal has confirmed it.
+    """Append one line to the ledger, under its lock, once the digits have been typed at the terminal.
 
     ``build(ledger, lines, newest)`` returns the new line's content fields, what to show, the digest whose first
     digits must be typed and what to call it, and the blob to keep, or raises.

@@ -1,4 +1,4 @@
-"""Tier-2 sign-offs: ground truth approved by a person, in a hash-chained ledger extended only from a terminal.
+"""Tier-2 sign-offs: ground truth approved by a person, in a hash-chained ledger extended only after digits typed.
 
 ``check_signoff`` says what a ledger records of an artifact: SIGNED, UNSIGNED, CHANGED (with a diff), REVOKED, or
 CORRUPT, and it fails closed, so one malformed line or one break in the chain makes every artifact CORRUPT. ``record``

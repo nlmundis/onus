@@ -1,4 +1,4 @@
-"""onus.signoff: a hash-chained ledger that fails closed, extended only by a person at a terminal.
+"""onus.signoff: a hash-chained ledger that fails closed, extended only after eight digits typed at a terminal.
 
 Every ledger here is a scratch file in a temporary folder, and the terminal is a pseudo-terminal the test holds
 both ends of. No test writes a line to a ledger anyone relies on.
@@ -10,6 +10,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import select
 import shutil
 import stat
@@ -891,6 +892,15 @@ class CommandLineTest(Desk):
 
 
 class SurfaceTest(unittest.TestCase):
+    def test_no_description_states_the_tripwires_as_a_guarantee(self):
+        root = pathlib.Path(onus.__file__).resolve().parents[1]
+        guarantee = re.compile(r"only (?:by )?a person|only from a terminal", re.IGNORECASE)
+        for name in ("README.md", "onus/signoff/_ledger.py", "onus/signoff/__init__.py", "tests/test_signoff.py"):
+            text = (root / name).read_text(encoding="utf-8")
+            first = text if name == "README.md" else text.splitlines()[0]
+            with self.subTest(name=name):
+                self.assertIsNone(guarantee.search(first))
+
     def test_the_real_terminal_is_the_controlling_one(self):
         self.assertEqual(_ledger._TTY, "/dev/tty")
 
