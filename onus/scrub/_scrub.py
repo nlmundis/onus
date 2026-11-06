@@ -18,10 +18,10 @@ _DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 _HOUR = r"(?:[01][0-9]|2[0-3])"
 _SIXTY = r"[0-5][0-9]"
 _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
-# A fraction takes only a full stop. After a comma, digits could be the next field of a row, and no scrubber here
-# replaces a number.
-_SECONDS = f"(?::(?:{_SIXTY}|60)(?:\\.[0-9]+)?)?"
-_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"
+# A field is two digits and no more: digits that run past it are no field, and stay in the text behind the token.
+# A fraction takes only a full stop: after a comma, digits could be the next field of a row.
+_SECONDS = f"(?::(?:{_SIXTY}|60)(?![0-9])(?:\\.[0-9]+)?)?"
+_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?(?![0-9]))?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
 # Atomic: seconds and zone are read as far as they go and never given back, so a form that runs on into a letter
 # or digit fails whole, where backing off would replace a prefix and leave the part that changes in the text.
@@ -122,7 +122,8 @@ def iso_dates() -> Scrubber:
     Only a real date is replaced: "2026-13-45" stays, and so does the date inside a timestamp, which is
     ``iso_timestamps``'s to replace whole, so the two may run in either order. A date followed by a clock time
     that ``iso_timestamps`` does not read, such as "2026-01-08 25:00", is replaced here; one followed by "T" runs
-    on into a letter, and stays.
+    on into a letter, and stays. So does one before a clock time that runs on, such as "2026-01-08 12:00pm", which
+    neither scrubber replaces.
     """
     return Scrubber("iso_dates", _numbered(_DATES, "date", same=_as_written, real=_is_date))
 
@@ -133,12 +134,14 @@ def iso_timestamps() -> Scrubber:
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
     ".", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". A comma does not start a fraction, since what
     follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves ",42", and so does the stamp
-    Python's logging writes by default, whose ",123" the comparison then shows; ``pattern`` can name that form.
+    Python's logging writes by default, whose ",123" the comparison then shows; a ``pattern`` placed before this
+    scrubber can name that whole form.
     Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
-    written this way, and what follows it stays in the text; if that is a letter or digit, it runs on, and the
-    whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is not cut back to a shorter form. Two timestamps are one
-    value when they are written alike; the same moment in two zones is two values.
+    written this way, and what follows it stays in the text, as ":611" does after "2026-01-08T12:00"; if a letter
+    or digit follows a form read whole, it runs on, and the whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is
+    not cut back to a shorter form. Two timestamps are one value when they are written alike; the same moment in
+    two zones is two values.
     """
     return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
 
