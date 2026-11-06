@@ -368,10 +368,11 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - Second 60 is read at any minute, so "12:34:60", which no clock shows, is replaced. Where a leap second
       falls in local time depends on the zone ("05:29:60+05:30") and on a table this module does not keep, so
       `iso_timestamps` does not check it.
-    - An offset's hours are read only up to 14, and no offset is read before a hyphen and a digit, so a date, or
-      a year from 1500 on, joined on by a hyphen stays in the text. Other digits joined on by "+" or "-", as the
-      hour range in "2026-01-08T12:00-14" or "2026-01-08T12:00-13:00", are a well-formed offset, and are replaced
-      with the timestamp: the one place a shipped scrubber takes a number, since no reading can tell them apart.
+    - An offset's hours are read only up to 14, and none is read before "-MM-DD", so a date, or a year from 1500
+      on, joined on by a hyphen stays in the text. Other digits joined on by "+" or "-", as the hour range in
+      "2026-01-08T12:00-14" or "2026-01-08T12:00-13:00", are a well-formed offset, and are replaced with the
+      timestamp, since no reading can tell them apart. So a shipped scrubber can still take a number here, and
+      as a fraction after a full stop ("2026-01-08T12:00:00.2026").
     - A comma never starts a fraction, though ISO 8601 allows it: digits after a comma cannot be told from the
       next field of a row, and `iso_timestamps` replacing a count would break the promise that no scrubber
       replaces a number. So the default stamp of Python's `logging`, "2026-01-08 12:00:00,123", leaves ",123" in

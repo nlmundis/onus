@@ -2524,7 +2524,7 @@ name = "a_timestamp_s_zone_not_read"
 why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?(?![0-9]|-[0-9]))?"'
+find = '_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'
 replace = '_ZONE = ""'
 
 [[mutant]]
@@ -2556,12 +2556,12 @@ name = "digits_past_an_offset_taken_for_a_longer_form"
 why = "'+0560' would read as '+05' that runs on, while '+05:60' does not, so one shape would be left or replaced by its digits."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''(?::?{_SIXTY})?(?![0-9]|-[0-9]))?"'''
-replace = '''(?::?{_SIXTY})?(?!-[0-9]))?"'''
+find = '''(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
+replace = '''(?::?{_SIXTY})?+(?!-[0-9]{{2}}-[0-9]{{2}}))?"'''
 
 [[mutant]]
 name = "a_year_joined_on_read_as_an_offset"
-why = "'-2026' would vanish into the token as an offset of 20:26, and the date it began would never be scrubbed."
+why = "'-2026' after a timestamp would vanish into the token as an offset of 20:26, though no offset is that large."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
 find = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"'''
@@ -2585,11 +2585,19 @@ replace = '''(?::(?:{_SIXTY})'''
 
 [[mutant]]
 name = "a_date_joined_on_read_as_an_offset"
-why = "'-1400' of '-1400-01-09' is a real offset, so without the hyphen check a date's year would vanish into the token."
+why = "'-1400' of '-1400-01-09' is a well-formed offset, so without the check a date's year would vanish into the token."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''(?::?{_SIXTY})?(?![0-9]|-[0-9]))?"'''
-replace = '''(?::?{_SIXTY})?(?![0-9]))?"'''
+find = '''(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
+replace = '''(?::?{_SIXTY})?+(?![0-9]))?"'''
+
+[[mutant]]
+name = "an_offset_cut_in_half"
+why = "The minutes would be given back when what follows refuses the offset, leaving ':30' of a real zone behind the token."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''(?::?{_SIXTY})?+(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
+replace = '''(?::?{_SIXTY})?(?![0-9]|-[0-9]{{2}}-[0-9]{{2}}))?"'''
 
 [[mutant]]
 name = "a_timestamp_that_runs_on_cut_back"
