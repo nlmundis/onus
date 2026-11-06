@@ -2873,12 +2873,12 @@ replace = '''            if False:
 
 [[mutant]]
 name = "a_recorded_mock_accepted"
-why = "A record edited to name a mock would pass the check that exists to find it."
-suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+why = "A mock in a chain would pass the check that exists to find it: its class is written outside the tests."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    if _is_mock(found):
+find = '''        if _is_mock(link):
 '''
-replace = '''    if False:
+replace = '''        if False:
 '''
 
 [[mutant]]
@@ -2973,7 +2973,7 @@ replace = '''        if source is None:
 
 [[mutant]]
 name = "a_mock_judged_only_at_the_front_of_the_chain"
-why = "functools.lru_cache around a mock would be recorded as real: the mock's own class is written outside the tests."
+why = "A mock in the middle of a chain is a wrapper placed by its class, which is written outside the tests, so it would be recorded as real."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
 find = '''        if _is_mock(link):
@@ -2986,9 +2986,9 @@ name = "a_wrapper_with_no_file_not_placed_by_its_class"
 why = "Real code behind functools.lru_cache is common and is code under test; refusing it would leave a memoized function no way to be approved."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    things: tuple[Callable[..., object], ...] = (link, type(link)) if wrapper else (link,)
+find = '''        source = Path(inspect.getfile(link if code else type(link))).resolve()
 '''
-replace = '''    things: tuple[Callable[..., object], ...] = (link,)
+replace = '''        source = Path(inspect.getfile(link)).resolve()
 '''
 
 [[mutant]]
@@ -2996,9 +2996,9 @@ name = "the_innermost_link_placed_by_its_class"
 why = "A functools.partial would be placed in functools.py and pass, though it can hold a function written among the tests; so would a callable object of a class outside them."
 suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    things: tuple[Callable[..., object], ...] = (link, type(link)) if wrapper else (link,)
+find = '''    if not code and not wrapper:
 '''
-replace = '''    things: tuple[Callable[..., object], ...] = (link, type(link))
+replace = '''    if False:
 '''
 
 [[mutant]]
@@ -3006,9 +3006,9 @@ name = "a_file_name_taken_without_the_file"
 why = "A function from eval has the file name <string>, which resolves to a path outside the tests, so a function made up at run time would pass."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''        if source.is_file():
+find = '''        return source if source.is_file() else None
 '''
-replace = '''        if True:
+replace = '''        return source
 '''
 
 [[mutant]]
@@ -3016,9 +3016,9 @@ name = "a_class_of_a_fileless_main_raises"
 why = "inspect.getfile raises OSError for a class of a __main__ with no file, so the check would stop with an error in place of a reason."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''        except (TypeError, OSError):  # OSError: a class of a __main__ that has no file
+find = '''    except (TypeError, OSError, RuntimeError):  # also a __main__ with no file, a long name, 3.11's symlink loop
 '''
-replace = '''        except TypeError:
+replace = '''    except TypeError:
 '''
 
 [[mutant]]
@@ -3026,9 +3026,49 @@ name = "a_circular_chain_raises"
 why = "A record check must report a bad record; a ValueError from inspect.unwrap would stop on it with an error and name no record."
 suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    except ValueError:  # the chain comes back to a link it has passed, or is longer than the recursion limit
+find = '''    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
 '''
-replace = '''    except ZeroDivisionError:
+replace = '''    except ZeroDivisionError as error:
+'''
+
+[[mutant]]
+name = "a_proxy_believed_about_its_own_class"
+why = "A proxy that forwards __class__ reads as the function it wraps, so a test-written proxy over real code would be placed in the real code's file and recorded."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+'''
+replace = '''    code = isinstance(link, (type, types.FunctionType, types.MethodType))
+'''
+
+[[mutant]]
+name = "a_chain_that_raises_stops_the_check"
+why = "A __wrapped__ that raises would end a record check with that error, naming no record."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+'''
+replace = '''    except ValueError as error:
+'''
+
+[[mutant]]
+name = "a_staticmethod_in_a_chain_refused"
+why = "A staticmethod has __wrapped__ and no file of its own, so memoized or decorated static methods of real code would be refused as having no source."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if type(link) in (staticmethod, classmethod):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_one_shot_iterable_of_tests_spent_on_the_first_link"
+why = "A generator of folders would be used up by the first link, and every later link would go unchecked."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    tests = tuple(tests)
+'''
+replace = '''    pass
 '''
 
 [[mutant]]

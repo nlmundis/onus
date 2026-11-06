@@ -67,11 +67,30 @@ PRODUCT = textwrap.dedent("""
 
 
     held = functools.partial(pair, a=1)
+
+
+    class Memo:
+        @functools.lru_cache
+        @staticmethod
+        def memo_static():
+            return "memo\\n"
+
+        @loud
+        @staticmethod
+        def dressed_static():
+            return "dressed\\n"
 """)
 AMONG_THE_TESTS = (
     "import functools\n\n\ndef canned():\n    return 'whatever the baseline wants'\n\n\n"
     "cached = functools.lru_cache(canned)\n\n\n"
-    "class Dressed:\n    def __call__(self):\n        return 'whatever the baseline wants'\n"
+    "class Dressed:\n    def __call__(self):\n        return 'whatever the baseline wants'\n\n\n"
+    "class Proxy:\n    def __init__(self, wrapped):\n        self.__dict__['__wrapped__'] = wrapped\n\n"
+    "    __class__ = property(lambda self: self.__wrapped__.__class__)\n"
+    "    __module__ = property(lambda self: self.__wrapped__.__module__)\n\n"
+    "    def __getattr__(self, name):\n        return getattr(self.__wrapped__, name)\n\n"
+    "    def __call__(self):\n        return 'whatever the baseline wants'\n\n\n"
+    "class Unreadable:\n    @property\n    def __wrapped__(self):\n        raise KeyError('no such context')\n\n"
+    "    def __call__(self):\n        return 'whatever the baseline wants'\n"
 )
 RECEIPT = "order 7\ntotal 0.00\nprinted 2026-01-08\n"
 STEM = "test_baseline.Case.test_it"
@@ -519,6 +538,46 @@ class ProducerTest(Sandbox):
             self.case().assertApproved(self.shop.counted)
         self.assertFalse(self.approved.exists())
 
+    def test_a_mock_in_the_middle_of_a_chain_is_refused(self):
+        self.shop.counted = functools.lru_cache(functools.update_wrapper(mock.Mock(), self.shop.counted))
+        with self.approving(), self.assertRaisesRegex(ValueError, "what it wraps is a mock"):
+            self.case().assertApproved(self.shop.counted)
+        self.assertFalse(self.approved.exists())
+
+    def test_a_proxy_that_forwards_its_class_is_judged_by_its_true_class(self):
+        self.shop.counted = self.checks_module.Proxy(self.shop.counted)
+        with self.approving(), self.assertRaisesRegex(ValueError, "it has no source file"):
+            self.case().assertApproved(self.shop.counted)
+        self.assertFalse(self.approved.exists())
+
+    def test_a_chain_that_raises_when_read_gives_a_reason(self):
+        self.shop.counted = self.checks_module.Unreadable()
+        self.shop.counted.__module__, self.shop.counted.__qualname__ = "onus_sandbox_shop", "counted"
+        with self.assertRaisesRegex(ValueError, "its __wrapped__ chain cannot be followed"):
+            self.case().assertApproved(self.shop.counted)
+
+    def test_a_static_or_class_method_inside_a_chain_is_real(self):
+        for name in ("memo_static", "dressed_static"):
+            with self.subTest(name=name):
+                self.assertIsNone(onus.baseline._approved.unreal(f"onus_sandbox_shop.Memo.{name}", [self.checks]))
+
+    def test_a_file_name_that_cannot_be_read_is_no_place(self):
+        loop = self.top / "loop"
+        loop.symlink_to(loop.name)
+        for source in (str(loop), "x" * 5000):
+            made_up = eval(compile("lambda: 'canned'", source, "eval"))  # noqa: S307 - the point of the test
+            self.shop.counted = functools.update_wrapper(made_up, self.shop.counted)
+            with (
+                self.subTest(source=source[:20]),
+                self.approving(),
+                self.assertRaisesRegex(ValueError, "it has no source file"),
+            ):
+                self.case().assertApproved(self.shop.counted)
+
+    def test_the_tests_may_be_given_once_only(self):
+        reason = onus.baseline._approved.unreal("onus_sandbox_checks.cached", iter([self.checks]))
+        self.assertIn("what it wraps is defined among the tests", str(reason))
+
     def test_real_code_behind_functools_lru_cache_is_real(self):
         self.shop.receipt = functools.lru_cache(self.shop.receipt)
         with self.approving():
@@ -621,7 +680,7 @@ class ApprovedProducersAreRealTest(Sandbox):
         report = self.check()
         self.assertEqual(report.errors, [])
         (failure,) = report.failures
-        self.assertIn("onus_sandbox_shop.counted: its __wrapped__ chain never ends", failure[1])
+        self.assertIn("onus_sandbox_shop.counted: its __wrapped__ chain cannot be followed to an end", failure[1])
 
     def test_an_approved_file_without_its_record_fails_and_a_record_without_its_file(self):
         for orphaned in (f"{STEM}.approved.md", f"{STEM}.approved.meta.json"):

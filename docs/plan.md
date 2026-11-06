@@ -386,7 +386,13 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **What the walk cannot see.** It reads what code says of itself: `__wrapped__`, a function's compiled file
       name, and a class's `__module__`. A function compiled under another file's name, a class that names another
       module, and real code that calls a test function in its body with no `__wrapped__` to show for it all pass.
-      The check stops a fake made by habit, not one written to get past it.
+      So does `functools.wraps(real)` laid over `functools.lru_cache(fake)`: the outer call replaces the cache's
+      `__wrapped__`, and the function inside a C wrapper cannot be read, so the chain names only real code. The
+      same holds for any wrapper placed by its class whose `__wrapped__` is overwritten. Refusing them would leave
+      no memoized producer a way to be approved. Any function outside the tests is "real", an echo such as
+      `textwrap.dedent` included. Generated code, as a dataclass's `__repr__`, a frozen module, and a zipped
+      package have no file that exists, and are refused. The check stops a fake made by habit, not one written
+      to get past it.
     - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
       must have the record's four keys and name a real producer, each approved file must have one record and
       each record one file, and a folder that is missing or holds no record fails, so that passing means

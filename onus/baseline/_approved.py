@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import types
 import unittest
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -86,27 +87,29 @@ def _tests_of(case: object, folder: Path) -> tuple[Path, ...]:
 def _written_in(link: Callable[..., object], *, wrapper: bool) -> Path | None:
     """Return the file that holds ``link``, or None when nothing places it in a file that exists.
 
-    A wrapper with no file of its own, as ``functools.lru_cache`` gives, is placed by its class. Only a wrapper is:
-    the innermost link is what runs, and its class says nothing of what it does, as a ``functools.partial`` shows.
+    Only a real function, method, or class speaks for itself, and ``type`` is asked which ``link`` is, since a proxy
+    can forward ``__class__``. Any other wrapper, as ``functools.lru_cache`` gives, is placed by its class. The
+    innermost link is never placed so: it is what runs, and a ``functools.partial``'s class says nothing of that.
     """
-    things: tuple[Callable[..., object], ...] = (link, type(link)) if wrapper else (link,)
-    for thing in things:
-        try:
-            source = Path(inspect.getfile(thing)).resolve()
-        except (TypeError, OSError):  # OSError: a class of a __main__ that has no file
-            continue
-        if source.is_file():
-            return source
-    return None
+    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+    if not code and not wrapper:
+        return None
+    try:
+        source = Path(inspect.getfile(link if code else type(link))).resolve()
+        return source if source.is_file() else None
+    except (TypeError, OSError, RuntimeError):  # also a __main__ with no file, a long name, 3.11's symlink loop
+        return None
 
 
 def unreal(name: str, tests: Iterable[Path]) -> str | None:
     """Return why the producer recorded as ``name`` is not real code under test, or None when it is.
 
     A real producer is a callable that importing its name gives, and every link of its ``__wrapped__`` chain is
-    no mock and is written, in a file that exists, outside every folder of ``tests``. A function written among
-    the tests, or a mock, can produce any text a baseline wants, so its baseline shows nothing about the code.
+    no mock and is written, in a file that exists, outside every folder of ``tests``; a ``staticmethod`` or
+    ``classmethod`` link only passes through to the next. A function written among the tests, or a mock, can
+    produce any text a baseline wants, so its baseline shows nothing about the code.
     """
+    tests = tuple(tests)
     try:
         found = _resolved(name)
     except LookupError as error:
@@ -116,10 +119,12 @@ def unreal(name: str, tests: Iterable[Path]) -> str | None:
     wrappers: list[Callable[..., object]] = []
     try:
         innermost = inspect.unwrap(found, stop=lambda link: wrappers.append(link))
-    except ValueError:  # the chain comes back to a link it has passed, or is longer than the recursion limit
-        return "its __wrapped__ chain never ends, so nothing shows what would run"
+    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+        return f"its __wrapped__ chain cannot be followed to an end, so nothing shows what would run: {error!r}"
     for link in (*wrappers, innermost):
         who = "it" if link is found else "what it wraps"
+        if type(link) in (staticmethod, classmethod):
+            continue
         if _is_mock(link):
             return f"{who} is a mock"
         source = _written_in(link, wrapper=link is not innermost)
