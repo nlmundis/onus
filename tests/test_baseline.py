@@ -196,10 +196,21 @@ class RecordingTest(Sandbox):
         before = self.files()
         with (
             self.approving(other),
-            self.assertRaisesRegex(AssertionError, "records only into the checkout it was run in"),
+            self.assertRaisesRegex(AssertionError, "recording reaches only the checkout that variable names"),
         ):
             self.case().assertApproved(self.shop.receipt, 7)
         self.assertEqual(self.files(), before)
+
+    def test_no_failure_speaks_of_a_make_approve_that_onus_does_not_have(self):
+        other = self.top / "other"
+        (other / ".git").mkdir(parents=True)
+        with self.approving(other), self.assertRaises(AssertionError) as outside:
+            self.case().assertApproved(self.shop.receipt, 7)
+        with self.assertRaises(AssertionError) as missing:
+            self.case().assertApproved(self.shop.receipt, 7)
+        for raised in (outside, missing):
+            self.assertIn(APPROVE_ROOT, str(raised.exception))
+            self.assertNotIn("make approve", str(raised.exception))
 
     def test_nothing_is_recorded_under_a_root_that_is_no_git_work_tree(self):
         shutil.rmtree(self.repo / ".git")

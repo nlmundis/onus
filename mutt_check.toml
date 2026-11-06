@@ -2950,6 +2950,16 @@ replace = '''    for each in (found,):
 '''
 
 [[mutant]]
+name = "a_failure_naming_a_target_onus_does_not_have"
+why = "onus has no make approve, so a failure that names one sends the reader after a target that is not there."
+suites = ["tests.test_baseline.RecordingTest"]
+file = "onus/baseline/_approved.py"
+find = '''    f"run the suite once with {APPROVE_ROOT} set to the checkout's top level, and review the diff of the approved "
+'''
+replace = '''    f"run `make approve` with {APPROVE_ROOT} set to the checkout's top level, and review the diff of the approved "
+'''
+
+[[mutant]]
 name = "a_second_output_recorded_over_the_first"
 why = "Two calls in one test under one label share a file; recording would keep only the last, and every plain run would then fail on the first."
 suites = ["tests.test_baseline.ComparingTest"]
