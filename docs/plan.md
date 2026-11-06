@@ -433,7 +433,10 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, written whole under another name
       and then renamed, so CHANGED can show a diff. A kept copy that no longer hashes to its name makes the
       artifact whose newest line signed it CORRUPT, whether or not its content changed, and stops the next
-      `record`; one that is gone leaves CHANGED without a diff.
+      `record`; one that is gone leaves CHANGED without a diff. A wrong file under the hash of content no line
+      signed is a stray, not corruption: `record` refuses before the digits are asked for and names the one
+      file to move aside. It is a stray by what the ledger says, and a ledger cut back by whole lines reads as
+      sound, so the message says to move the file, not delete it.
     - **The terminal is `/dev/tty`, opened by descriptor,** and must be a terminal: a file or pipe in its
       place is refused, and standard input is never read. What is typed must be exactly the first eight hex
       digits, lower case, with nothing round them. What is shown has every control character written as its

@@ -250,6 +250,35 @@ def _kept(ledger: Path, digest: str) -> bytes | None:
     return data
 
 
+def _refuse_a_wrong_kept_file(ledger: Path, blob: bytes, lines: list[Line]) -> None:
+    """Refuse content whose copy cannot be kept because something is in its place, before any digit is typed.
+
+    Raises:
+        CorruptLedgerError: a line signed that hash, so what is wrong is a copy the ledger relies on.
+        SignoffError: no line did, so the file is a stray, which restoring the ledger does not remove; or a folder
+            sits where the copy, or a file where the folder of copies, is to be written.
+    """
+    digest = _sha256(blob)
+    folder, kept = _blobs(ledger), _blobs(ledger) / digest
+    no_folder = os.path.lexists(folder) and not folder.is_dir()
+    no_file = os.path.lexists(kept) and not kept.is_file()
+    no_partial = not os.path.lexists(kept) and kept.with_name(kept.name + ".partial").is_dir()
+    if no_folder or no_file or no_partial:
+        raise SignoffError(
+            f"something other than a copy sits where this content's copy goes, in {folder}: move it aside and "
+            "sign again"
+        )
+    try:
+        _kept(ledger, digest)
+    except CorruptLedgerError:
+        if any(line.sha256 == digest for line in lines):
+            raise
+        raise SignoffError(
+            f"{kept} is not this content, and no line of the ledger signed it: move that one file aside and sign "
+            "again"
+        ) from None
+
+
 def _lines(data: bytes) -> list[str]:
     """Return ``data`` as lines to compare: read as UTF-8, with each byte that is not UTF-8 written as its escape."""
     parts = data.decode("utf-8", "backslashreplace").split("\n")
@@ -397,7 +426,8 @@ def _append(
 
     Raises:
         SignoffRefused: a session variable is set, there is no terminal, or the confirmation was not typed.
-        SignoffError: the id or the reviewer's name is refused, or ``build`` refused.
+        SignoffError: the id or the reviewer's name is refused, ``build`` refused, or a stray file sits where the
+            content's copy is kept.
         CorruptLedgerError: the ledger cannot be relied on, so nothing is added to it.
         NotImplementedError: this platform has no fcntl, so no lock to hold while the ledger is read and extended.
     """
@@ -427,6 +457,8 @@ def _append(
             file.seek(0)
             lines = parse_ledger(file.read(), ledger)
             fields, shown, expected, what, blob = build(ledger, lines, _newest(lines, artifact))
+            if blob is not None:
+                _refuse_a_wrong_kept_file(ledger, blob, lines)
             _confirmed(terminal, shown, expected, what)
             if blob is not None and _kept(ledger, _sha256(blob)) is None:
                 # Written whole under another name first, so a write cut short never stands under the hash.
@@ -483,8 +515,8 @@ def record(
     Raises:
         SignoffRefused: a session variable is set, there is no terminal, or the confirmation was not typed.
         SignoffError: the id or ``reviewed_by`` is refused; ``path`` is no file; a bound file is missing, outside
-            the ledger's folder, or the ledger or one of its kept copies; or the artifact's newest line already
-            signs this content with these files bound.
+            the ledger's folder, or the ledger or one of its kept copies; the artifact's newest line already
+            signs this content with these files bound; or a file no line signed sits where its copy is kept.
         CorruptLedgerError: the ledger, or the kept copy of what was signed before, cannot be relied on.
         NotImplementedError: this platform has no fcntl.
     """

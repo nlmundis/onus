@@ -3282,6 +3282,66 @@ replace = '''            if False:
 '''
 
 [[mutant]]
+name = "a_stray_kept_file_called_corruption"
+why = "No line signed it, so restoring the ledger from version control would leave it there and the next record would stop again."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if any(line.sha256 == digest for line in lines):
+'''
+replace = '''        if True:
+'''
+
+[[mutant]]
+name = "a_signed_copy_gone_wrong_called_a_stray"
+why = "Told to delete it, the operator would remove the evidence of a copy the ledger relies on, where corruption must be read and restored."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if any(line.sha256 == digest for line in lines):
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_folder_in_the_copy_s_place_found_only_after_the_digits"
+why = "The write would fail after the person confirmed, with a system error and nothing to say what to move."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if no_folder or no_file or no_partial:
+'''
+replace = '''    if no_folder or no_partial:
+'''
+
+[[mutant]]
+name = "only_a_plain_file_seen_in_the_folder_s_place"
+why = "A pipe or a broken link there passes the check, and the mkdir stops after the digits with nothing named to move."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    no_folder = os.path.lexists(folder) and not folder.is_dir()
+'''
+replace = '''    no_folder = folder.is_file()
+'''
+
+[[mutant]]
+name = "a_leftover_partial_folder_refused_though_the_copy_is_kept"
+why = "Nothing would be written there, so the sign-off would stop for no reason."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    no_partial = not os.path.lexists(kept) and kept.with_name(kept.name + ".partial").is_dir()
+'''
+replace = '''    no_partial = kept.with_name(kept.name + ".partial").is_dir()
+'''
+
+[[mutant]]
+name = "a_wrong_kept_file_found_only_after_the_digits"
+why = "The person would review and confirm a sign-off that was always going to stop."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            if blob is not None:
+                _refuse_a_wrong_kept_file(ledger, blob, lines)
+'''
+replace = ''''''
+
+[[mutant]]
 name = "the_kept_copy_written_in_place"
 why = "A write cut short would leave part of the content under the full content's hash."
 suites = ["tests.test_signoff.RecordTest"]
