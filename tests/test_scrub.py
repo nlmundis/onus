@@ -132,9 +132,7 @@ class TimestampsTest(unittest.TestCase):
             "2026-01-08T12:00:00.123abc",
             "2026-01-08T12:00:00.5Zfoo",
             "2026-01-08T12:00:00Zfoo",
-            "2026-01-08T12:00:00+05:30x",
-            "2026-01-08T12:00:00+0530\u00e9",
-            "2026-01-08T12:00:00-08x",
+            "2026-01-08T12:00Z1",
         ):
             with self.subTest(text=text):
                 self.assertEqual(iso_timestamps()(text), text)
@@ -148,6 +146,12 @@ class TimestampsTest(unittest.TestCase):
             ("2026-01-08T12:00:00+053", "+053"),
             ("2026-01-08T12:00+0560", "+0560"),
             ("2026-01-08T12:00+05:60", ":60"),
+            ("2026-01-08T12:00:00abc", ":00abc"),
+            ("2026-01-08T12:00-08x", "-08x"),
+            ("2026-01-08T12:00+0530\u00e9", "+0530\u00e9"),
+            ("2026-01-08T12:00:00\u0663", ":00\u0663"),
+            ("2026-01-08T12:00+05:30x", ":30x"),
+            ("2026-01-08T12:00+05:301", ":301"),
         ):
             with self.subTest(text=text):
                 self.assertEqual(iso_timestamps()(text), f"<timestamp-1>{left}")
@@ -157,6 +161,12 @@ class TimestampsTest(unittest.TestCase):
             with self.subTest(first=order[0].name):
                 self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09"), "<timestamp-1>:<date-1>")
                 self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09T13:00"), "<timestamp-1>:<timestamp-2>")
+
+    def test_an_id_joined_on_is_not_taken_for_a_field(self):
+        for joined in (f"-{UUID_A}", ":12abcdef-1234-4234-8234-123456789012", "-12abcdef-1234-4234-8234-123456789012"):
+            for order in ((uuids(), iso_timestamps()), (iso_timestamps(), uuids())):
+                with self.subTest(first=order[0].name, joined=joined):
+                    self.assertEqual(chain(*order)(f"2026-01-08T12:00{joined}"), f"<timestamp-1>{joined[0]}<uuid-1>")
 
     def test_two_moments_that_differ_after_the_seconds_are_never_given_one_number(self):
         text = "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc 2026-01-08T12:00:00.123 2026-01-08T12:00:00.456"

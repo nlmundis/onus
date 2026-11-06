@@ -18,12 +18,13 @@ _DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 _HOUR = r"(?:[01][0-9]|2[0-3])"
 _SIXTY = r"[0-5][0-9]"
 _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
-# A field is two digits and no more: digits that run past it are no field, and stay in the text behind the token.
-_SECONDS = f"(?::(?:{_SIXTY}|60)(?![0-9])(?:[.,][0-9]+)?)?"
-_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?(?![0-9]))?"
+# Seconds or an offset that runs on into a letter or digit is no field, and stays in the text behind the token: its
+# ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds.
+_SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:[.,][0-9]+)?)?"
+_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?{_AFTER})?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
-# Atomic: seconds and zone are read as far as they go and never given back, so a form that runs on into a letter
-# or digit fails whole, where backing off would replace a prefix and leave the part that changes in the text.
+# Atomic: a fraction or "Z" that runs on into a letter or digit fails whole, where backing off would replace a
+# prefix and leave the part that changes in the text.
 _TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")
 # Digits alone, or digits then an exponent: a count, or the digits of a float, never an id.
 _NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")
@@ -133,10 +134,11 @@ def iso_timestamps() -> Scrubber:
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
     "." or ",", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
-    written this way, and what follows it stays in the text, as ":611" does after "2026-01-08T12:00"; if a letter
-    or digit follows a form read whole, it runs on, and the whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is
-    not cut back to a shorter form. Two timestamps are one value when they are written alike; the same moment in
-    two zones is two values.
+    written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
+    digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
+    leaves ":2026-01-09". A fraction or "Z" that runs on leaves the whole timestamp in the text, and is not cut
+    back to a shorter form, as in "2026-01-08T12:00:00.5Zfoo". Two timestamps are one value when they are written
+    alike; the same moment in two zones is two values.
     """
     return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
 
