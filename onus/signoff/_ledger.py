@@ -38,11 +38,11 @@ class CorruptLedgerError(SignoffError):
     Nothing in such a ledger can be relied on, and onus offers no repair, which every message says.
     """
 
-    def __init__(self, problem: str) -> None:
-        """Keep ``problem`` and say what clears it, since no command here does."""
-        super().__init__(
-            f"{problem}. onus does not repair a ledger: restore it, and the copies kept beside it, from version "
-            "control, and read what changed"
+    def __str__(self) -> str:
+        """Return the problem and what clears it, since no command here does; ``args`` keeps the problem alone."""
+        return (
+            f"{super().__str__()}. onus does not repair a ledger: restore it, and the copies kept beside it, from "
+            "version control, and read what changed"
         )
 
 
