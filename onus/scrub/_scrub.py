@@ -141,8 +141,9 @@ def iso_timestamps() -> Scrubber:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
     written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
     digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
-    leaves ":2026-01-09". A fraction or "Z" that runs on leaves the whole timestamp in the text, and is not cut
-    back to a shorter form, as in "2026-01-08T12:00:00.5Zfoo". Two timestamps are one value when they are written
+    leaves ":2026-01-09". An offset is read as far as it is well formed, so "+05:30x" leaves ":30x". A fraction or
+    "Z" that runs on leaves the whole timestamp in the text, and is not cut back to a shorter form, as in
+    "2026-01-08T12:00:00.5Zfoo". Two timestamps are one value when they are written
     alike; the same moment in two zones is two values.
     """
     return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
