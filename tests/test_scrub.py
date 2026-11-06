@@ -82,6 +82,12 @@ class DatesTest(unittest.TestCase):
             with self.subTest(first=order[0].name):
                 self.assertEqual(chain(*order)(text), "<timestamp-1> and <timestamp-2> on <date-1>")
 
+    def test_a_date_before_a_clock_that_runs_on_stays_with_it(self):
+        for text in ("2026-01-08 12:00pm", "2026-01-08 12:00:00.5abc"):
+            with self.subTest(text=text):
+                self.assertEqual(iso_dates()(text), text)
+                self.assertEqual(iso_timestamps()(text), text)
+
     def test_a_date_before_a_clock_time_no_timestamp_has_is_replaced(self):
         # After "T" the date runs on into a letter, so it stays, as it does before any other letter.
         self.assertEqual(iso_dates()("2026-01-08 25:00 and 2026-01-08T10:61"), "<date-1> 25:00 and 2026-01-08T10:61")
@@ -128,12 +134,28 @@ class TimestampsTest(unittest.TestCase):
             "2026-01-08T12:00:00+05:30x",
             "2026-01-08T12:00:00+0530\u00e9",
             "2026-01-08T12:00:00-08x",
-            "2026-01-08T12:00:00+053",
-            "2026-01-08T12:00:001",
         ):
             with self.subTest(text=text):
                 self.assertEqual(iso_timestamps()(text), text)
                 self.assertEqual(iso_dates()(text), text)
+
+    def test_digits_that_are_no_field_stay_behind_the_token(self):
+        for text, left in (
+            ("2026-01-08T12:00:001", ":001"),
+            ("2026-01-08T12:00:601", ":601"),
+            ("2026-01-08T12:00:611", ":611"),
+            ("2026-01-08T12:00:00+053", "+053"),
+            ("2026-01-08T12:00+0560", "+0560"),
+            ("2026-01-08T12:00+05:60", ":60"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(iso_timestamps()(text), f"<timestamp-1>{left}")
+
+    def test_a_date_after_a_colon_is_not_taken_for_seconds(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            with self.subTest(first=order[0].name):
+                self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09"), "<timestamp-1>:<date-1>")
+                self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09T13:00"), "<timestamp-1>:<timestamp-2>")
 
     def test_two_moments_that_differ_after_the_seconds_are_never_given_one_number(self):
         text = "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc 2026-01-08T12:00:00.123 2026-01-08T12:00:00.456"
@@ -157,8 +179,10 @@ class TimestampsTest(unittest.TestCase):
                 self.assertEqual(iso_timestamps()(f"2026-01-08T12:00{offset} x"), "<timestamp-1> x")
 
     def test_a_date_joined_on_by_a_hyphen_is_a_date_of_its_own(self):
-        scrubber = chain(iso_timestamps(), iso_dates())
-        self.assertEqual(scrubber("2026-01-08T12:00-2026-01-09"), "<timestamp-1>-<date-1>")
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            for text in ("2026-01-08T12:00-2026-01-09", "2026-01-08T12:00-1066-10-14", "2026-01-08T12:00-1400-01-09"):
+                with self.subTest(first=order[0].name, text=text):
+                    self.assertEqual(chain(*order)(text), "<timestamp-1>-<date-1>")
 
     def test_second_sixty_is_read_at_any_minute_and_sixty_one_at_none(self):
         self.assertEqual(iso_timestamps()("2026-01-08T12:34:60"), "<timestamp-1>")
