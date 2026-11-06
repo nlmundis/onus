@@ -3253,6 +3253,102 @@ find = 'memoryview((_visible(shown) + prompt).encode'
 replace = 'memoryview((shown + prompt).encode'
 
 [[mutant]]
+name = "a_diff_reported_with_its_control_characters_raw"
+why = "The same content that could not fool record's screen could erase the signed line from check's diff, which is read before re-signing."
+suites = ["tests.test_signoff.CommandLineTest", "tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        object.__setattr__(self, "diff", None if self.diff is None else _visible(self.diff))
+'''
+replace = '''        pass
+'''
+
+[[mutant]]
+name = "a_detail_reported_with_its_control_characters_raw"
+why = "A reviewer's name in a ledger line could rewrite the verdict on the reader's terminal; only the id and the hash are limited to safe characters."
+suites = ["tests.test_signoff.CommandLineTest", "tests.test_signoff.CheckTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        object.__setattr__(self, "detail", _one_visible_line(self.detail))
+'''
+replace = '''        pass
+'''
+
+[[mutant]]
+name = "a_line_break_left_in_a_check_s_detail"
+why = "A path holding a line break would print as a line of its own, a forged status or diff line beneath the verdict."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        object.__setattr__(self, "detail", _one_visible_line(self.detail))
+'''
+replace = '''        object.__setattr__(self, "detail", _visible(self.detail))
+'''
+
+[[mutant]]
+name = "a_line_break_left_in_a_diff_s_header"
+why = "The header names the path, so a line break there would forge added and removed lines above the real diff."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/_ledger.py"
+find = '''before_name, _one_visible_line(after_name)))
+'''
+replace = '''before_name, after_name))
+'''
+
+[[mutant]]
+name = "a_line_break_left_in_a_bound_name_on_the_screen"
+why = "A bound file's name could forge a screen line the digits then confirm."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            + "".join(f"  bound: {_one_visible_line(name)} {value}\n" for name, value in sorted(bound.items()))
+'''
+replace = '''            + "".join(f"  bound: {name} {value}\n" for name, value in sorted(bound.items()))
+'''
+
+[[mutant]]
+name = "a_line_break_left_in_the_content_s_path_on_the_screen"
+why = "The content's path could forge a screen line the digits then confirm."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''  content: {_one_visible_line(str(path))}\n"
+'''
+replace = '''  content: {path}\n"
+'''
+
+[[mutant]]
+name = "a_line_break_left_in_a_refusal"
+why = "A refusal quotes a path, which could forge a verdict line beneath it."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = '''{_one_visible_line(str(error))}'''
+replace = '''{_visible(str(error))}'''
+
+[[mutant]]
+name = "a_line_break_left_in_a_usage_error"
+why = "A usage error quotes the words it refuses, which could forge a verdict line beneath it."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = '''        super().error(_one_visible_line(message))
+'''
+replace = '''        super().error(_visible(message))
+'''
+
+[[mutant]]
+name = "a_usage_error_printed_with_its_control_characters_raw"
+why = "argparse quotes the words it refuses, before the command's own escaping is reached."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = '''        super().error(_one_visible_line(message))
+'''
+replace = '''        super().error(message)
+'''
+
+[[mutant]]
+name = "a_refusal_printed_with_its_control_characters_raw"
+why = "A refusal quotes the paths it was given, and goes to the same terminal."
+suites = ["tests.test_signoff.CommandLineTest"]
+file = "onus/signoff/__main__.py"
+find = '''{_one_visible_line(str(error))}'''
+replace = '''{error}'''
+
+[[mutant]]
 name = "an_answer_with_spaces_round_it_accepted"
 why = "What is typed must be exactly the digits; a looser reading is a second, undocumented way to confirm."
 suites = ["tests.test_signoff.RecordTest"]
@@ -3267,7 +3363,7 @@ name = "a_dropped_binding_not_shown"
 why = "A re-signing that leaves out a file the sign-off before bound would loosen the approval with nothing on the screen saying so."
 suites = ["tests.test_signoff.BoundTest"]
 file = "onus/signoff/_ledger.py"
-find = '''            + "".join(f"  no longer bound: {name}\n" for name in unbound)
+find = '''            + "".join(f"  no longer bound: {_one_visible_line(name)}\n" for name in unbound)
 '''
 replace = ''
 

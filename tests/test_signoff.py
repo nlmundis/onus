@@ -496,6 +496,16 @@ class RecordTest(Desk):
         self.assertEqual(names, [f"{sha(FIRST)}.partial -> {sha(FIRST)} {FIRST!r}"])
         self.assertEqual([path.name for path in blobs.iterdir()], [sha(FIRST)])
 
+    def test_a_path_or_bound_name_with_a_line_break_cannot_forge_a_line_of_the_screen(self):
+        truth = self.folder / "t\n  bound: forged"
+        truth.write_bytes(FIRST)
+        rubric = self.folder / "r\n  no longer bound: forged"
+        rubric.write_bytes(FIRST)
+        self.terminal.type(sha(FIRST)[:8])
+        record(self.ledger, ARTIFACT, truth, reviewed_by="A Reviewer", bind=[rubric])
+        lines = self.terminal.shown().splitlines()
+        self.assertFalse([line for line in lines if line.lstrip().startswith(("bound: forged", "no longer bound"))])
+
 
 class BoundTest(Desk):
     def setUp(self) -> None:
@@ -650,6 +660,18 @@ class CheckTest(Desk):
         check = check_signoff(self.ledger, ARTIFACT, self.truth)
         self.assertEqual((check.status, check.diff), (Status.CHANGED, None))
         self.assertIn("is missing", check.detail)
+
+    def test_what_a_check_reports_holds_no_control_character(self):
+        self.write(self.signed(reviewed_by="A\x1b[2KReviewer"))
+        self.assertNotIn("\x1b", check_signoff(self.ledger, ARTIFACT, self.truth).detail)
+
+    def test_the_diff_a_check_reports_holds_no_control_character(self):
+        self.sign()
+        self.truth.write_bytes(b"\x1b[2K\r\n")
+        check = check_signoff(self.ledger, ARTIFACT, self.truth)
+        assert check.diff is not None
+        self.assertNotIn("\x1b", check.diff)
+        self.assertNotIn("\r", check.diff)
 
     def test_changed_content_with_no_signed_copy_kept_has_no_diff(self):
         self.sign()
@@ -859,6 +881,57 @@ class CommandLineTest(Desk):
             code = main(["record", str(self.ledger), ARTIFACT, str(self.truth), "--reviewed-by", "A Reviewer"])
         self.assertEqual(code, 20)
         self.assertIn("refused: ", err.getvalue())
+
+    def test_check_writes_each_control_character_as_its_escape(self):
+        self.sign()
+        self.truth.write_bytes(b'{"a": "dog"}\x1b[1A\x1b[2K\r+{"a": "cat"}\n')
+        code, out = self.run_check()
+        self.assertEqual(code, 11)
+        self.assertNotIn("\x1b", out)
+        self.assertNotIn("\r", out)
+        self.assertIn('+{"a": "dog"}\\x1b[1A\\x1b[2K\\r+{"a": "cat"}\n', out)
+
+    def test_check_writes_a_reviewers_control_characters_as_their_escapes(self):
+        self.write(self.signed(reviewed_by="A\x1b[2KReviewer"))
+        self.truth.write_bytes(FIRST)
+        code, out = self.run_check()
+        self.assertEqual(code, 0)
+        self.assertNotIn("\x1b", out)
+        self.assertIn("A\\x1b[2KReviewer", out)
+
+    def test_a_path_with_a_line_break_cannot_forge_a_line_of_what_check_prints(self):
+        self.sign()
+        forged = self.folder / "f\n+forged added line\n-forged removed"
+        forged.write_bytes(SECOND)
+        with self.printed() as (out, _):
+            code = main(["check", str(self.ledger), ARTIFACT, str(forged)])
+        self.assertEqual(code, 11)
+        self.assertFalse([line for line in out.getvalue().splitlines() if line.startswith(("+forged", "-forged"))])
+        self.assertIn("f\\n+forged added line\\n-forged removed", out.getvalue())
+
+    def test_a_usage_error_writes_each_control_character_as_its_escape(self):
+        with self.printed() as (_, err), self.assertRaises(SystemExit) as stopped:
+            main(["check", str(self.ledger), ARTIFACT, str(self.truth), "\x1b[2Kfake"])
+        self.assertEqual(stopped.exception.code, 2)
+        self.assertNotIn("\x1b", err.getvalue())
+        self.assertIn("\\x1b[2Kfake", err.getvalue())
+
+    def test_a_refusal_or_usage_error_cannot_forge_a_line(self):
+        path = self.folder / "no\nSIGNED: forged"
+        with self.printed() as (_, err):
+            main(["record", str(self.ledger), ARTIFACT, str(path), "--reviewed-by", "A Reviewer"])
+        self.assertNotIn("\nSIGNED: forged", err.getvalue())
+        with self.printed() as (_, err), self.assertRaises(SystemExit):
+            main(["check", str(self.ledger), ARTIFACT, str(self.truth), "d\nSIGNED: forged"])
+        self.assertNotIn("\nSIGNED: forged", err.getvalue())
+
+    def test_a_refusal_writes_each_control_character_as_its_escape(self):
+        path = self.folder / "no\x1b[2Kne"
+        with self.printed() as (_, err):
+            code = main(["record", str(self.ledger), ARTIFACT, str(path), "--reviewed-by", "A Reviewer"])
+        self.assertEqual(code, 20)
+        self.assertIn("is not a file to sign", err.getvalue())
+        self.assertNotIn("\x1b", err.getvalue())
 
     def test_the_exit_code_reaches_the_shell(self):
         environment = {**os.environ, "PYTHONPATH": str(pathlib.Path(onus.__file__).resolve().parents[1])}

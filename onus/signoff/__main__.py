@@ -3,17 +3,26 @@
 import argparse
 import sys
 from collections.abc import Sequence
+from typing import NoReturn
 
-from onus.signoff._ledger import SignoffError, Status, check_signoff, record, revoke
+from onus.signoff._ledger import SignoffError, Status, _one_visible_line, check_signoff, record, revoke
 
 # No verdict shares an exit code with a usage error (2) or a crash (1).
 EXIT = {Status.SIGNED: 0, Status.UNSIGNED: 10, Status.CHANGED: 11, Status.REVOKED: 12, Status.CORRUPT: 13}
 EXIT_REFUSED = 20
 
 
+class _Parser(argparse.ArgumentParser):
+    """The parser, whose usage errors quote what was typed, so they are escaped as every other message here is."""
+
+    def error(self, message: str) -> NoReturn:
+        """Print ``message`` with its control characters escaped, and exit 2."""
+        super().error(_one_visible_line(message))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one command and return its exit code: 0 only for a line written or an artifact that is SIGNED."""
-    parser = argparse.ArgumentParser(prog="python -m onus.signoff", description=__doc__)
+    parser = _Parser(prog="python -m onus.signoff", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     signing = commands.add_parser("record", help="sign an artifact's content, from a terminal")
     revoking = commands.add_parser("revoke", help="revoke an artifact's newest sign-off, from a terminal")
@@ -40,7 +49,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             line = revoke(args.ledger, args.artifact, reviewed_by=args.reviewed_by)
     except (SignoffError, NotImplementedError, OSError) as error:
         # An OSError is a ledger, a kept copy, or a content that cannot be read or written: no verdict, no line.
-        print(f"refused: {error}", file=sys.stderr)
+        print(f"refused: {_one_visible_line(str(error))}", file=sys.stderr)
         return EXIT_REFUSED
     print(f"written: line {line.line_sha256}")
     return 0

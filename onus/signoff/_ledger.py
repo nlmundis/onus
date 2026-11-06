@@ -84,12 +84,21 @@ class Line:
 
 @dataclass(frozen=True)
 class Check:
-    """What ``check_signoff`` found: the status, why, the newest line for the artifact, and a diff when one exists."""
+    """What ``check_signoff`` found: the status, why, the newest line for the artifact, and a diff when one exists.
+
+    ``detail`` and ``diff`` hold what a ledger and a file say, and are made to be read, so each holds every character
+    a terminal would obey written as its escape, as ``_visible`` does for what ``record`` shows.
+    """
 
     status: Status
     detail: str
     line: Line | None = None
     diff: str | None = None
+
+    def __post_init__(self) -> None:
+        """Escape both texts here, so that no caller of ``check_signoff`` has to before showing one."""
+        object.__setattr__(self, "detail", _one_visible_line(self.detail))
+        object.__setattr__(self, "diff", None if self.diff is None else _visible(self.diff))
 
 
 def _sha256(data: bytes) -> str:
@@ -259,7 +268,7 @@ def _lines(data: bytes) -> list[str]:
 
 def _diff(before: bytes, after: bytes, before_name: str, after_name: str) -> str:
     """Return a unified diff of two contents, a last line with no newline marked as one."""
-    return "".join(difflib.unified_diff(_lines(before), _lines(after), before_name, after_name))
+    return "".join(difflib.unified_diff(_lines(before), _lines(after), before_name, _one_visible_line(after_name)))
 
 
 def _visible(text: str) -> str:
@@ -271,6 +280,11 @@ def _visible(text: str) -> str:
     return "".join(
         each if each in "\n\t" or each.isprintable() else each.encode("unicode_escape").decode("ascii") for each in text
     )
+
+
+def _one_visible_line(text: str) -> str:
+    """Return ``text`` as ``_visible`` does, its line breaks escaped too, for what holds no line of its own: a path."""
+    return _visible(text).replace("\n", "\\n")
 
 
 def _valid_id(artifact: str) -> str:
@@ -515,10 +529,11 @@ def record(
             signed_before = _kept(ledger, newest.sha256) or b""
         unbound = sorted(set(newest.bound) - set(bound)) if newest else []
         shown = (
-            f"\nSign-off of {artifact}\n  reviewed by: {reviewed_by}\n  content: {path}\n  sha256: {digest}\n"
+            f"\nSign-off of {artifact}\n  reviewed by: {reviewed_by}\n  content: {_one_visible_line(str(path))}\n"
+            f"  sha256: {digest}\n"
             f"  bytes: {len(content)}\n"
-            + "".join(f"  bound: {name} {value}\n" for name, value in sorted(bound.items()))
-            + "".join(f"  no longer bound: {name}\n" for name in unbound)
+            + "".join(f"  bound: {_one_visible_line(name)} {value}\n" for name, value in sorted(bound.items()))
+            + "".join(f"  no longer bound: {_one_visible_line(name)}\n" for name in unbound)
             + (f"  supersedes: {newest.line_sha256}\n" if newest else "  first sign-off of this artifact\n")
             + _diff(signed_before, content, "signed before", str(path))
             + "\n"
