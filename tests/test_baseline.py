@@ -1,4 +1,4 @@
-"""onus.baseline: a producer's output held to a committed file, recorded only under make approve."""
+"""onus.baseline: a producer's output held to a committed file, recorded only under ONUS_APPROVE_ROOT."""
 
 import contextlib
 import functools
