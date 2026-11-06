@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import sys
 import tempfile
 import textwrap
@@ -131,8 +132,9 @@ class Sandbox(unittest.TestCase):
         return sorted(path.relative_to(self.top).as_posix() for path in top.rglob("*") if path.is_file())
 
     def received(self, name: str = f"{STEM}.received.md") -> pathlib.Path:
-        folder = hashlib.sha256(str(self.approved).encode("utf-8")).hexdigest()[:8]
-        return self.scratch / "onus-received" / folder / name
+        """Return the one received file under the sandbox's temporary folder, whatever folder it was given."""
+        (found,) = self.scratch.glob(f"onus-received-*/{name}")
+        return found
 
 
 class RecordingTest(Sandbox):
@@ -256,6 +258,30 @@ class ComparingTest(Sandbox):
         self.assertIn(f"--- {STEM}.approved.md\n+++ received\n", message)
         self.assertIn("-total 0.00\n+total 9.99\n", message)
         self.assertIn("If the change is intended, run the suite once with ONUS_APPROVE_ROOT set", message)
+
+    def test_a_symlink_planted_at_the_old_received_path_is_not_followed(self):
+        self.record()
+        victim = self.top / "victim"
+        victim.write_text("kept\n", encoding="utf-8")
+        folder = hashlib.sha256(str(self.approved).encode("utf-8")).hexdigest()[:8]
+        planted = self.scratch / "onus-received" / folder / f"{STEM}.received.md"
+        planted.parent.mkdir(parents=True)
+        planted.symlink_to(victim)
+        with self.assertRaises(AssertionError):
+            self.case().assertApproved(self.shop.receipt, 7, total="9.99")
+        self.assertEqual(victim.read_text(encoding="utf-8"), "kept\n")
+
+    def test_each_received_file_gets_a_new_folder_only_its_owner_can_enter(self):
+        self.record()
+        paths = []
+        for _ in range(2):
+            with self.assertRaises(AssertionError) as raised:
+                self.case().assertApproved(self.shop.receipt, 7, total="9.99")
+            paths.append(pathlib.Path(str(raised.exception).split("The received text is at ")[1].split(". ")[0]))
+        self.assertNotEqual(paths[0].parent, paths[1].parent)
+        for path in paths:
+            self.assertEqual(path.parent.parent, self.scratch)
+            self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
 
     def test_a_received_text_that_cannot_be_written_still_fails_with_the_diff(self):
         self.record()

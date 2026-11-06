@@ -386,9 +386,11 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       records were read.
     - **Where files go.** The approved folder is `approved` beside the test's own file, unless the class sets
       `approved_dir`. A missing approved file and a mismatch both write the received text to
-      `<temporary folder>/onus-received/<8 hex of the approved folder's path>/`, where the plan said
-      `<repo-sha8>`: the helper never asks git which repository it is in. A failure to write it there is said
-      in the message, beside the diff.
+      a new folder `<temporary folder>/onus-received-<random>/`, made by `tempfile.mkdtemp`, where the plan said
+      `$TMPDIR/onus-received/<repo-sha8>/`. A fixed path in a shared temporary folder could be worked out by
+      another user, who could plant a link there and have the text written through it, so each text gets a
+      folder only its owner can enter, and the failure names it. The price is a new folder per failing run,
+      left for the system to clear. A failure to write it there is said in the message, beside the diff.
     - **Recording.** Under `ONUS_APPROVE_ROOT` the root must be an absolute path with a `.git` entry and must
       hold the approved file; an empty or relative value is refused, not read as the current folder. A file
       already equal to the output is not rewritten. A record that no longer matches the call fails the test

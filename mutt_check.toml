@@ -2786,8 +2786,19 @@ name = "the_received_file_written_into_the_checkout"
 why = "Received files beside the approved ones dirty the work tree, and one committed by mistake reads as a second baseline."
 suites = ["tests.test_baseline.ComparingTest"]
 file = "onus/baseline/_approved.py"
-find = '    target = Path(tempfile.gettempdir()) / "onus-received" / folder / '
-replace = '    target = approved.parent / "onus-received" / folder / '
+find = '        folder = Path(tempfile.mkdtemp(prefix="onus-received-"))'
+replace = '        folder = approved.parent'
+
+[[mutant]]
+name = "the_received_file_written_to_a_path_anyone_can_work_out"
+why = "Where the temporary folder is shared, another user could plant a link at that path first, and a failing run would overwrite the link's target with the received text."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''        folder = Path(tempfile.mkdtemp(prefix="onus-received-"))
+'''
+replace = '''        folder = Path(tempfile.gettempdir()) / "onus-received" / hashlib.sha256(str(approved.parent).encode("utf-8")).hexdigest()[:8]
+        folder.mkdir(parents=True, exist_ok=True)
+'''
 
 [[mutant]]
 name = "make_approve_records_outside_its_checkout"

@@ -135,14 +135,17 @@ def _inputs_sha256(args: tuple[object, ...], kwargs: dict[str, object]) -> str:
 
 
 def _received(approved: Path, received: str) -> str:
-    """Write ``received`` under the temporary folder, never beside the approved file, and say where it is."""
-    folder = hashlib.sha256(str(approved.parent).encode("utf-8")).hexdigest()[:8]
-    target = Path(tempfile.gettempdir()) / "onus-received" / folder / approved.name.replace(_MARK, ".received", 1)
+    """Write ``received`` under the temporary folder, never beside the approved file, and say where it is.
+
+    Each text gets a new folder that only its owner can enter, because the temporary folder may be shared: at a path
+    another user can work out, a link planted first would have the text written through it onto the link's target.
+    """
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
+        folder = Path(tempfile.mkdtemp(prefix="onus-received-"))
+        target = folder / approved.name.replace(_MARK, ".received", 1)
         target.write_bytes(received.encode("utf-8"))
     except OSError as error:
-        return f"The received text could not be written to {target} ({error.strerror})."
+        return f"The received text could not be written to the temporary folder ({error})."
     return f"The received text is at {target}."
 
 
