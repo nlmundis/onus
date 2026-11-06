@@ -2924,9 +2924,49 @@ name = "a_nested_test_package_s_top_misplaced"
 why = "For tests two packages deep, only their own folder would count, and a shared helper one level up would be accepted."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    top = own.parents[depth - 2] if depth > 1 else own
+find = '''    top = (named or folders or [own])[0]
 '''
 replace = '''    top = own
+'''
+
+[[mutant]]
+name = "the_top_package_always_taken_for_the_tests"
+why = "Tests in mypkg/tests would make all of mypkg the tests, so every producer in it would be refused with no remedy short of moving the tests out."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    named = [path for name, path in zip(names, folders, strict=False) if name in _TEST_PACKAGES]
+'''
+replace = '''    named = []
+'''
+
+[[mutant]]
+name = "the_singular_test_package_not_recognized"
+why = "A package named test is the same layout under the other usual name, and it would be refused for that name alone."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''_TEST_PACKAGES = frozenset({"test", "tests"})
+'''
+replace = '''_TEST_PACKAGES = frozenset({"tests"})
+'''
+
+[[mutant]]
+name = "the_innermost_package_named_tests_taken"
+why = "A tests package nested in tests would narrow the tests to it, so a helper in the outer tests package would pass as code under test."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    top = (named or folders or [own])[0]
+'''
+replace = '''    top = (named[::-1] or folders or [own])[0]
+'''
+
+[[mutant]]
+name = "any_package_read_as_the_test_package"
+why = "With no name to go by, the innermost package would be taken for the tests, and a code package would pass with its helpers beside its tests; nothing there shows where the code ends, so it must fail toward refusing."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    top = (named or folders or [own])[0]
+'''
+replace = '''    top = (named or [own])[0]
 '''
 
 [[mutant]]

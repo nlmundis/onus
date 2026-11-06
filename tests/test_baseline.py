@@ -463,6 +463,68 @@ class ProducerTest(Sandbox):
             ],
         )
 
+    def kit(self, cases: str, *, in_init: bool = False) -> tuple[Any, Any, pathlib.Path]:
+        """Build a code package ``onus_sandbox_kit`` that holds its own tests, the case in the package ``cases``."""
+        kit = self.repo / "onus_sandbox_kit"
+        package = kit.joinpath(*cases.split("."))
+        package.mkdir(parents=True)
+        for folder in (package, *package.relative_to(self.repo).parents):
+            if folder != pathlib.Path("."):
+                (self.repo / folder / "__init__.py").touch()
+        (kit / "core.py").write_text("def render(n):\n    return f'kit {n}\\n'\n", encoding="utf-8")
+        tests = kit.joinpath(cases.split(".")[0])
+        (tests / "helpers.py").write_text(AMONG_THE_TESTS, encoding="utf-8")
+        (package / ("__init__.py" if in_init else "cases.py")).write_text(
+            "import unittest\n\nfrom onus.baseline import ApprovedMixin, ApprovedProducersAreReal\n\n\n"
+            "class Case(ApprovedMixin, unittest.TestCase):\n    def test_it(self):\n        pass\n\n\n"
+            "class Records(ApprovedProducersAreReal, unittest.TestCase):\n    pass\n",
+            encoding="utf-8",
+        )
+        self.addCleanup(
+            lambda: [sys.modules.pop(name) for name in list(sys.modules) if name.startswith("onus_sandbox_kit")]
+        )
+        module = f"onus_sandbox_kit.{cases}" + ("" if in_init else ".cases")
+        return importlib.import_module(module), importlib.import_module("onus_sandbox_kit.core"), package / "approved"
+
+    def assert_code_beside_is_real(self, name: str) -> None:
+        cases, core, approved = self.kit(name)
+        with self.approving():
+            cases.Case("test_it").assertApproved(core.render, 3)
+        self.assertEqual((approved / "cases.Case.test_it.approved.md").read_text(encoding="utf-8"), "kit 3\n")
+        result = unittest.TestResult()
+        cases.Records("test_every_approved_file_has_one_record_that_names_a_real_producer").run(result)
+        self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+
+    def test_code_beside_a_package_named_tests_is_code_under_test(self):
+        self.assert_code_beside_is_real("tests")
+
+    def test_code_beside_a_package_named_test_is_code_under_test(self):
+        self.assert_code_beside_is_real("test")
+
+    def test_a_helper_anywhere_in_a_package_named_tests_is_among_the_tests(self):
+        cases, _, _ = self.kit("tests.unit")
+        helpers = importlib.import_module("onus_sandbox_kit.tests.helpers")
+        with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under tests/"):
+            cases.Case("test_it").assertApproved(helpers.canned)
+
+    def test_the_outermost_package_named_tests_holds_the_tests(self):
+        cases, _, _ = self.kit("tests.unit.tests")
+        helpers = importlib.import_module("onus_sandbox_kit.tests.helpers")
+        with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under tests/"):
+            cases.Case("test_it").assertApproved(helpers.canned)
+
+    def test_a_test_written_in_a_package_file_counts_that_package(self):
+        cases, _, _ = self.kit("tests.unit", in_init=True)
+        helpers = importlib.import_module("onus_sandbox_kit.tests.helpers")
+        with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under tests/"):
+            cases.Case("test_it").assertApproved(helpers.canned)
+
+    def test_a_test_package_of_any_other_name_leaves_the_code_refused_and_says_why(self):
+        cases, core, approved = self.kit("checks")
+        with self.approving(), self.assertRaisesRegex(ValueError, "in a package named tests or test"):
+            cases.Case("test_it").assertApproved(core.render, 3)
+        self.assertFalse(approved.exists())
+
     def test_a_test_function_dressed_as_a_wrapper_of_real_code_is_refused(self):
         self.checks_module.canned.__wrapped__ = json.dumps
         with self.approving(), self.assertRaisesRegex(ValueError, "defined among the tests"):

@@ -375,10 +375,14 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   - As built, chosen in the build and open to veto:
     - **What "real" means.** A producer is real when importing its recorded name gives it back, it is callable
       and no mock (an autospec stand-in included), and it is written outside the tests: both the function and,
-      when it wraps another, the one it wraps. The tests are the top folder of the test's own package (`tests`
-      for `tests.unit.test_x`; a module in no package has its own folder) and the folder that holds the
-      approved folder. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in
-      the test package are refused, and so is every function when tests sit in the same folder as the code,
+      when it wraps another, the one it wraps. The tests are the outermost package around the test named `tests`
+      or `test` (`mypkg/tests` for `mypkg.tests.unit.test_x`, so `mypkg` stays code under test), else the top
+      package (`suite` for `suite.unit.test_x`; a module in no package has its own folder), and the folder that
+      holds the approved folder. The name is the only sign of where the code ends, so a test package of any
+      other name inside the code leaves that code refused, and the refusal says what to rename: this fails
+      toward refusing. A helper for tests kept in the code package, outside its `tests`, reads as code under
+      test. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in the test
+      package are refused, and so is every function when tests sit in the same folder as the code,
       until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
     - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
       must have the record's four keys and name a real producer, each approved file must have one record and
