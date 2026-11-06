@@ -431,7 +431,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       newline, or bytes that are not UTF-8 make every artifact CORRUPT, one the ledger never names included.
       No ledger at all, or an empty one, is UNSIGNED.
     - **The signed content is kept** in `<ledger>.blobs/<sha256>`, mode 0444, written whole under another name
-      and then renamed, so CHANGED can show a diff. A kept copy that no longer hashes to its name makes the
+      and then renamed, so CHANGED can show a diff. The copy, however it got there, its folder, and the ledger's
+      folder are flushed before the line that names it is written, the most `fsync` can do to keep a line from
+      outliving its copy in a power loss. A kept copy that no longer hashes to its name makes the
       artifact whose newest line signed it CORRUPT, whether or not its content changed, and stops the next
       `record`; one that is gone leaves CHANGED without a diff.
     - **The terminal is `/dev/tty`, opened by descriptor,** and must be a terminal: a file or pipe in its
@@ -451,6 +453,10 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
   - Known limits, most from this step's review:
     - A refused first sign-off leaves an empty ledger file behind.
+    - Flushing is `fsync`. On macOS that leaves the data in the drive's own cache, with no promise of the order
+      it reaches the platter, so the flushes do not order a copy and its line there: `F_FULLFSYNC` is not used.
+    - The ledger's folder must be readable, to flush it: a sign-off in a write-only folder, or on a file system
+      that refuses to flush a folder, stops after the digits with no line written. A revocation needs neither.
     - The lock is held while the person answers, so a second sign-off on the same ledger waits, with no
       message and no time limit.
     - Digits already waiting on the terminal when the prompt appears are read as the answer.

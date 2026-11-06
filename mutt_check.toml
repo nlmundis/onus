@@ -3217,6 +3217,68 @@ replace = '''            pass
 '''
 
 [[mutant]]
+name = "the_kept_copy_not_flushed_before_its_rename"
+why = "A power loss could leave a durable line naming an empty or cut-short copy, and the artifact permanently CORRUPT."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                    os.fsync(copy.fileno())
+'''
+replace = '''                    pass
+'''
+
+[[mutant]]
+name = "a_copy_already_there_not_flushed_before_the_line"
+why = "A copy a run left behind, or one restored by hand, may never have reached the disk; the line would outlive it."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                _sync(_blobs(ledger) / _sha256(blob))
+'''
+replace = '''                pass
+'''
+
+[[mutant]]
+name = "the_kept_copy_s_name_not_flushed_before_the_line"
+why = "The rename lives in the folder; unflushed, a power loss could keep the line and lose the name it points at."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                _sync(_blobs(ledger))
+'''
+replace = '''                pass
+'''
+
+[[mutant]]
+name = "the_ledger_s_folder_not_flushed_before_the_line"
+why = "A new ledger's name and a new blobs folder live here; unflushed, a power loss could lose either behind a line reported written."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                _sync(ledger.parent)
+'''
+replace = '''                pass
+'''
+
+[[mutant]]
+name = "a_revocation_made_to_flush_folders"
+why = "A revocation adds no name; it would refuse in a folder it could otherwise write to, and a revocation is the one line that must get through."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            if blob is not None:
+                # Whoever wrote'''
+replace = '''            if True:
+                # Whoever wrote'''
+
+[[mutant]]
+name = "a_flushed_descriptor_left_open"
+why = "A long-lived caller signing many artifacts would run out of descriptors."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    finally:
+        os.close(descriptor)
+'''
+replace = '''    finally:
+        pass
+'''
+
+[[mutant]]
 name = "the_ledger_extended_without_its_lock"
 why = "Two sign-offs at once could both read the same last line and both chain to it, breaking the chain."
 suites = ["tests.test_signoff.RecordTest"]

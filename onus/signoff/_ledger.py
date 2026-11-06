@@ -347,6 +347,15 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _sync(path: Path) -> None:
+    """Flush a file's content, or the names in a folder, as far as ``fsync`` promises: on macOS, to the drive."""
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _open_terminal() -> int:
     """Return a descriptor of the controlling terminal, open to read and write.
 
@@ -429,14 +438,23 @@ def _append(
             fields, shown, expected, what, blob = build(ledger, lines, _newest(lines, artifact))
             _confirmed(terminal, shown, expected, what)
             if blob is not None and _kept(ledger, _sha256(blob)) is None:
-                # Written whole under another name first, so a write cut short never stands under the hash.
+                # Written whole under another name and flushed first, so a write cut short never stands under the hash.
                 kept = _blobs(ledger) / _sha256(blob)
                 kept.parent.mkdir(exist_ok=True)
                 partial = kept.with_name(kept.name + ".partial")
                 partial.unlink(missing_ok=True)
-                partial.write_bytes(blob)
+                with partial.open("wb") as copy:
+                    copy.write(blob)
+                    copy.flush()
+                    os.fsync(copy.fileno())
                 partial.chmod(0o444)
                 os.replace(partial, kept)
+            if blob is not None:
+                # Whoever wrote the copy, it and its name are flushed ahead of the line that relies on them; a
+                # copy found here may be one a run left behind, or one restored by hand.
+                _sync(_blobs(ledger) / _sha256(blob))
+                _sync(_blobs(ledger))
+                _sync(ledger.parent)
             record = {
                 "schema": SCHEMA,
                 "artifact": artifact,
@@ -471,9 +489,9 @@ def record(
     reads back the first eight hex digits of the content's sha256 from the terminal, never from standard input.
     It holds the ledger's lock from before it reads the ledger until the line is on disk, the time the person
     takes to answer included, so a second sign-off on the same ledger waits. Once confirmed, it keeps a
-    read-only copy of the content beside the ledger and appends the line, flushed to disk. What it shows has
-    every control character written as its escape. The whole content is shown as added whenever no signed copy
-    is there to compare with: the first time, after a revocation, and when the copy is not kept. These are
+    read-only copy of the content beside the ledger, flushed to disk, then appends the line, flushed too. What it
+    shows has every control character written as its escape. The whole content is shown as added whenever no
+    signed copy is there to compare with: the first time, after a revocation, and when the copy is not kept. These are
     tripwires against a mistake, not a control against a process set on forging a sign-off.
 
     ``bind`` names other files the approval depends on, inside the ledger's folder; ``check_signoff`` reports

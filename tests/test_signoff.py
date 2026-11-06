@@ -410,7 +410,7 @@ class RecordTest(Desk):
         with mock.patch.object(fcntl, "flock", side_effect=locked), mock.patch.object(os, "fsync", side_effect=synced):
             with mock.patch.object(_ledger, "parse_ledger", side_effect=read):
                 self.sign()
-        self.assertEqual(calls, ["flock ledger True", "read", "fsync ledger 1"])
+        self.assertEqual(calls, ["flock ledger True", "read", *["fsync ? 0"] * 4, "fsync ledger 1"])
 
     def test_the_ledger_may_be_named_from_the_folder_the_command_runs_in(self):
         here = os.getcwd()
@@ -495,6 +495,82 @@ class RecordTest(Desk):
             self.sign()
         self.assertEqual(names, [f"{sha(FIRST)}.partial -> {sha(FIRST)} {FIRST!r}"])
         self.assertEqual([path.name for path in blobs.iterdir()], [sha(FIRST)])
+
+    def test_the_kept_copy_reaches_the_disk_before_the_line_that_names_it(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        steps: list[str] = []
+        real_sync, real_replace = os.fsync, os.replace
+
+        def named(descriptor: int) -> str:
+            for path in (self.folder, blobs, self.ledger, blobs / (sha(FIRST) + ".partial"), blobs / sha(FIRST)):
+                if path.exists() and os.path.samestat(os.fstat(descriptor), path.stat()):
+                    return path.name
+            return "another file"
+
+        def sync(descriptor: int) -> None:
+            found = os.fstat(descriptor)
+            size = f" of {found.st_size} bytes" if stat.S_ISREG(found.st_mode) else ""
+            steps.append(f"sync {named(descriptor)}{size}")
+            real_sync(descriptor)
+
+        def replace(source: pathlib.Path, target: pathlib.Path) -> None:
+            steps.append("rename")
+            real_replace(source, target)
+
+        with mock.patch.object(os, "fsync", side_effect=sync), mock.patch.object(os, "replace", side_effect=replace):
+            self.sign()
+        line = len(self.ledger.read_bytes())
+        self.assertEqual(
+            steps,
+            [
+                f"sync {sha(FIRST)}.partial of {len(FIRST)} bytes",
+                "rename",
+                f"sync {sha(FIRST)} of {len(FIRST)} bytes",
+                "sync ledger.jsonl.blobs",
+                f"sync {self.folder.name}",
+                f"sync ledger.jsonl of {line} bytes",
+            ],
+        )
+
+    def test_a_copy_already_there_is_flushed_before_the_line_that_names_it(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        blobs.mkdir()
+        (blobs / sha(FIRST)).write_bytes(FIRST)
+        synced: list[str] = []
+
+        def sync(descriptor: int) -> None:
+            found = os.fstat(descriptor)
+            for path in (self.ledger, blobs, blobs / sha(FIRST), self.folder):
+                if os.path.samestat(found, path.stat()):
+                    synced.append(f"{path.name} {len(self.lines())}")
+
+        with mock.patch.object(os, "fsync", side_effect=sync):
+            self.sign()
+        self.assertEqual(
+            synced,
+            [f"{sha(FIRST)} 0", "ledger.jsonl.blobs 0", f"{self.folder.name} 0", "ledger.jsonl 1"],
+        )
+
+    def test_a_revocation_flushes_only_its_line(self):
+        line = self.sign()
+        self.terminal.type(line.line_sha256[:8])
+        with mock.patch.object(_ledger, "_sync") as flushed:
+            revoke(self.ledger, ARTIFACT, reviewed_by="A Reviewer")
+        flushed.assert_not_called()
+
+    def test_flushing_closes_what_it_opened(self):
+        with mock.patch.object(os, "close", wraps=os.close) as closed:
+            _ledger._sync(self.folder)
+        closed.assert_called_once()
+
+    def test_a_copy_already_kept_is_not_written_again(self):
+        self.sign()
+        self.truth.write_bytes(SECOND)
+        self.sign()
+        self.truth.write_bytes(FIRST)
+        with mock.patch.object(os, "replace") as renamed:
+            self.sign()
+        renamed.assert_not_called()
 
 
 class BoundTest(Desk):
