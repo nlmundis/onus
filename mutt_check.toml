@@ -3318,7 +3318,7 @@ why = "A refusal quotes a path, which could forge a verdict line beneath it."
 suites = ["tests.test_signoff.CommandLineTest"]
 file = "onus/signoff/__main__.py"
 find = '''{_one_visible_line(str(error))}'''
-replace = '''{_visible(str(error))}'''
+replace = '''{_one_visible_line(str(error)).replace(chr(92) + "n", chr(10))}'''
 
 [[mutant]]
 name = "a_line_break_left_in_a_usage_error"
@@ -3327,7 +3327,7 @@ suites = ["tests.test_signoff.CommandLineTest"]
 file = "onus/signoff/__main__.py"
 find = '''        super().error(_one_visible_line(message))
 '''
-replace = '''        super().error(_visible(message))
+replace = '''        super().error(_one_visible_line(message).replace(chr(92) + "n", chr(10)))
 '''
 
 [[mutant]]
