@@ -19,6 +19,12 @@ def shout(text: str) -> str:
     return text.upper()
 
 
+class Unhashable(str):
+    """A string that cannot be hashed, as any subclass that defines ``__eq__`` alone cannot be."""
+
+    __hash__ = None  # type: ignore[assignment]
+
+
 class Rules:
     @staticmethod
     def lower(text: str) -> str:
@@ -209,6 +215,17 @@ class PatternTest(unittest.TestCase):
         for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None, 5, ["run"], {"run": 1}):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)  # type: ignore[arg-type]
+
+    def test_a_subclass_of_str_is_not_a_name(self):
+        for name in (Unhashable("run"), Unhashable("date")):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+                pattern("x", name)
+
+    def test_a_bad_name_is_refused_whatever_the_regex(self):
+        with self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+            pattern("(", ["run"])  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "own scrubbers write"):
+            pattern("(", "date")
 
     def test_a_regex_that_matches_nothing_at_all_is_refused_when_it_does(self):
         scrubber = pattern("x*", "x")
