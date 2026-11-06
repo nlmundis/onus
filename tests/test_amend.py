@@ -272,6 +272,25 @@ class LoadTest(Amended):
 class LoadMoreTest(Amended):
     """load's refusals the first review found unpinned: case, the sign-off's path, bound files, and exact bytes."""
 
+    def test_a_ledger_that_cannot_be_read_refuses_the_amendment_as_a_prereg_error(self):
+        self.amend(record())
+        self.ledger.unlink()
+        self.ledger.mkdir()
+        with self.assertRaisesRegex(PreregError, "cannot be checked against the ledger"):
+            load(self.base, ledger=self.ledger)
+
+    def test_a_ledger_in_a_symlink_loop_refuses_the_amendment_as_a_prereg_error(self):
+        self.amend(record())
+        self.ledger.unlink()
+        self.ledger.symlink_to(self.ledger)
+        with self.assertRaisesRegex(PreregError, "cannot be checked against the ledger"):
+            load(self.base, ledger=self.ledger)
+        with (
+            mock.patch.object(Path, "resolve", side_effect=RuntimeError("Symlink loop")),
+            self.assertRaisesRegex(PreregError, "cannot be checked against the ledger"),
+        ):
+            load(self.base, ledger=self.ledger)
+
     def test_an_amendment_cannot_move_the_day_its_record_was_registered(self):
         self.amend(record(registered="2026-01-06"))
         with self.assertRaisesRegex(PreregError, "an amendment cannot move the day a record was registered"):

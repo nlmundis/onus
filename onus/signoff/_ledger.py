@@ -2,10 +2,12 @@
 
 import difflib
 import enum
+import errno
 import hashlib
 import json
 import os
 import re
+import stat
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -230,6 +232,35 @@ def _newest(lines: Iterable[Line], artifact: str) -> Line | None:
     return found
 
 
+def _resolved(ledger: str | os.PathLike[str]) -> Path:
+    """Return the absolute path of ``ledger``, its symlinks followed as far as they lead.
+
+    Raises:
+        OSError: the path is a symlink loop, which Python below 3.13 reports here as a RuntimeError. From 3.13 the
+            path comes back with the loop in it, and reading it raises the OSError instead.
+    """
+    try:
+        return Path(ledger).resolve()
+    except RuntimeError:
+        raise OSError(errno.ELOOP, "a symlink loop", str(ledger)) from None
+
+
+def _ledger_bytes(ledger: Path) -> bytes:
+    """Return the bytes of the ledger at ``ledger``, or none when nothing is at that path yet.
+
+    Raises:
+        OSError: something other than a regular file is there, or it cannot be read. A pipe is refused unread,
+            since reading one waits for a writer.
+    """
+    try:
+        mode = ledger.stat().st_mode
+    except FileNotFoundError:
+        return b""
+    if not stat.S_ISREG(mode):
+        raise OSError(errno.EINVAL, "not a regular file", str(ledger))
+    return ledger.read_bytes()
+
+
 def _blobs(ledger: Path) -> Path:
     """Return the folder beside ``ledger`` that keeps the content each sign-off signed, named by its sha256."""
     return ledger.with_name(ledger.name + ".blobs")
@@ -303,11 +334,14 @@ def check_signoff(ledger: str | os.PathLike[str], artifact: str, path: str | os.
 
     Raises:
         SignoffError: ``artifact`` is not an exact id.
+        OSError: the ledger path holds something other than a regular file, or the ledger, a kept copy, the content,
+            or a bound file cannot be read. No status is claimed, since nothing was read that could support one.
+        ValueError: a path holds a null byte, which no file's can.
     """
-    ledger, path = Path(ledger).resolve(), Path(path)
+    ledger, path = _resolved(ledger), Path(path)
     _valid_id(artifact)
     try:
-        lines = parse_ledger(ledger.read_bytes() if ledger.is_file() else b"", ledger)
+        lines = parse_ledger(_ledger_bytes(ledger), ledger)
     except CorruptLedgerError as error:
         return Check(Status.CORRUPT, str(error))
     line = _newest(lines, artifact)
@@ -400,6 +434,7 @@ def _append(
         SignoffError: the id or the reviewer's name is refused, or ``build`` refused.
         CorruptLedgerError: the ledger cannot be relied on, so nothing is added to it.
         NotImplementedError: this platform has no fcntl, so no lock to hold while the ledger is read and extended.
+        OSError: the ledger, a kept copy, or a file ``build`` reads cannot be read or written.
     """
     variable = session_variable(os.environ)
     if variable is not None:
@@ -419,7 +454,7 @@ def _append(
         raise NotImplementedError(
             "a sign-off holds fcntl.flock on the ledger while it reads and extends it, and this platform has no fcntl"
         ) from None
-    ledger = Path(ledger).resolve()
+    ledger = _resolved(ledger)
     terminal = _open_terminal()
     try:
         with ledger.open("a+b") as file:
@@ -487,6 +522,7 @@ def record(
             signs this content with these files bound.
         CorruptLedgerError: the ledger, or the kept copy of what was signed before, cannot be relied on.
         NotImplementedError: this platform has no fcntl.
+        OSError: the ledger, a kept copy, the content, or a bound file cannot be read or written.
     """
     path = Path(path)
     bind = tuple(bind)
@@ -498,7 +534,7 @@ def record(
         digest = _sha256(content)
         bound: dict[str, str] = {}
         for each in bind:
-            file = Path(each).resolve()
+            file = _resolved(each)
             if not file.is_file() or not file.is_relative_to(ledger.parent):
                 raise SignoffError(
                     f"{each} is not a file inside the ledger's folder, {ledger.parent}, so it cannot be bound"
@@ -546,6 +582,7 @@ def revoke(ledger: str | os.PathLike[str], artifact: str, *, reviewed_by: str) -
         SignoffError: the id or ``reviewed_by`` is refused, or the artifact's newest line is not a sign-off.
         CorruptLedgerError: the ledger cannot be relied on.
         NotImplementedError: this platform has no fcntl.
+        OSError: the ledger cannot be read or written.
     """
 
     def build(ledger: Path, lines: list[Line], newest: Line | None) -> tuple[dict[str, Any], str, str, str, None]:

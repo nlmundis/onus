@@ -5,6 +5,7 @@ both ends of. No test writes a line to a ledger anyone relies on.
 """
 
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -651,6 +652,59 @@ class CheckTest(Desk):
         self.assertEqual((check.status, check.diff), (Status.CHANGED, None))
         self.assertIn("is missing", check.detail)
 
+    def test_a_ledger_path_with_nothing_there_is_unsigned(self):
+        self.assertEqual(check_signoff(self.folder / "none.jsonl", ARTIFACT, self.truth).status, Status.UNSIGNED)
+
+    def test_a_ledger_path_that_is_no_regular_file_raises_what_the_docstring_lists(self):
+        pipe = self.folder / "pipe.jsonl"
+        os.mkfifo(pipe)
+        under_a_file = self.truth / "ledger.jsonl"
+        self.ledger.mkdir()
+        for path in (self.ledger, pipe, under_a_file):
+            with self.subTest(path=path.name), self.assertRaises(OSError):
+                check_signoff(path, ARTIFACT, self.truth)
+
+    def test_a_real_symlink_loop_at_the_ledger_path_is_an_oserror(self):
+        self.ledger.symlink_to(self.ledger)
+        with self.assertRaises(OSError) as raised:
+            check_signoff(self.ledger, ARTIFACT, self.truth)
+        self.assertEqual(raised.exception.errno, errno.ELOOP)
+
+    def test_a_bound_file_in_a_symlink_loop_is_an_oserror_or_a_refusal_on_every_python(self):
+        loop = self.folder / "loop"
+        loop.symlink_to(loop)
+        with self.assertRaises((OSError, SignoffError)):
+            record(self.ledger, ARTIFACT, self.truth, reviewed_by="A Reviewer", bind=[loop])
+        real = pathlib.Path.resolve
+
+        def resolve(path: pathlib.Path) -> pathlib.Path:
+            if path.name == "loop":
+                raise RuntimeError("Symlink loop")
+            return real(path)
+
+        with (
+            mock.patch.object(pathlib.Path, "resolve", resolve),
+            self.assertRaisesRegex(OSError, "a symlink loop"),
+        ):
+            record(self.ledger, ARTIFACT, self.truth, reviewed_by="A Reviewer", bind=[loop])
+
+    def test_a_symlink_loop_is_an_oserror_on_every_python(self):
+        calls = (
+            lambda: check_signoff(self.ledger, ARTIFACT, self.truth),
+            lambda: record(self.ledger, ARTIFACT, self.truth, reviewed_by="A Reviewer"),
+        )
+        for call in calls:
+            with (
+                mock.patch.object(pathlib.Path, "resolve", side_effect=RuntimeError("Symlink loop")),
+                self.assertRaisesRegex(OSError, "a symlink loop"),
+            ):
+                call()
+
+    def test_raises_names_every_exception_a_caller_can_meet(self):
+        for function in (check_signoff, record, revoke):
+            with self.subTest(function=function.__name__):
+                self.assertRegex(function.__doc__ or "", r"\n\s+OSError: ")
+
     def test_changed_content_with_no_signed_copy_kept_has_no_diff(self):
         self.sign()
         shutil.rmtree(self.folder / "ledger.jsonl.blobs")
@@ -858,6 +912,13 @@ class CommandLineTest(Desk):
         with self.printed() as (_, err):
             code = main(["record", str(self.ledger), ARTIFACT, str(self.truth), "--reviewed-by", "A Reviewer"])
         self.assertEqual(code, 20)
+        self.assertIn("refused: ", err.getvalue())
+
+    def test_a_ledger_that_is_no_file_is_refused_as_record_refuses_it(self):
+        self.ledger.mkdir()
+        with self.printed() as (out, err):
+            code = main(["check", str(self.ledger), ARTIFACT, str(self.truth)])
+        self.assertEqual((code, out.getvalue()), (20, ""))
         self.assertIn("refused: ", err.getvalue())
 
     def test_the_exit_code_reaches_the_shell(self):
