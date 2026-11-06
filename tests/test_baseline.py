@@ -547,6 +547,7 @@ class ProducerTest(Sandbox):
         self.addCleanup(lambda: sys.modules.pop("onus_sandbox_flat_cases", None))
         with mock.patch.object(sys, "path", [str(flat), *sys.path]):
             cases = importlib.import_module("onus_sandbox_flat_cases")
+            cases.Case.approved_dir = self.repo / "elsewhere" / "approved"  # so only the test's own folder refuses it
             with self.approving(), self.assertRaisesRegex(ValueError, "under flat/"):
                 cases.Case("test_it").assertApproved(cases.beside)
             with self.approving():
