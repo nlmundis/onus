@@ -198,6 +198,7 @@ class TimestampsTest(unittest.TestCase):
         self.assertEqual(iso_timestamps()("2026-01-08T12:34:60"), "<timestamp-1>")
         self.assertEqual(iso_timestamps()("2026-01-08T05:29:60+05:30"), "<timestamp-1>")
         self.assertEqual(iso_timestamps()("2026-01-08T12:34:61"), "<timestamp-1>:61")
+
     def test_a_real_offset_before_a_date_is_read_in_either_order(self):
         for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
             for offset in ("+0530", "+05:30", "-14"):
