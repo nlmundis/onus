@@ -2462,6 +2462,30 @@ replace = '''        return len(text) in wanted
 '''
 
 [[mutant]]
+name = "a_float_s_upper_case_e_read_as_a_hex_id"
+why = "'3.1234567E+10' prints its mantissa with an upper-case E, and a changed statistic would then be scrubbed away."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'''
+replace = '''_NUMBER = re.compile(r"[0-9]+(?:e[0-9]*)?\Z")'''
+
+[[mutant]]
+name = "a_mantissa_before_a_signed_exponent_read_as_a_hex_id"
+why = "'1.2345678e-05' leaves the run '2345678e', digits ending in a bare e, and a changed statistic would then be scrubbed away."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'''
+replace = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]+)?\Z")'''
+
+[[mutant]]
+name = "a_run_with_two_exponents_kept_as_a_number"
+why = "'12e34e56' is an id written with two e's, and no float reads so; keeping it would widen what hex_ids leaves."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'''
+replace = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)*\Z")'''
+
+[[mutant]]
 name = "a_hex_run_of_any_length_replaced"
 why = "Words and short codes made of the letters a to f would be read as ids."
 suites = ["tests.test_scrub.HexIdsTest"]

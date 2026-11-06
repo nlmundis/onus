@@ -179,6 +179,24 @@ class HexIdsTest(unittest.TestCase):
         self.assertEqual(hex_ids(8)(floats), floats)
         self.assertEqual(hex_ids(8)("1234567f e1234567 123e456a"), "<hex-1> <hex-2> <hex-3>")
 
+    def test_each_form_written_like_a_number_stays_and_its_neighbours_do_not(self):
+        for text in ("12345678", "1234e567", "1234E567", "1234567e", "1234567E"):
+            with self.subTest(text=text):
+                self.assertEqual(hex_ids(8)(text), text)
+        for text in ("e1234567", "E1234567", "12e34e56", "1234567f", "1234e56f"):
+            with self.subTest(text=text):
+                self.assertEqual(hex_ids(8)(text), "<hex-1>")
+
+    def test_the_odds_the_docstring_gives_are_the_odds(self):
+        # An id's digits are one of 16 in one letter case, so "e" or "E" adds one letter, never two.
+        written_like_a_number_12 = 10**12 + 11 * 10**11
+        written_like_a_number_40 = 10**40 + 39 * 10**39
+        doc = " ".join((hex_ids.__doc__ or "").split())
+        self.assertIn("about 1 in 130 ids of 12 digits", doc)
+        self.assertEqual(round(16**12 / written_like_a_number_12, -1), 130)
+        self.assertIn("under 1 in ten million of 40", doc)
+        self.assertGreater(16**40 / written_like_a_number_40, 10**7)
+
     def test_case_does_not_make_two_ids(self):
         self.assertEqual(hex_ids(40)(f"{SHA_A} {SHA_A.upper()}"), "<hex-1> <hex-1>")
 
