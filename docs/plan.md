@@ -361,6 +361,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
     - Two patterns given one name in a chain each number from 1, so two different values can share a token.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - Second 60 is read at any minute, so "12:34:60", which no clock shows, is replaced. Where a leap second
+      falls in local time depends on the zone ("05:29:60+05:30") and on a table this module does not keep, so
+      `iso_timestamps` does not check it.
     - An offset is read only up to 14 hours, so a year joined on by a hyphen stays in the text. An hour range
       joined on the same way, as in "2026-01-08T12:00-14" or "2026-01-08T12:00-13:00", is a well-formed offset,
       and is replaced with the timestamp; no reading of the text can tell them apart.

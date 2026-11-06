@@ -160,6 +160,11 @@ class TimestampsTest(unittest.TestCase):
         scrubber = chain(iso_timestamps(), iso_dates())
         self.assertEqual(scrubber("2026-01-08T12:00-2026-01-09"), "<timestamp-1>-<date-1>")
 
+    def test_second_sixty_is_read_at_any_minute_and_sixty_one_at_none(self):
+        self.assertEqual(iso_timestamps()("2026-01-08T12:34:60"), "<timestamp-1>")
+        self.assertEqual(iso_timestamps()("2026-01-08T05:29:60+05:30"), "<timestamp-1>")
+        self.assertEqual(iso_timestamps()("2026-01-08T12:34:61"), "<timestamp-1>:61")
+
     def test_its_name_is_its_functions(self):
         self.assertEqual(
             (iso_timestamps().name, iso_dates().name, uuids().name), ("iso_timestamps", "iso_dates", "uuids")

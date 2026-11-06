@@ -136,8 +136,10 @@ def iso_timestamps() -> Scrubber:
     ".", and "Z" or an offset of up to 14 hours written "+HH:MM", "+HHMM", or "+HH". A comma does not start a
     fraction, since what follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves ",42", and
     so does the stamp Python's logging writes by default, whose ",123" the comparison then shows; ``pattern`` can
-    name that form. Only a real moment is replaced:
-    "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
+    name that form. Only a real date and clock are replaced: "2026-01-08T25:00" and "2026-01-08T24:00" stay, on
+    every Python version. Second 60 is read at any minute, though a leap second falls at only a few, because
+    which depends on the zone and on a table of leap seconds this module does not keep: "12:34:60" is replaced.
+    A timestamp is read as far as it is
     written this way, and what follows it stays in the text; if that is a letter or digit, it runs on, and the
     whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is not cut back to a shorter form. Two timestamps are one
     value when they are written alike; the same moment in two zones is two values.
