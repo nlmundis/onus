@@ -2521,7 +2521,7 @@ replace = '_BEFORE = r""'
 
 [[mutant]]
 name = "a_timestamp_s_zone_not_read"
-why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
+why = 'A timestamp with "Z" would not be replaced at all, and one with an offset would leave it in the text, where it can differ from run to run.'
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
 find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?{_AFTER})?"'
@@ -2545,7 +2545,7 @@ replace = '''|60){_AFTER}(?:'''
 
 [[mutant]]
 name = "an_id_joined_on_taken_for_an_offset"
-why = "'-12' of '-12abcdef-...' would run on, so a timestamp before about one random UUID in forty would stay in the text."
+why = "'-12' of '-12abcdef-...' would run on, so a timestamp before one random UUID in every ten to twenty would stay in the text."
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
 find = '''(?::?{_SIXTY})?{_AFTER})?"'''
