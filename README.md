@@ -40,7 +40,7 @@ v0.1.0 brings:
 | `onus.report` | One sentence per result carrying its n, sidedness, family correction, the minimum detectable effect when it is not significant, and its provenance |
 | `onus.scrub` | Composable scrubbers for dates, paths, and ids, so outputs compare byte for byte |
 | `onus.baseline` | Approved outputs committed beside the tests; a mismatch fails with a diff, and re-approval is an explicit `make` target |
-| `onus.signoff` | A hash-chained ledger of human sign-offs for ground truth, which only a person at a terminal can write |
+| `onus.signoff` | A hash-chained ledger of human sign-offs for ground truth, extended only after eight digits are typed at a terminal: a tripwire against mistakes, not a control against forgery |
 | `onus.invariants` | Deterministic Hypothesis profiles and generators for unittest (the `invariants` extra) |
 
 ## Writing

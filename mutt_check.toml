@@ -3000,6 +3000,22 @@ replace = '''        for pattern in forbid if os.environ.get(APPROVE_ROOT) else 
 # --- onus.signoff ---
 
 [[mutant]]
+name = "the_readme_states_the_tripwires_as_a_guarantee"
+why = "The checks are tripwires any process with a pseudo-terminal and a cleared environment passes; a reader of the table would rely on them as a control."
+suites = ["tests.test_signoff.SurfaceTest"]
+file = "README.md"
+find = "for ground truth, extended only after eight digits are typed at a terminal: a tripwire against mistakes, not a control against forgery |"
+replace = "for ground truth, which only a person at a terminal can write |"
+
+[[mutant]]
+name = "the_ledger_module_states_the_tripwires_as_a_guarantee"
+why = "Plan E21's known limits say any process can reach record through a pseudo-terminal, so the module's first line may not say otherwise."
+suites = ["tests.test_signoff.SurfaceTest"]
+file = "onus/signoff/_ledger.py"
+find = '''a hash-chained ledger of approvals, extended only after digits are typed at a terminal.'''
+replace = '''a hash-chained ledger of approvals that only a person at a terminal can extend.'''
+
+[[mutant]]
 name = "a_sign_off_allowed_under_a_session"
 why = "The first tripwire: an agent session or an unattended job could reach the terminal check at all."
 suites = ["tests.test_signoff.RecordTest", "tests.test_signoff.RevokeTest"]
