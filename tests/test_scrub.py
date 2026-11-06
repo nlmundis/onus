@@ -222,7 +222,7 @@ class PatternTest(unittest.TestCase):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)
 
-    def test_a_bad_name_is_refused_whatever_the_regex(self):
+    def test_a_bad_name_is_refused_before_the_regex_compiles(self):
         with self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
             pattern("(", ["run"])  # type: ignore[arg-type]
         with self.assertRaisesRegex(ValueError, "own scrubbers write"):
