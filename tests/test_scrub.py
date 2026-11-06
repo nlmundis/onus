@@ -371,6 +371,25 @@ class ChainTest(unittest.TestCase):
         self.assertEqual(chain(iso_dates(), uuids()).name, "chain(iso_dates, uuids)")
         self.assertEqual(chain(uuids(), chain(iso_dates())).name, "chain(uuids, chain(iso_dates))")
 
+    def test_two_scrubbers_that_write_one_numbered_name_are_refused(self):
+        for scrubbers in (
+            (hex_ids(40), hex_ids(64)),
+            (pattern("run-[a-z]+", "run"), pattern("job-[a-z]+", "run")),
+            (iso_dates(), uuids(), iso_dates()),
+            (hex_ids(40), chain(uuids(), hex_ids(64))),
+        ):
+            with self.subTest(scrubbers=scrubbers), self.assertRaisesRegex(ValueError, "each number from 1"):
+                chain(*scrubbers)
+
+    def test_a_swapped_value_shows_when_two_lengths_are_one_scrubber(self):
+        sha1_a, sha1_b, sha256 = "a1" * 20, "b2" * 20, "c3" * 32
+        scrubber = hex_ids(40, 64)
+        self.assertNotEqual(scrubber(f"{sha1_a} {sha1_b} {sha256}"), scrubber(f"{sha1_a} {sha1_b} {sha1_a}"))
+
+    def test_names_that_differ_and_paths_that_share_a_name_may_stand_in_one_chain(self):
+        scrubber = chain(hex_ids(40), pattern("run-[a-z]+", "run"), paths({"/srv/a": "w"}), paths({"/srv/b": "w"}))
+        self.assertEqual(scrubber(f"{SHA_A} run-a /srv/a /srv/b"), "<hex-1> <run-1> <w> <w>")
+
     def test_it_needs_a_scrubber_and_takes_nothing_else(self):
         with self.assertRaisesRegex(ValueError, "at least one scrubber"):
             chain()

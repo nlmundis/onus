@@ -2650,6 +2650,44 @@ replace = '''        if False:
 '''
 
 [[mutant]]
+name = "two_scrubbers_that_write_one_name_chained"
+why = "Each numbers from 1, so a value of one and a different value of the other share a token and a swap between them passes."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        if shared:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_nested_chain_forgets_what_it_numbers"
+why = "A chain inside a chain would hide its names from the outer one, so nesting would be the way round the refusal."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''scrubber in scrubbers) + ")", replace, numbers)'''
+replace = '''scrubber in scrubbers) + ")", replace)'''
+
+[[mutant]]
+name = "a_chain_compares_only_the_first_name"
+why = "With nothing added after each scrubber, no two would ever overlap, and the refusal would never fire."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        numbers |= scrubber._numbers
+'''
+replace = '''        numbers = numbers
+'''
+
+[[mutant]]
+name = "two_scrubbers_that_write_one_name_approved"
+why = "assertApproved runs its scrubbers in turn with no chain, so without this the refusal would not reach the place a baseline is made."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''            chain(*scrubbers)  # Only for its refusal: these run in turn, as one chain would.
+'''
+replace = '''            pass
+'''
+
+[[mutant]]
 name = "a_chain_applied_in_reverse"
 why = "Each scrubber reads what the one before it left, so the order given is part of the result."
 suites = ["tests.test_scrub.ChainTest"]

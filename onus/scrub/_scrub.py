@@ -3,7 +3,7 @@
 import os
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 # What a token's name may be, so a token is always one "<name>" or "<name-N>".
@@ -38,11 +38,13 @@ class Scrubber:
 
     It is here so that an approved output can record, by name, which scrubbers shaped it. Call it with a string;
     build one with this module's functions, or wrap a function of your own with ``redactor``. The name is a
-    label for a reader, not a proof: nothing stops code from building a ``Scrubber`` under any name.
+    label for a reader, not a proof: nothing stops code from building a ``Scrubber`` under any name. It also
+    carries the token names it numbers, for ``chain`` to compare.
     """
 
     name: str
     _replace: Callable[[str], str]
+    _numbers: frozenset[str] = field(default=frozenset())
 
     def __call__(self, text: str) -> str:
         """Return ``text`` scrubbed.
@@ -120,7 +122,7 @@ def iso_dates() -> Scrubber:
     that ``iso_timestamps`` does not read, such as "2026-01-08 25:00", is replaced here; one followed by "T" runs
     on into a letter, and stays.
     """
-    return Scrubber("iso_dates", _numbered(_DATES, "date", same=_as_written, real=_is_date))
+    return Scrubber("iso_dates", _numbered(_DATES, "date", same=_as_written, real=_is_date), frozenset({"date"}))
 
 
 def iso_timestamps() -> Scrubber:
@@ -132,7 +134,8 @@ def iso_timestamps() -> Scrubber:
     written this way, and what follows it stays in the text. Two timestamps are one value when they are written
     alike; the same moment in two zones is two values.
     """
-    return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
+    replace = _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp)
+    return Scrubber("iso_timestamps", replace, frozenset({"timestamp"}))
 
 
 def uuids() -> Scrubber:
@@ -140,7 +143,8 @@ def uuids() -> Scrubber:
 
     Letter case does not make two values: a UUID in capitals and the same one in lower case share a number.
     """
-    return Scrubber("uuids", _numbered(_UUIDS, "uuid", same=str.lower, real=lambda text: True))
+    replace = _numbered(_UUIDS, "uuid", same=str.lower, real=lambda text: True)
+    return Scrubber("uuids", replace, frozenset({"uuid"}))
 
 
 def hex_ids(*lengths: int) -> Scrubber:
@@ -167,7 +171,8 @@ def hex_ids(*lengths: int) -> Scrubber:
         return len(text) in wanted and not _NUMBER.match(text)
 
     listed = ", ".join(str(length) for length in sorted(wanted))
-    return Scrubber(f"hex_ids({listed})", _numbered(_HEX_RUNS, "hex", same=str.lower, real=real))
+    replace = _numbered(_HEX_RUNS, "hex", same=str.lower, real=real)
+    return Scrubber(f"hex_ids({listed})", replace, frozenset({"hex"}))
 
 
 def pattern(regex: str, name: str) -> Scrubber:
@@ -175,8 +180,8 @@ def pattern(regex: str, name: str) -> Scrubber:
 
     It is the scrubber for a value this module has no name for, such as a short id that always follows "run-".
     Write the regex so that it cannot match a number the output reports. Two matches are one value only when
-    their texts are equal, letter case included. Give each pattern in a chain its own name: two scrubbers that
-    write one name each number from 1, so two different values would share a token.
+    their texts are equal, letter case included. Give each pattern in a chain its own name: ``chain`` refuses two
+    scrubbers that write one name, which would each number from 1.
 
     Raises:
         ValueError: ``name`` cannot stand in a token, or is one this module's own scrubbers write ("date",
@@ -189,7 +194,7 @@ def pattern(regex: str, name: str) -> Scrubber:
     if name in _OWN_NAMES:
         raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
     replace = _numbered(re.compile(regex), _named(name), same=_as_written, real=lambda text: True)
-    return Scrubber(f"pattern({regex!r}, {name!r})", replace)
+    return Scrubber(f"pattern({regex!r}, {name!r})", replace, frozenset({name}))
 
 
 def _spellings(path: str) -> list[str]:
@@ -268,19 +273,32 @@ def redactor(function: Callable[[str], str]) -> Scrubber:
 def chain(*scrubbers: Scrubber) -> Scrubber:
     """Return one scrubber that applies ``scrubbers`` in the order given, each to the text the one before it left.
 
+    Two scrubbers that write one numbered token name are refused: each would number from 1, so a value of the
+    first and a different value of the second could share a token, and a swap between them would pass unseen. List
+    the lengths in one ``hex_ids``, or give each ``pattern`` its own name. It sees the names a nested ``chain``
+    writes, and none that a ``redactor`` writes. ``paths`` may repeat a name: its tokens are not numbered.
+
     Raises:
-        ValueError: no scrubber is given.
+        ValueError: no scrubber is given, or two write one numbered token name.
         TypeError: one of them is not a ``Scrubber``; wrap a plain function with ``redactor``, so it has a name.
     """
     if not scrubbers:
         raise ValueError("chain needs at least one scrubber")
+    numbers: frozenset[str] = frozenset()
     for scrubber in scrubbers:
         if not isinstance(scrubber, Scrubber):
             raise TypeError(f"chain takes Scrubbers, not {scrubber!r}: wrap a plain function with redactor")
+        shared = numbers & scrubber._numbers
+        if shared:
+            raise ValueError(
+                f"two scrubbers in a chain write <{min(shared)}-N> and would each number from 1, so different values "
+                f"could share a token; {scrubber.name} is the second. Give both to one scrubber, or use two names"
+            )
+        numbers |= scrubber._numbers
 
     def replace(text: str) -> str:
         for scrubber in scrubbers:
             text = scrubber(text)
         return text
 
-    return Scrubber("chain(" + ", ".join(scrubber.name for scrubber in scrubbers) + ")", replace)
+    return Scrubber("chain(" + ", ".join(scrubber.name for scrubber in scrubbers) + ")", replace, numbers)
