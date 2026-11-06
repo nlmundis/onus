@@ -458,6 +458,21 @@ class RecordTest(Desk):
         self.assertIn('+{"a": "dog"}\n', shown)
         self.assertEqual(self.status(), Status.SIGNED)
 
+    def test_signing_the_same_content_over_a_bad_kept_copy_agrees_with_check(self):
+        self.sign()
+        blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
+        blob.chmod(0o644)
+        blob.write_bytes(b"tampered\n")
+        self.assertEqual(self.status(), Status.CORRUPT)
+        with self.assertRaisesRegex(CorruptLedgerError, "is not the content its name says was signed"):
+            self.sign()
+        self.assertEqual(len(self.lines()), 1)
+
+    def test_signing_the_same_content_again_with_its_copy_sound_is_refused_as_already_signed(self):
+        self.sign()
+        with self.assertRaisesRegex(SignoffError, "already signed"):
+            self.sign()
+
     def test_a_kept_copy_that_is_not_what_was_signed_stops_the_next_sign_off(self):
         self.sign()
         blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
