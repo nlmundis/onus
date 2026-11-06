@@ -2,6 +2,7 @@
 
 import difflib
 import enum
+import errno
 import hashlib
 import json
 import os
@@ -26,6 +27,8 @@ SESSION_PREFIXES = ("CLAUDE_CODE_", "CODEX_", "CURSOR_", "AIDER_", "GEMINI_CLI",
 _TTY = "/dev/tty"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PREFIX = 8
+# What a file system answers when it cannot do F_FULLFSYNC, as opposed to trying and failing.
+_FULL_FLUSH_REFUSED = frozenset({errno.EINVAL, errno.ENOTSUP, errno.ENOTTY})
 
 
 class SignoffError(ValueError):
@@ -347,11 +350,35 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _flush(descriptor: int) -> None:
+    """Flush ``descriptor`` to the disk itself where the platform can: ``fsync`` on macOS stops at the drive's cache.
+
+    Raises:
+        OSError: the flush failed. Only a refusal to take the fuller flush falls back to ``fsync``.
+    """
+    command = None
+    try:
+        import fcntl  # here, not at the top, so that onus.signoff imports where there is no fcntl
+
+        command = getattr(fcntl, "F_FULLFSYNC", None)
+    except ImportError:
+        pass
+    if command is None:
+        os.fsync(descriptor)
+        return
+    try:
+        fcntl.fcntl(descriptor, command)
+    except OSError as error:
+        if error.errno not in _FULL_FLUSH_REFUSED:
+            raise
+        os.fsync(descriptor)
+
+
 def _sync(path: Path) -> None:
-    """Flush a file's content, or the names in a folder, as far as ``fsync`` promises: on macOS, to the drive."""
+    """Flush a file's content, or the names in a folder, to disk."""
     descriptor = os.open(path, os.O_RDONLY)
     try:
-        os.fsync(descriptor)
+        _flush(descriptor)
     finally:
         os.close(descriptor)
 
@@ -446,7 +473,7 @@ def _append(
                 with partial.open("wb") as copy:
                     copy.write(blob)
                     copy.flush()
-                    os.fsync(copy.fileno())
+                    _flush(copy.fileno())
                 partial.chmod(0o444)
                 os.replace(partial, kept)
             if blob is not None:
@@ -467,7 +494,7 @@ def _append(
             text = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             file.write((text + "\n").encode("utf-8"))
             file.flush()
-            os.fsync(file.fileno())
+            _flush(file.fileno())
     finally:
         os.close(terminal)
     return _parse_line(text, "the line written")

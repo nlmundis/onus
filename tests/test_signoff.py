@@ -5,6 +5,8 @@ both ends of. No test writes a line to a ledger anyone relies on.
 """
 
 import contextlib
+import errno
+import fcntl
 import hashlib
 import io
 import json
@@ -17,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -407,9 +410,10 @@ class RecordTest(Desk):
         def synced(fd: int) -> None:
             calls.append(f"fsync {which(fd)} {len(self.lines())}")
 
-        with mock.patch.object(fcntl, "flock", side_effect=locked), mock.patch.object(os, "fsync", side_effect=synced):
-            with mock.patch.object(_ledger, "parse_ledger", side_effect=read):
-                self.sign()
+        with mock.patch.object(fcntl, "flock", side_effect=locked):
+            with mock.patch.object(_ledger, "_flush", side_effect=synced):
+                with mock.patch.object(_ledger, "parse_ledger", side_effect=read):
+                    self.sign()
         self.assertEqual(calls, ["flock ledger True", "read", *["fsync ? 0"] * 4, "fsync ledger 1"])
 
     def test_the_ledger_may_be_named_from_the_folder_the_command_runs_in(self):
@@ -499,7 +503,7 @@ class RecordTest(Desk):
     def test_the_kept_copy_reaches_the_disk_before_the_line_that_names_it(self):
         blobs = self.folder / "ledger.jsonl.blobs"
         steps: list[str] = []
-        real_sync, real_replace = os.fsync, os.replace
+        real_sync, real_replace = _ledger._flush, os.replace
 
         def named(descriptor: int) -> str:
             for path in (self.folder, blobs, self.ledger, blobs / (sha(FIRST) + ".partial"), blobs / sha(FIRST)):
@@ -517,8 +521,9 @@ class RecordTest(Desk):
             steps.append("rename")
             real_replace(source, target)
 
-        with mock.patch.object(os, "fsync", side_effect=sync), mock.patch.object(os, "replace", side_effect=replace):
-            self.sign()
+        with mock.patch.object(_ledger, "_flush", side_effect=sync):
+            with mock.patch.object(os, "replace", side_effect=replace):
+                self.sign()
         line = len(self.ledger.read_bytes())
         self.assertEqual(
             steps,
@@ -544,7 +549,7 @@ class RecordTest(Desk):
                 if os.path.samestat(found, path.stat()):
                     synced.append(f"{path.name} {len(self.lines())}")
 
-        with mock.patch.object(os, "fsync", side_effect=sync):
+        with mock.patch.object(_ledger, "_flush", side_effect=sync):
             self.sign()
         self.assertEqual(
             synced,
@@ -571,6 +576,61 @@ class RecordTest(Desk):
         with mock.patch.object(os, "replace") as renamed:
             self.sign()
         renamed.assert_not_called()
+
+
+class FlushTest(unittest.TestCase):
+    """_flush: the fullest flush the platform offers, a fallback only when it is refused, and no failure swallowed."""
+
+    def full_sync(self, side_effect: OSError | None = None) -> contextlib.AbstractContextManager[mock.MagicMock]:
+        return mock.patch.object(fcntl, "fcntl", side_effect=side_effect)
+
+    def setUp(self) -> None:
+        patch = mock.patch.object(fcntl, "F_FULLFSYNC", 51, create=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_full_flush_is_used_where_there_is_one(self):
+        with self.full_sync() as full, mock.patch.object(os, "fsync") as plain:
+            _ledger._flush(7)
+        full.assert_called_once_with(7, 51)
+        plain.assert_not_called()
+
+    def test_a_refused_full_flush_falls_back_to_fsync(self):
+        for code in (errno.EINVAL, errno.ENOTSUP, errno.ENOTTY):
+            with self.subTest(code=code), self.full_sync(side_effect=OSError(code, "refused")):
+                with mock.patch.object(os, "fsync") as plain:
+                    _ledger._flush(7)
+                plain.assert_called_once_with(7)
+
+    def test_a_failed_full_flush_is_raised_and_not_retried(self):
+        with self.full_sync(side_effect=OSError(errno.EIO, "failed")), mock.patch.object(os, "fsync") as plain:
+            with self.assertRaises(OSError) as raised:
+                _ledger._flush(7)
+        self.assertEqual(raised.exception.errno, errno.EIO)
+        plain.assert_not_called()
+
+    def test_a_failed_fallback_is_raised(self):
+        with (
+            self.full_sync(side_effect=OSError(errno.ENOTSUP, "refused")),
+            mock.patch.object(os, "fsync", side_effect=OSError(errno.EIO, "failed")),
+            self.assertRaises(OSError) as raised,
+        ):
+            _ledger._flush(7)
+        self.assertEqual(raised.exception.errno, errno.EIO)
+
+    def test_with_no_full_flush_or_no_fcntl_it_is_fsync(self):
+        for what, module in (("no such command", types.SimpleNamespace()), ("no fcntl", None)):
+            with self.subTest(what=what), mock.patch.dict(sys.modules, {"fcntl": module}):
+                with mock.patch.object(os, "fsync") as plain:
+                    _ledger._flush(7)
+                plain.assert_called_once_with(7)
+
+    def test_a_real_file_and_a_real_folder_flush(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = pathlib.Path(folder) / "file"
+            file.write_bytes(b"content\n")
+            _ledger._sync(file)
+            _ledger._sync(pathlib.Path(folder))
 
 
 class BoundTest(Desk):

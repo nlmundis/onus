@@ -3211,7 +3211,7 @@ name = "the_line_not_flushed_to_disk"
 why = "A crash after the command reports the line written could lose it."
 suites = ["tests.test_signoff.RecordTest"]
 file = "onus/signoff/_ledger.py"
-find = '''            os.fsync(file.fileno())
+find = '''            _flush(file.fileno())
 '''
 replace = '''            pass
 '''
@@ -3221,9 +3221,77 @@ name = "the_kept_copy_not_flushed_before_its_rename"
 why = "A power loss could leave a durable line naming an empty or cut-short copy, and the artifact permanently CORRUPT."
 suites = ["tests.test_signoff.RecordTest"]
 file = "onus/signoff/_ledger.py"
-find = '''                    os.fsync(copy.fileno())
+find = '''                    _flush(copy.fileno())
 '''
 replace = '''                    pass
+'''
+
+[[mutant]]
+name = "a_failed_full_flush_taken_for_a_refusal"
+why = "An I/O error on the fuller flush would be retried with fsync, which can report success, and the failure would be swallowed."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if error.errno not in _FULL_FLUSH_REFUSED:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_refused_full_flush_stops_the_sign_off"
+why = "A file system that cannot do F_FULLFSYNC would stop every sign-off, where fsync was all it could give anyway."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if error.errno not in _FULL_FLUSH_REFUSED:
+'''
+replace = '''        if True:
+'''
+
+[[mutant]]
+name = "a_refused_full_flush_not_flushed_at_all"
+why = "The refusal would be swallowed with nothing flushed in its place."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            raise
+        os.fsync(descriptor)
+'''
+replace = '''            raise
+'''
+
+[[mutant]]
+name = "the_full_flush_never_used"
+why = "On macOS the drive could reorder the writes, and a line could outlive its copy."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        fcntl.fcntl(descriptor, command)
+'''
+replace = '''        os.fsync(descriptor)
+'''
+
+[[mutant]]
+name = "no_fcntl_stops_the_flush"
+why = "The import stands inside the flush so that a platform with no fcntl still flushes."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    except ImportError:
+        pass
+    if command is None:
+'''
+replace = '''    except ZeroDivisionError:
+        pass
+    if command is None:
+'''
+
+[[mutant]]
+name = "a_platform_with_no_full_flush_not_flushed"
+why = "Linux has no F_FULLFSYNC: nothing would be flushed there."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if command is None:
+        os.fsync(descriptor)
+        return
+'''
+replace = '''    if command is None:
+        return
 '''
 
 [[mutant]]
