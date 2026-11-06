@@ -21,7 +21,9 @@ _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
 # A fraction takes only a full stop. After a comma, digits could be the next field of a row, and no scrubber here
 # replaces a number.
 _SECONDS = f"(?::(?:{_SIXTY}|60)(?:\\.[0-9]+)?)?"
-_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"
+# No offset in use passes 14 hours, so a year joined on by a hyphen, as in "T12:00-2026-01-09", is not read as one.
+_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"
+_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?)?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
 # Atomic: seconds and zone are read as far as they go and never given back, so a form that runs on into a letter
 # or digit fails whole, where backing off would replace a prefix and leave the part that changes in the text.
@@ -131,10 +133,10 @@ def iso_timestamps() -> Scrubber:
     """Return a scrubber replacing each ISO 8601 date and time with "<timestamp-N>".
 
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
-    ".", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". A comma does not start a fraction, since what
-    follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves ",42", and so does the stamp
-    Python's logging writes by default, whose ",123" the comparison then shows; ``pattern`` can name that form.
-    Only a real moment is replaced:
+    ".", and "Z" or an offset of up to 14 hours written "+HH:MM", "+HHMM", or "+HH". A comma does not start a
+    fraction, since what follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves ",42", and
+    so does the stamp Python's logging writes by default, whose ",123" the comparison then shows; ``pattern`` can
+    name that form. Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
     written this way, and what follows it stays in the text; if that is a letter or digit, it runs on, and the
     whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is not cut back to a shorter form. Two timestamps are one

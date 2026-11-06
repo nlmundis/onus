@@ -2524,7 +2524,7 @@ name = "a_timestamp_s_zone_not_read"
 why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"'
+find = '_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?)?"'
 replace = '_ZONE = ""'
 
 [[mutant]]
@@ -2542,6 +2542,22 @@ suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
 find = '''(?:\\.[0-9]+)?)?"'''
 replace = ''')?"'''
+
+[[mutant]]
+name = "a_year_joined_on_read_as_an_offset"
+why = "'-2026' would vanish into the token as an offset of 20:26, and the date it began would never be scrubbed."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"'''
+replace = '''_OFFSET_HOUR = _HOUR'''
+
+[[mutant]]
+name = "the_furthest_offsets_not_read"
+why = "Stopping short of 14 would leave a real zone such as +14:00 behind the token."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"'''
+replace = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-3])"'''
 
 [[mutant]]
 name = "a_timestamp_that_runs_on_cut_back"
