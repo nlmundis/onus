@@ -468,13 +468,71 @@ class RecordTest(Desk):
             self.sign()
         self.assertEqual(len(self.lines()), 1)
 
-    def test_a_wrong_file_already_under_the_contents_hash_is_not_taken_for_the_kept_copy(self):
+    def test_a_stray_file_under_the_contents_hash_is_named_before_the_digits_are_asked_for(self):
         blobs = self.folder / "ledger.jsonl.blobs"
         blobs.mkdir()
-        (blobs / sha(FIRST)).write_bytes(b"cut sh")
+        stray = blobs / sha(FIRST)
+        stray.write_bytes(b"cut sh")
+        with self.assertRaises(SignoffError) as raised:
+            self.sign()
+        self.assertNotIsInstance(raised.exception, CorruptLedgerError)
+        self.assertIn(f"{stray} is not this content, and no line of the ledger signed it", str(raised.exception))
+        self.assertIn("move that one file aside", str(raised.exception))
+        self.assertNotIn("Type the first", self.terminal.shown())
+        self.assertEqual(self.lines(), [])
+        stray.unlink()
+        self.assertEqual(self.sign().sha256, sha(FIRST))
+
+    def test_a_kept_copy_some_older_line_signed_stays_corrupt_when_signed_again(self):
+        self.sign()
+        self.truth.write_bytes(SECOND)
+        self.sign()
+        blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
+        blob.chmod(0o644)
+        blob.write_bytes(b"tampered\n")
+        self.truth.write_bytes(FIRST)
         with self.assertRaisesRegex(CorruptLedgerError, "is not the content its name says was signed"):
             self.sign()
+        self.assertEqual(self.terminal.shown().count("Type the first"), 2)
+        self.assertEqual(len(self.lines()), 2)
+
+    def test_a_kept_copy_another_artifact_signed_is_corrupt_not_a_stray(self):
+        self.sign()
+        blob = self.folder / "ledger.jsonl.blobs" / sha(FIRST)
+        blob.chmod(0o644)
+        blob.write_bytes(b"tampered\n")
+        self.terminal.type(sha(FIRST)[:8])
+        with self.assertRaisesRegex(CorruptLedgerError, "is not the content its name says was signed"):
+            record(self.ledger, "truth:other.json", self.truth, reviewed_by="A Reviewer")
+
+    def test_a_folder_or_file_in_the_way_of_the_copy_is_refused_before_the_digits(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        kept = blobs / sha(FIRST)
+        partial = blobs / (sha(FIRST) + ".partial")
+        for what, make in (
+            ("a file for the folder", lambda: blobs.write_bytes(b"")),
+            ("a pipe for the folder", lambda: os.mkfifo(blobs)),
+            ("a broken link for the folder", lambda: blobs.symlink_to(self.folder / "gone")),
+            ("a folder for the copy", lambda: kept.mkdir(parents=True)),
+            ("a folder for the partial", lambda: partial.mkdir(parents=True)),
+        ):
+            with self.subTest(what=what):
+                make()
+                with self.assertRaisesRegex(SignoffError, "move it aside"):
+                    self.sign()
+                if blobs.is_dir():
+                    shutil.rmtree(blobs)
+                else:
+                    blobs.unlink()
+        self.assertNotIn("Type the first", self.terminal.shown())
         self.assertEqual(self.lines(), [])
+
+    def test_a_folder_named_as_the_partial_is_no_matter_when_the_copy_is_kept(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        blobs.mkdir()
+        (blobs / sha(FIRST)).write_bytes(FIRST)
+        (blobs / (sha(FIRST) + ".partial")).mkdir()
+        self.assertEqual(self.sign().sha256, sha(FIRST))
 
     def test_the_kept_copy_is_written_whole_or_not_at_all(self):
         blobs = self.folder / "ledger.jsonl.blobs"
