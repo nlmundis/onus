@@ -3292,6 +3292,20 @@ replace = '''                partial = kept.with_name(kept.name)
 '''
 
 [[mutant]]
+name = "a_corrupt_ledger_error_doubles_its_remedy_through_a_pickle"
+why = "With the remedy in args, an error handed back by a worker process runs the constructor on the full message and says the remedy twice."
+suites = ["tests.test_signoff.SurfaceTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    def __str__(self) -> str:
+        """Return the problem and what clears it, since no command here does; ``args`` keeps the problem alone."""
+        return (
+'''
+replace = '''    def __init__(self, problem: str) -> None:
+        """Keep ``problem`` and say what clears it, since no command here does."""
+        super().__init__(
+'''
+
+[[mutant]]
 name = "a_last_line_without_a_newline_run_into_the_next"
 why = "The diff would print the removed and the added last lines as one line."
 suites = ["tests.test_signoff.RecordTest"]
@@ -3312,9 +3326,9 @@ name = "a_corrupt_ledger_named_with_no_remedy"
 why = "No command clears a corrupt ledger; a message that does not say so leaves the reader looking for one."
 suites = ["tests.test_signoff.CheckTest"]
 file = "onus/signoff/_ledger.py"
-find = '''            f"{problem}. onus does not repair a ledger: restore it, and the copies kept beside it, from version "
+find = '''            f"{super().__str__()}. onus does not repair a ledger: restore it, and the copies kept beside it, from "
 '''
-replace = '''            f"{problem}. Restore it, and the copies kept beside it, from version "
+replace = '''            f"{super().__str__()}. Restore it, and the copies kept beside it, from "
 '''
 
 [[mutant]]

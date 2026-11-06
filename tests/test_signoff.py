@@ -10,6 +10,7 @@ import io
 import json
 import os
 import pathlib
+import pickle
 import select
 import shutil
 import stat
@@ -891,6 +892,15 @@ class CommandLineTest(Desk):
 
 
 class SurfaceTest(unittest.TestCase):
+    def test_a_corrupt_ledger_error_keeps_its_message_through_a_pickle(self):
+        error = CorruptLedgerError("line 3 is bad")
+        back = pickle.loads(pickle.dumps(error))  # as a worker process hands an exception back
+        self.assertIs(type(back), CorruptLedgerError)
+        self.assertEqual(str(back), str(error))
+        self.assertEqual(str(error).count("onus does not repair"), 1)
+        self.assertTrue(str(error).startswith("line 3 is bad. onus does not repair"))
+        self.assertEqual(back.args, ("line 3 is bad",))
+
     def test_the_real_terminal_is_the_controlling_one(self):
         self.assertEqual(_ledger._TTY, "/dev/tty")
 
