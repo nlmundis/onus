@@ -454,14 +454,14 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
   - Known limits, most from this step's review:
     - A refused first sign-off leaves an empty ledger file behind.
-    - The lock is held while the person answers, so a second sign-off on the same ledger waits, with no
-      message and no time limit.
-    - Digits already waiting on the terminal when the prompt appears are read as the answer.
-    - The bound files' contents are not kept, so a changed one is named without a diff.
     - The kept copy is read before the prompt, and the lock does not cover the copies, so one changed while the
       person answers is not seen. A copy changed after a revocation is not seen by a later `record` of other
       content either, since only the newest line's copy and the new content's are read, and a revocation signs
       none.
+    - The lock is held while the person answers, so a second sign-off on the same ledger waits, with no
+      message and no time limit.
+    - Digits already waiting on the terminal when the prompt appears are read as the answer.
+    - The bound files' contents are not kept, so a changed one is named without a diff.
     - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
       own profile, and `GEMINI_CLI` also matches a longer name that starts so.
     - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,

@@ -549,10 +549,9 @@ def revoke(ledger: str | os.PathLike[str], artifact: str, *, reviewed_by: str) -
     """
 
     def build(ledger: Path, lines: list[Line], newest: Line | None) -> tuple[dict[str, Any], str, str, str, None]:
-        if newest is None or newest.revokes:
+        if newest is None or newest.sha256 is None:
             raise SignoffError(f"{artifact!r} has no sign-off in {ledger} to revoke")
-        if newest.sha256 is not None:
-            _kept(ledger, newest.sha256)  # a bad copy reads CORRUPT, and a revocation must not turn that into REVOKED
+        _kept(ledger, newest.sha256)  # a bad copy reads CORRUPT, and a revocation must not turn that into REVOKED
         shown = (
             f"\nRevocation of the sign-off of {artifact}\n  reviewed by: {reviewed_by}\n"
             f"  revokes line: {newest.line_sha256}\n  signed by: {newest.reviewed_by} at {newest.at.isoformat()}\n"
