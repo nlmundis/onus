@@ -21,7 +21,9 @@ _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
 _SECONDS = f"(?::(?:{_SIXTY}|60)(?:[.,][0-9]+)?)?"
 _ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
-_TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}{_SECONDS}{_ZONE}{_AFTER}")
+# Atomic: seconds and zone are read as far as they go and never given back, so a form that runs on into a letter
+# or digit fails whole, where backing off would replace a prefix and leave the part that changes in the text.
+_TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")
 # Digits alone, or digits then an exponent: a count, or the digits of a float, never an id.
 _NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")
 # The token names this module's own scrubbers write, which a caller's pattern may not reuse.
@@ -129,8 +131,9 @@ def iso_timestamps() -> Scrubber:
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
     "." or ",", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
-    written this way, and what follows it stays in the text. Two timestamps are one value when they are written
-    alike; the same moment in two zones is two values.
+    written this way, and what follows it stays in the text; if that is a letter or digit, it runs on, and the
+    whole timestamp stays: "2026-01-08T12:00:00.5Zfoo" is not cut back to a shorter form. Two timestamps are one
+    value when they are written alike; the same moment in two zones is two values.
     """
     return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
 

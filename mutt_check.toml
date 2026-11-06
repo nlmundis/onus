@@ -2528,6 +2528,14 @@ find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"'
 replace = '_ZONE = ""'
 
 [[mutant]]
+name = "a_timestamp_that_runs_on_cut_back"
+why = "Backing off to a shorter form replaces a prefix and leaves the fraction in the text, so two moments share a number."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")'
+replace = '{_CLOCK}{_SECONDS}{_ZONE}{_AFTER}")'
+
+[[mutant]]
 name = "a_folder_whose_name_runs_on_replaced"
 why = '"/srv/app2" would be scrubbed as the mapped "/srv/app" with a stray 2, hiding which folder the output named.'
 suites = ["tests.test_scrub.PathsTest"]

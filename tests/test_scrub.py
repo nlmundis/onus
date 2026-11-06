@@ -121,6 +121,28 @@ class TimestampsTest(unittest.TestCase):
     def test_what_follows_a_timestamp_stays(self):
         self.assertEqual(iso_timestamps()("2026-01-08T11:00:5 2026-01-08T11:00+24"), "<timestamp-1>:5 <timestamp-1>+24")
 
+    def test_a_written_form_that_runs_on_stays_whole_and_is_not_cut_back(self):
+        for text in (
+            "2026-01-08T12:00:00.123abc",
+            "2026-01-08T12:00:00.5Zfoo",
+            "2026-01-08T12:00:00Zfoo",
+            "2026-01-08T12:00:00+05:30x",
+            "2026-01-08T12:00:00+0530\u00e9",
+            "2026-01-08T12:00:00-08x",
+            "2026-01-08T12:00:00+053",
+            "2026-01-08T12:00:001",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(iso_timestamps()(text), text)
+                self.assertEqual(iso_dates()(text), text)
+
+    def test_two_moments_that_differ_after_the_seconds_are_never_given_one_number(self):
+        text = "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc 2026-01-08T12:00:00.123 2026-01-08T12:00:00.456"
+        self.assertEqual(
+            iso_timestamps()(text),
+            "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc <timestamp-1> <timestamp-2>",
+        )
+
     def test_its_name_is_its_functions(self):
         self.assertEqual(
             (iso_timestamps().name, iso_dates().name, uuids().name), ("iso_timestamps", "iso_dates", "uuids")

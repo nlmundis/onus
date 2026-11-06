@@ -336,7 +336,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       can record which scrubbers shaped an output; `chain` takes only these, and `redactor(fn)` is how a plain
       function gets a name (its module and qualified name).
     - Only a real value is replaced: "2026-13-45" and "2026-01-08T25:00" stay, as does anything that runs on
-      into a letter or digit, of any script, on either side. The date inside a timestamp is left to
+      into a letter or digit, of any script, on either side; a timestamp whose fraction or zone runs on stays
+      whole, and is not cut back to a shorter form. The date inside a timestamp is left to
       `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
       regex, since `datetime` reads "24:00" on some Python versions and not on others.
     - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
