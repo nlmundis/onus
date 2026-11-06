@@ -361,14 +361,15 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       `paths` reads such a shape as a value too, so the path in "<b>/srv/app" stays and fails its comparison.
     - A file URL's path stays, though it names a local path, so a `file:///` URL into a folder that changes from
       run to run fails its comparison, visibly; `pattern` can name it.
-    - `paths`'s boundary reads one character on each side, from a fixed class, so what stands outside that class
-      does not mark a longer path: "file:/srv/app", "http://[::1]/srv/app", "/mnt/*/srv/app", and "(1)/srv/app"
+    - `paths`'s boundary reads one character before a path and one run of name characters after it, from a fixed
+      class, so what stands outside that class does not mark a longer path: "file:/srv/app", "http://[::1]/srv/app", "/mnt/*/srv/app", and "(1)/srv/app"
       are replaced, as is the path before a combining mark or before "./x". A ":" cannot join the class, since
       it separates the entries of a search path.
     - The order of a chain can change what `paths` does. A mapped path that holds a value another scrubber reads,
-      as "/tmp/<a uuid>" does, is no longer that path once the value is a token, so `paths` goes first there; and
-      a value whose first or last character is not a name's, as `pattern` may match ("/srv/app:8080"), or text a
-      `redactor` writes, is not read as part of the name its value would have been.
+      as "/tmp/<a uuid>" does, is no longer that path once the value is a token, so `paths` goes first there. A
+      value whose first character is not a name's, as `pattern` may match (":8080" in "/srv/app:8080"), counts as
+      part of a longer name once it is a token and not before, so `paths` first replaces the path and `paths`
+      second leaves it. Text a `redactor` writes is read as written.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
       read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
     - Two patterns given one name in a chain each number from 1, so two different values can share a token.
