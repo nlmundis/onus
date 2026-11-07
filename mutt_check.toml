@@ -3073,12 +3073,12 @@ replace = '''            if False:
 
 [[mutant]]
 name = "a_recorded_mock_accepted"
-why = "A record edited to name a mock would pass the check that exists to find it."
-suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+why = "A mock in a chain would pass the check that exists to find it: its class is written outside the tests."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    if _is_mock(found):
+find = '''        if _is_mock(link):
 '''
-replace = '''    if False:
+replace = '''        if False:
 '''
 
 [[mutant]]
@@ -3134,9 +3134,9 @@ name = "a_wrapper_judged_only_by_what_it_wraps"
 why = "A function written in the tests could set __wrapped__ to real code and be recorded as that code."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    for each in (found, inspect.unwrap(found)):
+find = '''    for link in (*wrappers, innermost):
 '''
-replace = '''    for each in (inspect.unwrap(found),):
+replace = '''    for link in (innermost,):
 '''
 
 [[mutant]]
@@ -3144,9 +3144,183 @@ name = "a_wrapper_judged_only_by_itself"
 why = "A test function behind a wrapper with no source file of its own, as functools.lru_cache gives, would not be seen as written among the tests."
 suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    for each in (found, inspect.unwrap(found)):
+find = '''    for link in (*wrappers, innermost):
 '''
-replace = '''    for each in (found,):
+replace = '''    for link in (found,):
+'''
+
+[[mutant]]
+name = "a_wrapper_chain_judged_only_at_its_two_ends"
+why = "A test function carrying functools.wraps of real code, behind functools.lru_cache, has real code at both ends and would be recorded as that code while its canned text ran."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    for link in (*wrappers, innermost):
+'''
+replace = '''    for link in (found, innermost):
+'''
+
+[[mutant]]
+name = "a_link_that_cannot_be_placed_passed_over"
+why = "A callable object or a built-in in the chain would be taken on trust, though nothing shows where it was written."
+suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if source is None:
+            return f"{who} has no source file, so nothing shows it is not a built-in or made up at run time"
+'''
+replace = '''        if source is None:
+            continue
+'''
+
+[[mutant]]
+name = "a_mock_judged_only_at_the_front_of_the_chain"
+why = "A mock in the middle of a chain is a wrapper placed by its class, which is written outside the tests, so it would be recorded as real."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if _is_mock(link):
+'''
+replace = '''        if link is found and _is_mock(link):
+'''
+
+[[mutant]]
+name = "a_wrapper_with_no_file_not_placed_by_its_class"
+why = "Real code behind functools.lru_cache is common and is code under test; refusing it would leave a memoized function no way to be approved."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        source = Path(inspect.getfile(link if code else type(link))).resolve()
+'''
+replace = '''        source = Path(inspect.getfile(link)).resolve()
+'''
+
+[[mutant]]
+name = "the_innermost_link_placed_by_its_class"
+why = "A functools.partial would be placed in functools.py and pass, though it can hold a function written among the tests; so would a callable object of a class outside them."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    if not code and not wrapper:
+'''
+replace = '''    if False:
+'''
+
+[[mutant]]
+name = "a_file_name_taken_without_the_file"
+why = "A function from eval has the file name <string>, which resolves to a path outside the tests, so a function made up at run time would pass."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        return source if source.is_file() else None
+'''
+replace = '''        return source
+'''
+
+[[mutant]]
+name = "a_class_of_a_fileless_main_raises"
+why = "inspect.getfile raises OSError for a class of a __main__ with no file, so the check would stop with an error in place of a reason."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except (TypeError, OSError, RuntimeError):  # also a __main__ with no file, a long name, 3.11's symlink loop
+'''
+replace = '''    except TypeError:
+'''
+
+[[mutant]]
+name = "a_circular_chain_raises"
+why = "A record check must report a bad record; a ValueError from inspect.unwrap would stop on it with an error and name no record."
+suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+'''
+replace = '''    except ZeroDivisionError:
+'''
+
+[[mutant]]
+name = "a_proxy_believed_about_its_own_class"
+why = "A proxy that forwards __class__ reads as the function it wraps, so a test-written proxy over real code would be placed in the real code's file and recorded."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+'''
+replace = '''    code = isinstance(link, (type, types.FunctionType, types.MethodType))
+'''
+
+[[mutant]]
+name = "a_chain_that_raises_stops_the_check"
+why = "A __wrapped__ that raises would stop the check with that error in place of a reason."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+'''
+replace = '''    except ValueError:
+'''
+
+[[mutant]]
+name = "a_staticmethod_in_a_chain_refused"
+why = "A staticmethod has __wrapped__ and no file of its own, so memoized or decorated static methods of real code would be refused as having no source."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if type(link) is staticmethod:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_staticmethod_recognized_by_equality"
+why = "== asks the class, so a metaclass of a test-written fake could answer that it is a staticmethod and skip judgment."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if type(link) is staticmethod:
+'''
+replace = '''        if type(link) == staticmethod:
+'''
+
+[[mutant]]
+name = "a_classmethod_object_passed_through"
+why = "A classmethod object has no file of its own, and only a staticmethod is passed through; this would widen what is taken on trust."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''        if type(link) is staticmethod:
+'''
+replace = '''        if type(link) is staticmethod or type(link) is classmethod:
+'''
+
+[[mutant]]
+name = "a_class_of_real_code_not_placed_by_itself"
+why = "A class is callable and speaks for itself; without it a class under test would be refused."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+'''
+replace = '''    code = issubclass(type(link), (types.FunctionType, types.MethodType))
+'''
+
+[[mutant]]
+name = "a_bound_method_of_real_code_not_placed_by_itself"
+why = "A record naming a bound method would be refused as having no source, though its function has one."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    code = issubclass(type(link), (type, types.FunctionType, types.MethodType))
+'''
+replace = '''    code = issubclass(type(link), (type, types.FunctionType))
+'''
+
+[[mutant]]
+name = "a_chain_error_formatted_by_its_own_repr"
+why = "An exception's repr can raise too, and the check would stop on it after all."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+        return "its __wrapped__ chain cannot be followed to an end, so nothing shows what would run"
+'''
+replace = '''    except Exception as error:
+        return f"its __wrapped__ chain cannot be followed to an end, so nothing shows what would run: {error!r}"
+'''
+
+[[mutant]]
+name = "a_one_shot_iterable_of_tests_spent_on_the_first_link"
+why = "A generator of folders would be used up by the first link, and every later link would go unchecked."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    tests = tuple(tests)
+'''
+replace = '''    pass
 '''
 
 [[mutant]]
