@@ -2532,8 +2532,50 @@ name = "a_folder_whose_name_runs_on_replaced"
 why = '"/srv/app2" would be scrubbed as the mapped "/srv/app" with a stray 2, hiding which folder the output named.'
 suites = ["tests.test_scrub.PathsTest"]
 file = "onus/scrub/_scrub.py"
-find = ' + ")" + ends)'
-replace = ' + ")")'
+find = ''' + ")" + ends
+'''
+replace = ''' + ")"
+'''
+
+[[mutant]]
+name = "a_path_after_a_slash_replaced"
+why = "'a//srv/app' is the middle of another path, and 'http://srv/app' a URL; replacing either hides what the output named."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''starts = f"(?<![/{_IN_A_NAME}])"'''
+replace = '''starts = f"(?<![{_IN_A_NAME}])"'''
+
+[[mutant]]
+name = "a_path_that_runs_on_into_a_token_replaced"
+why = "Run before paths, a scrubber would change what paths does: '/srv/app.2026-01-08' stays alone, and '<app>.<date-1>' after iso_dates."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''|{_TOKEN}))"'''
+replace = '''))"'''
+
+[[mutant]]
+name = "a_path_after_a_token_replaced"
+why = "'/data/<uuid-1>/srv/app' is the middle of a longer path, and replacing it hides which folder the output named."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        after_a_token + "|" + starts + "("'''
+replace = '''        starts + "("'''
+
+[[mutant]]
+name = "a_path_after_an_unnumbered_token_replaced"
+why = "A second pass over paths' own output would replace what the first left, so a scrubbed text would not scrub to itself."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_TOKEN = r"<[a-z][a-z0-9_]*(?:-[0-9]+)?>"'''
+replace = '''_TOKEN = r"<[a-z][a-z0-9_]*-[0-9]+>"'''
+
+[[mutant]]
+name = "only_the_token_is_skipped_and_not_what_runs_on_from_it"
+why = "'<uuid-1>/srv/app' would be matched as a token and then '/srv/app', read fresh after it, replaced."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''after_a_token = f"{_TOKEN}[/{_IN_A_NAME}]*"'''
+replace = '''after_a_token = _TOKEN'''
 
 [[mutant]]
 name = "the_shortest_path_tried_first"
@@ -2738,8 +2780,8 @@ name = "the_end_of_another_path_replaced"
 why = "A mapped path that is the tail of a different, longer path, or the path of a URL, would be labelled as the mapped folder, and the output would misreport which folder it named."
 suites = ["tests.test_scrub.PathsTest"]
 file = "onus/scrub/_scrub.py"
-find = 'regex = re.compile(starts + "(?:"'
-replace = 'regex = re.compile("(?:"'
+find = '"|" + starts + "("'
+replace = '"|" + "("'
 
 [[mutant]]
 name = "a_paths_scrubber_named_by_its_paths"
