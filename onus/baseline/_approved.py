@@ -20,6 +20,7 @@ SCHEMA = "approved/1"
 # The NAME of the environment variable `make approve` sets, to the top level of the checkout it was run in;
 # recording happens nowhere else.
 APPROVE_ROOT = "ONUS_APPROVE_ROOT"
+_TEST_PACKAGES = frozenset({"test", "tests"})
 _LABEL = re.compile(r"[A-Za-z0-9_-]*\Z")
 _EXT = re.compile(r"\.[a-z0-9]+\Z")
 _MARK = ".approved"
@@ -69,18 +70,25 @@ def _resolved(name: str) -> object:
 
 
 def _tests_of(case: object, folder: Path) -> tuple[Path, ...]:
-    """Return the folders that hold tests: the top of the test's own package, and the approved folder's parent.
+    """Return the folders that hold tests: the test's own test package, and the approved folder's parent.
 
-    A test in ``tests/unit/test_x.py``, imported as ``tests.unit.test_x``, has ``tests`` as the top of its
-    package, so a helper anywhere under ``tests`` is among the tests. A test module that is in no package has its
-    own folder.
+    The test package is the outermost package around the test named ``tests`` or ``test``, so tests kept inside
+    the code, in ``mypkg/tests``, leave ``mypkg`` as code under test, and a helper anywhere under ``mypkg/tests`` is
+    among the tests, and so is one in any other folder of that name in ``mypkg``. Under no such name it is the top
+    package, ``suite`` for ``suite.unit.test_x``, which fails toward refusing: nothing shows where the code ends.
+    A test module that is in no package has its own folder.
     """
     module = sys.modules[type(case).__module__]
     own = Path(inspect.getfile(type(case))).resolve().parent
-    # A module a.b.c lives in a/b, two folders below nothing and one below a: its package's top is a.
-    depth = len((module.__spec__.name if module.__spec__ else module.__name__).split(".")) - 1
-    top = own.parents[depth - 2] if depth > 1 else own
-    return tuple(dict.fromkeys((top, folder.resolve().parent)))
+    spec = module.__spec__
+    package = spec.parent if spec else module.__name__.rpartition(".")[0]
+    names = package.split(".") if package else []
+    # The last name is the folder that holds the test's file, and each name before it is one folder further up.
+    folders = [own, *own.parents][: len(names)][::-1]
+    named = [path for name, path in zip(names, folders, strict=False) if name in _TEST_PACKAGES]
+    others = [path for path in folders[0].rglob("*") if path.name in _TEST_PACKAGES and path.is_dir()] if named else []
+    tests = (named + others) or (folders or [own])[:1]
+    return tuple(dict.fromkeys((*tests, folder.resolve().parent)))
 
 
 def unreal(name: str, tests: Iterable[Path]) -> str | None:
@@ -112,7 +120,8 @@ def unreal(name: str, tests: Iterable[Path]) -> str | None:
             if source.is_relative_to(folder.resolve()):
                 return (
                     f"it is defined among the tests, in {source.name} under {folder.name}/: a baseline is of code "
-                    "under test, kept outside the folder that holds the tests"
+                    "under test, kept outside the tests: the package named tests or test around the test, else its "
+                    "top package, and the folder that holds the approved folder"
                 )
     return None
 
@@ -182,10 +191,10 @@ class ApprovedMixin:
         written as the new approved file, with its record.
 
         The producer must be real code under test: importing its name gives it back, it is no mock, and it is
-        written outside the tests, which are the top folder of the test's own package and the folder that holds
-        the approved folder. A second call in one test needs its own ``label``. The producer's own keyword
-        arguments cannot be named ``scrubbers``, ``label``, ``ext``, or ``forbid``. A test file run as a script
-        is the module ``__main__``, and looks for files under that name.
+        written outside the tests, which are the test's package named ``tests`` or ``test`` (with no such name,
+        its top package) and the folder that holds the approved folder. A second call in one test needs its own
+        ``label``. The producer's own keyword arguments cannot be named ``scrubbers``, ``label``, ``ext``, or
+        ``forbid``. A test file run as a script is the module ``__main__``, and looks for files under that name.
 
         Raises:
             TypeError: this is not a ``unittest.TestCase``; the producer has no name to record, did not return a

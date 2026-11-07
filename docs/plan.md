@@ -420,11 +420,22 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   - As built, chosen in the build and open to veto:
     - **What "real" means.** A producer is real when importing its recorded name gives it back, it is callable
       and no mock (an autospec stand-in included), and it is written outside the tests: both the function and,
-      when it wraps another, the one it wraps. The tests are the top folder of the test's own package (`tests`
-      for `tests.unit.test_x`; a module in no package has its own folder) and the folder that holds the
-      approved folder. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in
-      the test package are refused, and so is every function when tests sit in the same folder as the code,
+      when it wraps another, the one it wraps. The tests are the outermost package around the test named `tests`
+      or `test` (`mypkg/tests` for `mypkg.tests.unit.test_x`, so `mypkg` stays code under test), else the top
+      package (`suite` for `suite.unit.test_x`; a module in no package has its own folder), and the folder that
+      holds the approved folder. When the test sits in such a package, every other folder of those names in its
+      top package counts too. The name is the only sign of where the code ends, so a test package of any other
+      name inside the code leaves that code refused, which fails toward refusing, and a helper kept in the code
+      package outside its `tests` reads as code under test; so does a helper in `e2e/` when the tests are in
+      `e2e/tests`, since nothing tells a suite that is all tests from a code package.
+      So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in the test
+      package are refused, and so is every function when tests sit in the same folder as the code,
       until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
+    - **The tests are read from the name the test was imported under.** So `discover -s tests`, which imports
+      `tests/unit/test_x.py` as `unit.test_x`, narrows the tests to `tests/unit`, and a test run as a script to
+      its own folder. Only the test's own class is read, not a base class in another package. A symlinked or
+      split package maps its names to the wrong folders. A sibling top-level `tests` is not seen from
+      `mypkg/tests`. Each lets a helper pass, and each needs `-t` or a plain package layout to close it.
     - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
       must have the record's four keys and name a real producer, each approved file must have one record and
       each record one file, and a folder that is missing or holds no record fails, so that passing means

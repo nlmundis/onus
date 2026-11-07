@@ -3104,7 +3104,7 @@ name = "only_the_approved_folder_s_parent_counted_as_the_tests"
 why = "With approved files kept in a subfolder, or outside the tests, a helper elsewhere in the test package would be accepted as code under test."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    return tuple(dict.fromkeys((top, folder.resolve().parent)))
+find = '''    return tuple(dict.fromkeys((*tests, folder.resolve().parent)))
 '''
 replace = '''    return (folder.resolve().parent,)
 '''
@@ -3114,9 +3114,9 @@ name = "only_the_test_package_counted_as_the_tests"
 why = "Approved files kept beside product code would let that folder's own helpers through."
 suites = ["tests.test_baseline.ProducerTest", "tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    return tuple(dict.fromkeys((top, folder.resolve().parent)))
+find = '''    return tuple(dict.fromkeys((*tests, folder.resolve().parent)))
 '''
-replace = '''    return (top,)
+replace = '''    return tuple(tests)
 '''
 
 [[mutant]]
@@ -3124,9 +3124,89 @@ name = "a_nested_test_package_s_top_misplaced"
 why = "For tests two packages deep, only their own folder would count, and a shared helper one level up would be accepted."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    top = own.parents[depth - 2] if depth > 1 else own
+find = '''    tests = (named + others) or (folders or [own])[:1]
 '''
-replace = '''    top = own
+replace = '''    tests = [own]
+'''
+
+[[mutant]]
+name = "the_top_package_always_taken_for_the_tests"
+why = "Tests in mypkg/tests would make all of mypkg the tests, so every producer in it would be refused with no remedy short of moving the tests out."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    named = [path for name, path in zip(names, folders, strict=False) if name in _TEST_PACKAGES]
+'''
+replace = '''    named = []
+'''
+
+[[mutant]]
+name = "the_singular_test_package_not_recognized"
+why = "A package named test is the same layout under the other usual name, and it would be refused for that name alone."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''_TEST_PACKAGES = frozenset({"test", "tests"})
+'''
+replace = '''_TEST_PACKAGES = frozenset({"tests"})
+'''
+
+[[mutant]]
+name = "any_package_read_as_the_test_package"
+why = "With no name to go by, the innermost package would be taken for the tests, and a code package would pass with its helpers beside its tests; nothing there shows where the code ends, so it must fail toward refusing."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    tests = (named + others) or (folders or [own])[:1]
+'''
+replace = '''    tests = (named + others) or [own]
+'''
+
+[[mutant]]
+name = "only_the_innermost_named_package_kept"
+why = "rglob never yields its root, so a top package named test would drop out, and a helper in it would pass from a test package nested deeper."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    tests = (named + others) or (folders or [own])[:1]
+'''
+replace = '''    tests = (named[-1:] + others) or (folders or [own])[:1]
+'''
+
+[[mutant]]
+name = "the_names_around_the_test_left_out"
+why = "rglob never yields its root, so a top package named test would drop out, and a helper in it would pass from a test package nested deeper."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    tests = (named + others) or (folders or [own])[:1]
+'''
+replace = '''    tests = others or (folders or [own])[:1]
+'''
+
+[[mutant]]
+name = "another_tests_package_read_as_code"
+why = "Tests in mypkg/sub/tests would make a helper in mypkg/tests read as code under test, though it is written among tests."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    others = [path for path in folders[0].rglob("*") if path.name in _TEST_PACKAGES and path.is_dir()] if named else []
+'''
+replace = '''    others = []
+'''
+
+[[mutant]]
+name = "a_module_in_no_package_has_no_folder"
+why = "A test run by discover from its own folder has no package names, so nothing but the approved folder's parent would count, and a helper beside the test would pass."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    tests = (named + others) or (folders or [own])[:1]
+'''
+replace = '''    tests = (named + others) or folders[:1]
+'''
+
+[[mutant]]
+name = "a_module_with_no_spec_read_as_in_no_package"
+why = "A module with no spec would have only its own folder for the tests, so a helper elsewhere in its test package would pass."
+suites = ["tests.test_baseline.ProducerTest"]
+file = "onus/baseline/_approved.py"
+find = '''    package = spec.parent if spec else module.__name__.rpartition(".")[0]
+'''
+replace = '''    package = spec.parent if spec else ""
 '''
 
 [[mutant]]
