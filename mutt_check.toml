@@ -1640,6 +1640,38 @@ find = "    if [hypothesis.name for hypothesis in evaluation.hypotheses] != [h.n
 replace = "    if False:\n"
 
 [[mutant]]
+name = "a_read_line_not_flushed"
+why = "A read reported as recorded could be lost in a power loss, and with it the evidence of what was looked at and when."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = '''        _flush(reads.fileno())
+'''
+replace = '''        pass
+'''
+
+[[mutant]]
+name = "a_read_line_flushed_short_of_the_disk_on_macos"
+why = "fsync on macOS stops at the drive's cache, which is the gap the shared flush exists to close."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = '''        _flush(reads.fileno())
+'''
+replace = '''        __import__("os").fsync(reads.fileno())
+'''
+
+[[mutant]]
+name = "a_read_line_flushed_before_it_is_written_out"
+why = "A flush of the descriptor before Python's buffer is emptied flushes nothing of the line."
+suites = ["tests.test_prereg.ReadTest"]
+file = "onus/prereg/_evaluate.py"
+find = '''        reads.flush()
+        _flush(reads.fileno())
+'''
+replace = '''        _flush(reads.fileno())
+        reads.flush()
+'''
+
+[[mutant]]
 name = "a_torn_reads_file_appended_to"
 why = "A line appended after a cut-short write would join it, and neither would parse."
 suites = ["tests.test_prereg.ReadTest"]
