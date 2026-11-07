@@ -27,7 +27,8 @@ SESSION_PREFIXES = ("CLAUDE_CODE_", "CODEX_", "CURSOR_", "AIDER_", "GEMINI_CLI",
 _TTY = "/dev/tty"
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PREFIX = 8
-# What a file system answers when it cannot do F_FULLFSYNC, as opposed to trying and failing.
+# What a file system is taken to answer when it cannot do F_FULLFSYNC, as opposed to trying and failing. This set is a
+# judgment: fcntl(2) documents no errno for the command, and every file system tried accepted it. Any other errno raises.
 _FULL_FLUSH_REFUSED = frozenset({errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOTTY})
 
 
