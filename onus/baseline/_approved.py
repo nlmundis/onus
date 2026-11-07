@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from unittest import mock
 
-from onus.scrub import Scrubber
+from onus.scrub import Scrubber, chain
 
 SCHEMA = "approved/1"
 # The NAME of the environment variable `make approve` sets, to the top level of the checkout it was run in;
@@ -213,7 +213,8 @@ class ApprovedMixin:
             TypeError: this is not a ``unittest.TestCase``; the producer has no name to record, did not return a
                 text, or took an argument that is not JSON-serializable; or a scrubber is not a ``Scrubber``.
             ValueError: the producer is not real code under test; ``label`` or ``ext`` cannot stand in a file
-                name; or this test already held an output to this label.
+                name; two scrubbers write one numbered token name, which ``onus.scrub.chain`` refuses; or this
+                test already held an output to this label.
         """
         if not isinstance(self, unittest.TestCase):
             raise TypeError("ApprovedMixin is mixed into a unittest.TestCase")
@@ -225,6 +226,8 @@ class ApprovedMixin:
         scrubbers = tuple(scrubbers)
         if not all(isinstance(scrubber, Scrubber) for scrubber in scrubbers):
             raise TypeError("assertApproved takes its scrubbers as Scrubbers; wrap a plain function with redactor")
+        if scrubbers:
+            chain(*scrubbers)  # Only for its refusal: these run in turn, as one chain would.
         folder = (self.approved_dir or _default_folder(self)).resolve()
         name = _named(producer)
         reason = unreal(name, _tests_of(self, folder))

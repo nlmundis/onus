@@ -1,5 +1,6 @@
 """onus.scrub: run-to-run values replaced by tokens numbered by value, and nothing else touched."""
 
+import dataclasses
 import functools
 import pathlib
 import re
@@ -17,6 +18,12 @@ UUID_B = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
 def shout(text: str) -> str:
     return text.upper()
+
+
+class Unhashable(str):
+    """A string that cannot be hashed, as any subclass that defines ``__eq__`` alone cannot be."""
+
+    __hash__ = None  # type: ignore[assignment]
 
 
 class Rules:
@@ -82,6 +89,12 @@ class DatesTest(unittest.TestCase):
             with self.subTest(first=order[0].name):
                 self.assertEqual(chain(*order)(text), "<timestamp-1> and <timestamp-2> on <date-1>")
 
+    def test_a_date_before_a_clock_that_runs_on_stays_with_it(self):
+        for text in ("2026-01-08 12:00pm", "2026-01-08 12:00:00.5abc"):
+            with self.subTest(text=text):
+                self.assertEqual(iso_dates()(text), text)
+                self.assertEqual(iso_timestamps()(text), text)
+
     def test_a_date_before_a_clock_time_no_timestamp_has_is_replaced(self):
         # After "T" the date runs on into a letter, so it stays, as it does before any other letter.
         self.assertEqual(iso_dates()("2026-01-08 25:00 and 2026-01-08T10:61"), "<date-1> 25:00 and 2026-01-08T10:61")
@@ -99,7 +112,6 @@ class TimestampsTest(unittest.TestCase):
             "2026-01-08T11:00:05Z",
             "2026-01-08T11:00:05+00:00",
             "2026-01-08T11:00:05.25-08:00",
-            "2026-01-08T11:00:05,25",
             "2026-01-08T11:00:05+0530",
             "2026-01-08T11:00:05-08",
             "2026-12-31T23:59:60Z",
@@ -120,6 +132,88 @@ class TimestampsTest(unittest.TestCase):
 
     def test_what_follows_a_timestamp_stays(self):
         self.assertEqual(iso_timestamps()("2026-01-08T11:00:5 2026-01-08T11:00+24"), "<timestamp-1>:5 <timestamp-1>+24")
+
+    def test_a_written_form_that_runs_on_stays_whole_and_is_not_cut_back(self):
+        for text in (
+            "2026-01-08T12:00:00.123abc",
+            "2026-01-08T12:00:00.5Zfoo",
+            "2026-01-08T12:00:00Zfoo",
+            "2026-01-08T12:00Z1",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(iso_timestamps()(text), text)
+                self.assertEqual(iso_dates()(text), text)
+
+    def test_digits_that_are_no_field_stay_behind_the_token(self):
+        for text, left in (
+            ("2026-01-08T12:00:001", ":001"),
+            ("2026-01-08T12:00:601", ":601"),
+            ("2026-01-08T12:00:611", ":611"),
+            ("2026-01-08T12:00:00+053", "+053"),
+            ("2026-01-08T12:00+0560", "+0560"),
+            ("2026-01-08T12:00+05:60", ":60"),
+            ("2026-01-08T12:00:00abc", ":00abc"),
+            ("2026-01-08T12:00-08x", "-08x"),
+            ("2026-01-08T12:00+0530\u00e9", "+0530\u00e9"),
+            ("2026-01-08T12:00:00\u0663", ":00\u0663"),
+            ("2026-01-08T12:00+05:30x", ":30x"),
+            ("2026-01-08T12:00+05:301", ":301"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(iso_timestamps()(text), f"<timestamp-1>{left}")
+
+    def test_a_date_after_a_colon_is_not_taken_for_seconds(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            with self.subTest(first=order[0].name):
+                self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09"), "<timestamp-1>:<date-1>")
+                self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09T13:00"), "<timestamp-1>:<timestamp-2>")
+
+    def test_an_id_joined_on_is_not_taken_for_a_field(self):
+        for joined in (f"-{UUID_A}", ":12abcdef-1234-4234-8234-123456789012", "-12abcdef-1234-4234-8234-123456789012"):
+            for order in ((uuids(), iso_timestamps()), (iso_timestamps(), uuids())):
+                with self.subTest(first=order[0].name, joined=joined):
+                    self.assertEqual(chain(*order)(f"2026-01-08T12:00{joined}"), f"<timestamp-1>{joined[0]}<uuid-1>")
+
+    def test_two_moments_that_differ_after_the_seconds_are_never_given_one_number(self):
+        text = "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc 2026-01-08T12:00:00.123 2026-01-08T12:00:00.456"
+        self.assertEqual(
+            iso_timestamps()(text),
+            "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc <timestamp-1> <timestamp-2>",
+        )
+
+    def test_a_number_after_a_comma_is_never_read_as_a_fraction(self):
+        for following in (",42", ",42,17", ",0.031", ",123", ",1e-05"):
+            with self.subTest(following=following):
+                self.assertEqual(iso_timestamps()(f"2026-01-08 12:00:00{following}"), f"<timestamp-1>{following}")
+        self.assertEqual(iso_timestamps()("2026-01-08 12:00:00,123 INFO"), "<timestamp-1>,123 INFO")
+
+    def test_an_offset_past_fourteen_hours_is_not_read(self):
+        for following in ("-2026", "-1999", "+2026", "-1500", "+23:00", "-15"):
+            with self.subTest(following=following):
+                self.assertEqual(iso_timestamps()(f"2026-01-08T12:00{following}"), f"<timestamp-1>{following}")
+        for offset in ("+14:00", "-12:00", "+1400", "-14", "+00", "-0930"):
+            with self.subTest(offset=offset):
+                self.assertEqual(iso_timestamps()(f"2026-01-08T12:00{offset} x"), "<timestamp-1> x")
+
+    def test_a_date_joined_on_by_a_hyphen_is_a_date_of_its_own(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            for text in ("2026-01-08T12:00-2026-01-09", "2026-01-08T12:00-1066-10-14"):
+                with self.subTest(first=order[0].name, text=text):
+                    self.assertEqual(chain(*order)(text), "<timestamp-1>-<date-1>")
+
+    def test_second_sixty_is_read_at_any_minute_and_sixty_one_at_none(self):
+        self.assertEqual(iso_timestamps()("2026-01-08T12:34:60"), "<timestamp-1>")
+        self.assertEqual(iso_timestamps()("2026-01-08T05:29:60+05:30"), "<timestamp-1>")
+        self.assertEqual(iso_timestamps()("2026-01-08T12:34:61"), "<timestamp-1>:61")
+
+    def test_a_real_offset_before_a_date_is_read_in_either_order(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            for offset in ("+0530", "+05:30", "-14"):
+                with self.subTest(first=order[0].name, offset=offset):
+                    self.assertEqual(chain(*order)(f"2026-01-08T12:00{offset}-2026-01-09"), "<timestamp-1>-<date-1>")
+            self.assertEqual(
+                chain(*order)("2026-01-08T12:00+05:30-2026-01-09T13:00+05:30"), "<timestamp-1>-<timestamp-2>"
+            )
 
     def test_its_name_is_its_functions(self):
         self.assertEqual(
@@ -179,6 +273,24 @@ class HexIdsTest(unittest.TestCase):
         self.assertEqual(hex_ids(8)(floats), floats)
         self.assertEqual(hex_ids(8)("1234567f e1234567 123e456a"), "<hex-1> <hex-2> <hex-3>")
 
+    def test_each_form_written_like_a_number_stays_and_its_neighbours_do_not(self):
+        for text in ("12345678", "1234e567", "1234E567", "1234567e", "1234567E"):
+            with self.subTest(text=text):
+                self.assertEqual(hex_ids(8)(text), text)
+        for text in ("e1234567", "E1234567", "12e34e56", "1234567f", "1234e56f"):
+            with self.subTest(text=text):
+                self.assertEqual(hex_ids(8)(text), "<hex-1>")
+
+    def test_the_odds_the_docstring_gives_are_the_odds(self):
+        # An id's digits are one of 16 in one letter case, so "e" or "E" adds one letter, never two.
+        written_like_a_number_12 = 10**12 + 11 * 10**11
+        written_like_a_number_40 = 10**40 + 39 * 10**39
+        doc = " ".join((hex_ids.__doc__ or "").split())
+        self.assertIn("about 1 in 130 ids of 12 digits", doc)
+        self.assertEqual(round(16**12 / written_like_a_number_12, -1), 130)
+        self.assertIn("under 1 in ten million of 40", doc)
+        self.assertGreater(16**40 / written_like_a_number_40, 10**7)
+
     def test_case_does_not_make_two_ids(self):
         self.assertEqual(hex_ids(40)(f"{SHA_A} {SHA_A.upper()}"), "<hex-1> <hex-1>")
 
@@ -206,9 +318,20 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(pattern("x", "dates")("x"), "<dates-1>")
 
     def test_a_name_that_cannot_stand_in_a_token_is_refused(self):
-        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None):
+        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None, 5, ["run"], {"run": 1}):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)  # type: ignore[arg-type]
+
+    def test_a_subclass_of_str_is_not_a_name(self):
+        for name in (Unhashable("run"), Unhashable("date")):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+                pattern("x", name)
+
+    def test_a_bad_name_is_refused_before_the_regex_compiles(self):
+        with self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+            pattern("(", ["run"])  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "own scrubbers write"):
+            pattern("(", "date")
 
     def test_a_regex_that_matches_nothing_at_all_is_refused_when_it_does(self):
         scrubber = pattern("x*", "x")
@@ -291,10 +414,48 @@ class PathsTest(unittest.TestCase):
             "a@/srv/app",
             "caf\u00e9/srv/app",
             "-I/srv/app",
+            "/home/u//srv/app",
+            "a//srv/app",
+            "//srv/app",
+            "http://srv/app",
+            "file:///srv/app",
         ):
             with self.subTest(text=text):
                 self.assertEqual(scrubber(text), text)
-        self.assertEqual(scrubber("--root=/srv/app file:///srv/app (/srv/app)"), "--root=<app> file://<app> (<app>)")
+        self.assertEqual(scrubber("--root=/srv/app (/srv/app) x=/srv/app/y"), "--root=<app> (<app>) x=<app>/y")
+
+    def test_a_token_stands_where_its_value_stood(self):
+        scrubber = paths({"/srv/app": "app"})
+        user = pattern(r"(?<=/home/)[a-z]+", "user")
+        for earlier, text in (
+            (iso_dates(), "/srv/app.2026-01-08.log"),
+            (iso_timestamps(), "/srv/app.2026-01-08T11:00:00Z"),
+            (hex_ids(40), f"/srv/app.{SHA_A}/x"),
+            (hex_ids(40), f"/srv/app{SHA_A}"),
+            (uuids(), f"/data/{UUID_A}/srv/app/x"),
+            (uuids(), f"{UUID_A}-/srv/app"),
+            (user, "/home/alice/srv/app/x"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(chain(earlier, scrubber)(text), chain(scrubber, earlier)(text))
+                self.assertNotIn("<app>", chain(earlier, scrubber)(text))
+
+    def test_a_token_apart_from_a_path_does_not_hide_it(self):
+        scrubber = chain(iso_dates(), paths({"/srv/app": "app"}))
+        for text, expected in (
+            ("/srv/app/2026-01-08.log", "<app>/<date-1>.log"),
+            ("2026-01-08 /srv/app", "<date-1> <app>"),
+            ("2026-01-08:/srv/app", "<date-1>:<app>"),
+            ("/srv/app. 2026-01-08", "<app>. <date-1>"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(scrubber(text), expected)
+
+    def test_what_paths_wrote_scrubs_to_itself(self):
+        scrubber = paths({"/srv/app": "app", "/data": "data"})
+        once = scrubber("/data/srv/app/x and /srv/app/y")
+        self.assertEqual(once, "<data>/srv/app/x and <app>/y")
+        self.assertEqual(scrubber(once), once)
 
     def test_a_trailing_slash_and_a_pathlike_are_read_as_the_folder(self):
         self.assertEqual(paths({"/srv/app/": "app"})("/srv/app/x"), "<app>/x")
@@ -370,6 +531,32 @@ class ChainTest(unittest.TestCase):
     def test_its_name_lists_its_scrubbers_in_order(self):
         self.assertEqual(chain(iso_dates(), uuids()).name, "chain(iso_dates, uuids)")
         self.assertEqual(chain(uuids(), chain(iso_dates())).name, "chain(uuids, chain(iso_dates))")
+
+    def test_two_scrubbers_that_write_one_numbered_name_are_refused(self):
+        for scrubbers in (
+            (hex_ids(40), hex_ids(64)),
+            (pattern("run-[a-z]+", "run"), pattern("job-[a-z]+", "run")),
+            (iso_dates(), uuids(), iso_dates()),
+            (hex_ids(40), chain(uuids(), hex_ids(64))),
+        ):
+            with self.subTest(scrubbers=scrubbers), self.assertRaisesRegex(ValueError, "each number from 1"):
+                chain(*scrubbers)
+
+    def test_a_swapped_value_shows_when_two_lengths_are_one_scrubber(self):
+        sha1_a, sha1_b, sha256 = "a1" * 20, "b2" * 20, "c3" * 32
+        scrubber = hex_ids(40, 64)
+        self.assertNotEqual(scrubber(f"{sha1_a} {sha1_b} {sha256}"), scrubber(f"{sha1_a} {sha1_b} {sha1_a}"))
+
+    def test_names_that_differ_and_paths_that_share_a_name_may_stand_in_one_chain(self):
+        scrubber = chain(hex_ids(40), pattern("run-[a-z]+", "run"), paths({"/srv/a": "w"}), paths({"/srv/b": "w"}))
+        self.assertEqual(scrubber(f"{SHA_A} run-a /srv/a /srv/b"), "<hex-1> <run-1> <w> <w>")
+
+    def test_what_a_scrubber_numbers_is_no_field_a_subclass_must_follow(self):
+        @dataclasses.dataclass(frozen=True)
+        class Noted(Scrubber):
+            note: str
+
+        self.assertEqual(Noted("noted", shout, "why")("a"), "A")
 
     def test_it_needs_a_scrubber_and_takes_nothing_else(self):
         with self.assertRaisesRegex(ValueError, "at least one scrubber"):

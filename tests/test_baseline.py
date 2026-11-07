@@ -19,7 +19,7 @@ from unittest import mock
 
 import onus.baseline
 from onus.baseline import APPROVE_ROOT, ApprovedMixin, ApprovedProducersAreReal
-from onus.scrub import iso_dates, pattern, uuids
+from onus.scrub import hex_ids, iso_dates, pattern, uuids
 
 PRODUCT = textwrap.dedent("""
     import functools
@@ -418,6 +418,8 @@ class ComparingTest(Sandbox):
         for refused in ({"label": "a b"}, {"ext": "md"}, {"scrubbers": [None]}):
             with self.subTest(refused=sorted(refused)), self.assertRaises((TypeError, ValueError)):
                 self.case().assertApproved(self.shop.counted, **refused)
+        with self.assertRaisesRegex(ValueError, "each number from 1"):
+            self.case().assertApproved(self.shop.counted, scrubbers=[hex_ids(40), hex_ids(64)])
         with self.assertRaisesRegex(TypeError, "must be JSON-serializable"):
             self.case().assertApproved(self.shop.counted, object())
         self.assertEqual(self.shop.CALLS, [])
