@@ -361,9 +361,13 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       one, and a token whose name is itself a hex run of a listed length is replaced again by a later `hex_ids`.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
       read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token, "+05:30x" leaves ":30x",
-      and a fraction takes all the digits it can, so "T12:00:00.2026-01-09" loses a date's year to it when
-      `iso_timestamps` runs first. A fraction joined straight to a value that starts with digits and holds a
-      letter, as a UUID may, stays whole if `iso_timestamps` runs first and is replaced if it runs second.
+      and a fraction takes all the digits it can, so "T12:00:00.2026-01-09" loses a date's year and month when
+      `iso_timestamps` runs first.
+    - A timestamp joined by a full stop to an id is read by how that id starts, so it fails at random against a
+      clean baseline: "T12:00:00.<a uuid>" stays whole for most UUIDs, whose digits run on into a letter, and
+      loses the first group of one whose first group is all digits. Put `uuids` and `hex_ids` before
+      `iso_timestamps` there. A file extension that starts with a digit stays too:
+      "backup-2026-01-08T12:00:00.7z" is left whole, and fails its comparison on every run.
     - A date before a clock time that runs on, as in "2026-01-08 12:00pm", is replaced by neither scrubber, since
       `iso_dates` leaves the date of anything shaped like a timestamp. It stays and fails its comparison, visibly.
     - Two patterns given one name in a chain each number from 1, so two different values can share a token.
@@ -374,8 +378,12 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - An offset's hours are read only up to 14, so a year from 1460 on joined on by a hyphen stays in the text.
       Other digits joined on by "+" or "-", as the hour range in "2026-01-08T12:00-14" or
       "2026-01-08T12:00-13:00", or the year in "2026-01-08T12:00-1400-01-09", are a well-formed offset, and are
-      replaced with the timestamp, since no reading can tell them apart. So a shipped scrubber can still take a
-      number here, and as a fraction after a full stop ("2026-01-08T12:00:00.2026").
+      replaced with the timestamp, since no reading can tell them apart; that last one differs by order, since
+      `iso_dates`, run first, takes its date. An hour range also depends on the hour: "T10:00-10:05" is replaced
+      whole and "T16:00-16:05" leaves "-16:05", so a baseline holding such a range can pass in the morning and
+      fail in the afternoon. Digits joined on by ":" read as seconds the same way, so "T12:00:42:7" takes the 42.
+      So a shipped scrubber can still take a number in three forms: as an offset, as seconds, and as a fraction
+      after a full stop ("2026-01-08T12:00:00.2026").
     - A comma never starts a fraction, though ISO 8601 allows it: digits after a comma cannot be told from the
       next field of a row, and `iso_timestamps` replacing a count would break the promise that no scrubber
       replaces a number. So the default stamp of Python's `logging`, "2026-01-08 12:00:00,123", leaves ",123" in
