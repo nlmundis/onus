@@ -17,16 +17,16 @@ from unittest import mock
 from onus.scrub import Scrubber, chain
 
 SCHEMA = "approved/1"
-# The NAME of the environment variable `make approve` sets, to the top level of the checkout it was run in;
-# recording happens nowhere else.
+# The NAME of the environment variable that turns recording on, set to the top level of the checkout to record
+# into; recording happens nowhere else. onus has no target that sets it: an adopter's `make approve` might.
 APPROVE_ROOT = "ONUS_APPROVE_ROOT"
 _LABEL = re.compile(r"[A-Za-z0-9_-]*\Z")
 _EXT = re.compile(r"\.[a-z0-9]+\Z")
 _MARK = ".approved"
 _META = ".approved.meta.json"
 _REMEDY = (
-    f"run the suite once with {APPROVE_ROOT} set to the checkout's top level, as a `make approve` target does, and "
-    "review the diff of the approved files"
+    f"run the suite once with {APPROVE_ROOT} set to the checkout's top level, and review the diff of the approved "
+    "files"
 )
 
 
@@ -177,9 +177,9 @@ class ApprovedMixin:
         diff; nothing is written into the checkout. The output must match none of the ``forbid`` regexes, which
         name what must never be approved, such as a path or a token the scrubbers should have replaced.
 
-        Recording happens only when the environment variable ``ONUS_APPROVE_ROOT`` is set, as a ``make approve``
-        target sets it, to the absolute path of a git work tree that holds the approved file. Then the output is
-        written as the new approved file, with its record.
+        Recording happens only when the environment variable ``ONUS_APPROVE_ROOT`` is set, as a project's own
+        ``make approve`` target might set it, to the absolute path of a git work tree that holds the approved file.
+        Then the output is written as the new approved file, with its record.
 
         The producer must be real code under test: importing its name gives it back, it is no mock, and it is
         written outside the tests, which are the top folder of the test's own package and the folder that holds
@@ -286,8 +286,8 @@ class ApprovedMixin:
             )
         if not approved.is_relative_to(root):
             self.fail(
-                f"{approved} is outside {APPROVE_ROOT}, {root}: `make approve` records only into the checkout it was "
-                "run in"
+                f"{approved} is outside {APPROVE_ROOT}, {root}: recording reaches only the checkout that variable "
+                "names"
             )
         approved.parent.mkdir(parents=True, exist_ok=True)
         for path, text in ((approved, received), (meta, meta_text)):
