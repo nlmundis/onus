@@ -336,18 +336,24 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       can record which scrubbers shaped an output; `chain` takes only these, and `redactor(fn)` is how a plain
       function gets a name (its module and qualified name).
     - Only a real value is replaced: "2026-13-45" and "2026-01-08T25:00" stay, as does anything that runs on
-      into a letter or digit, of any script, on either side. The date inside a timestamp is left to
+      into a letter or digit, of any script, on either side; a timestamp whose fraction or "Z" runs on stays
+      whole, and is not cut back to a shorter form. Seconds or an offset that runs on is no field, and stays
+      behind the token, since its ":", "+", or "-" may only join on something else: "T12:00:2026-01-09" keeps
+      both its timestamp and its date. The date inside a timestamp is left to
       `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
       regex, since `datetime` reads "24:00" on some Python versions and not on others.
     - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
-      replaces a run written like a number: digits alone, or digits, an "e", and more digits, as the end of a
-      float in scientific notation is. The cost: an id that happens to be written so stays, and its comparison
-      fails, visibly; that is about 1 in 130 ids of 12 digits, and under 1 in ten million of 40. For a
+      replaces a run written like a number: digits alone, or digits, one "e" or "E", and any digits after it,
+      none included, as the end of a float in scientific notation is. The cost: an id that happens to be written
+      so stays, and its comparison fails, visibly; that is about 1 in 130 ids of 12 digits, and under 1 in ten
+      million of 40, each in one letter case. For a
       short id, `pattern` names what stands round it.
     - `paths` also replaces the other spelling of a path under `/var`, `/tmp`, or `/etc`, with or without
       `/private`; the plan named only `/var`. It replaces a path only where it stands whole: not where its last
       folder's name runs on ("/srv/app2"), and not where it is the end or the middle of another path
-      ("/home/u/srv/app", or a URL's path). It tries the longest mapped path first. Its own name lists the
+      ("/home/u/srv/app", "a//srv/app", "https://h/srv/app", or "file:///srv/app"). A token shaped like this
+      module's on either side counts as part of a longer name, so "/srv/app.<date-1>" stays as
+      "/srv/app.2026-01-08" does. It tries the longest mapped path first. Its own name lists the
       names it writes and never the paths, which differ by machine and by run and would otherwise be recorded
       beside every approved file.
     - A token's name is a lower-case letter followed by lower-case letters, digits, or underscores; `pattern`
@@ -356,10 +362,49 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
   - Known limits, most from this step's review:
     - A text that already holds something shaped like a token ("<date-1>") is not told apart from a scrubbed
       one, and a token whose name is itself a hex run of a listed length is replaced again by a later `hex_ids`.
+      `paths` reads such a shape as a value too, so the path in "<b>/srv/app" stays and fails its comparison.
+    - A file URL's path stays, though it names a local path, so a `file:///` URL into a folder that changes from
+      run to run fails its comparison, visibly; `pattern` can name it.
+    - `paths`'s boundary reads one character before a path and one run of name characters after it, from a fixed
+      class, beside the shape of a token, so what stands outside those does not mark a longer path: "file:/srv/app", "http://[::1]/srv/app", "/mnt/*/srv/app", and "(1)/srv/app"
+      are replaced, as is the path before a combining mark or before "./x". A ":" cannot join the class, since
+      it separates the entries of a search path.
+    - The order of a chain can change what `paths` does. A mapped path that holds a value another scrubber reads,
+      as "/tmp/<a uuid>" does, is no longer that path once the value is a token, so `paths` goes first there. A
+      value whose first character is not a name's, as `pattern` may match (":8080" in "/srv/app:8080"), counts as
+      part of a longer name once it is a token and not before, so `paths` first replaces the path and `paths`
+      second leaves it. Text a `redactor` writes is read as written.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
-      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
-    - Two patterns given one name in a chain each number from 1, so two different values can share a token.
+      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token, "+05:30x" leaves ":30x",
+      and a fraction takes all the digits it can, so "T12:00:00.2026-01-09" loses a date's year and month when
+      `iso_timestamps` runs first.
+    - A timestamp joined by a full stop to an id is read by how that id starts, so it fails at random against a
+      clean baseline: "T12:00:00.<a uuid>" stays whole for most UUIDs, whose digits run on into a letter, and
+      loses at least the first group of one whose first group is all digits. Put `uuids` before `iso_timestamps`
+      there; `hex_ids` before it helps too, though it leaves an id written like a number. A file extension that starts with a digit stays too:
+      "backup-2026-01-08T12:00:00.7z" is left whole, and fails its comparison on every run.
+    - A date before a clock time that runs on, as in "2026-01-08 12:00pm", is replaced by neither scrubber, since
+      `iso_dates` leaves the date of anything shaped like a timestamp. It stays and fails its comparison, visibly.
+    - `chain` and `assertApproved` refuse two scrubbers that write one numbered token name, which would each
+      number from 1 and let two different values share a token. They read the name a scrubber carries, so a
+      `redactor` that calls one, or a `Scrubber` built by hand, is not counted.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - Second 60 is read at any minute, so "12:34:60", which no clock shows, is replaced. Where a leap second
+      falls in local time depends on the zone ("05:29:60+05:30") and on a table this module does not keep, so
+      `iso_timestamps` does not check it.
+    - An offset's hours are read only up to 14, so a year from 1460 on joined on by a hyphen stays in the text.
+      Other digits joined on by "+" or "-", as the hour range in "2026-01-08T12:00-14" or
+      "2026-01-08T12:00-13:00", or the year in "2026-01-08T12:00-1400-01-09", are a well-formed offset, and are
+      replaced with the timestamp, since no reading can tell them apart; that last one differs by order, since
+      `iso_dates`, run first, takes its date. An hour range also depends on the hour: "T10:00-10:05" is replaced
+      whole and "T16:00-16:05" leaves "-16:05", so a baseline holding such a range can pass in the morning and
+      fail in the afternoon. Digits joined on by ":" read as seconds the same way, so "T12:00:42:7" takes the 42.
+      So a shipped scrubber can still take a number in three forms: as an offset, as seconds, and as a fraction
+      after a full stop ("2026-01-08T12:00:00.2026").
+    - A comma never starts a fraction, though ISO 8601 allows it: digits after a comma cannot be told from the
+      next field of a row, and `iso_timestamps` replacing a count would break the promise that no scrubber
+      replaces a number. So the default stamp of Python's `logging`, "2026-01-08 12:00:00,123", leaves ",123" in
+      the text and fails its comparison, visibly; a `pattern` placed before `iso_timestamps` can name that form.
     - `paths` leaves a path glued to a flag ("-I/srv/app"), since the letter before it reads as a longer path.
     - `pattern` can be handed a regex that matches numbers, which nothing here can refuse.
     - A `Scrubber` can be built directly under any name, so a recorded name is a label, not a proof.

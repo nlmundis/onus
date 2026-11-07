@@ -3,7 +3,7 @@
 import os
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 # What a token's name may be, so a token is always one "<name>" or "<name-N>".
@@ -18,16 +18,25 @@ _DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 _HOUR = r"(?:[01][0-9]|2[0-3])"
 _SIXTY = r"[0-5][0-9]"
 _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
-_SECONDS = f"(?::(?:{_SIXTY}|60)(?:[.,][0-9]+)?)?"
-_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"
+# Seconds or an offset that runs on into a letter or digit is no field, and stays in the text behind the token: its
+# ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds. A
+# fraction takes only a full stop: after a comma, digits could be the next field of a row.
+_SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:\\.[0-9]+)?)?"
+# No offset in use passes 14 hours, so a year joined on by a hyphen, as in "T12:00-2026-01-09", is not read as one.
+_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"
+_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?{_AFTER})?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
-_TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}{_SECONDS}{_ZONE}{_AFTER}")
+# Atomic: a fraction or "Z" that runs on into a letter or digit fails whole, where backing off would replace a
+# prefix and leave the part that changes in the text.
+_TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")
 # Digits alone, or digits then an exponent: a count, or the digits of a float, never an id.
 _NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")
 # The token names this module's own scrubbers write, which a caller's pattern may not reuse.
 _OWN_NAMES = frozenset({"date", "timestamp", "uuid", "hex"})
 # What may stand in a file's name beside letters and digits, so a path next to one of these is part of a longer path.
 _IN_A_NAME = r"\w.~+@-"
+# What the scrubbers here write. It stands where a value stood, so a path that runs on into one runs on all the same.
+_TOKEN = r"<[a-z][a-z0-9_]*(?:-[0-9]+)?>"
 _UUIDS = re.compile(f"{_BEFORE}[0-9A-Fa-f]{{8}}(?:-[0-9A-Fa-f]{{4}}){{3}}-[0-9A-Fa-f]{{12}}{_AFTER}")
 _HEX_RUNS = re.compile(f"{_BEFORE}[0-9A-Fa-f]+{_AFTER}")
 
@@ -38,11 +47,13 @@ class Scrubber:
 
     It is here so that an approved output can record, by name, which scrubbers shaped it. Call it with a string;
     build one with this module's functions, or wrap a function of your own with ``redactor``. The name is a
-    label for a reader, not a proof: nothing stops code from building a ``Scrubber`` under any name.
+    label for a reader, not a proof: nothing stops code from building a ``Scrubber`` under any name. It also
+    carries the token names it numbers, for ``chain`` to compare.
     """
 
     name: str
     _replace: Callable[[str], str]
+    _numbers: frozenset[str] = field(default=frozenset(), kw_only=True)
 
     def __call__(self, text: str) -> str:
         """Return ``text`` scrubbed.
@@ -62,10 +73,14 @@ def _named(name: str) -> str:
     """Return ``name`` when it can stand in a token.
 
     Raises:
-        ValueError: ``name`` is not a lower-case letter followed by lower-case letters, digits, or underscores.
+        ValueError: ``name`` is not a plain ``str`` of a lower-case letter followed by lower-case letters, digits,
+            or underscores. A subclass of ``str`` is refused, since it can hash or print as anything.
     """
-    if not isinstance(name, str) or not _NAME.match(name):
-        raise ValueError(f"a token's name is a lower-case letter, then lower-case letters, digits, or _: not {name!r}")
+    if type(name) is not str or not _NAME.match(name):
+        raise ValueError(
+            "a token's name is a lower-case letter, then lower-case letters, digits, or _, in a plain str: "
+            f"not {name!r}"
+        )
     return name
 
 
@@ -118,21 +133,35 @@ def iso_dates() -> Scrubber:
     Only a real date is replaced: "2026-13-45" stays, and so does the date inside a timestamp, which is
     ``iso_timestamps``'s to replace whole, so the two may run in either order. A date followed by a clock time
     that ``iso_timestamps`` does not read, such as "2026-01-08 25:00", is replaced here; one followed by "T" runs
-    on into a letter, and stays.
+    on into a letter, and stays. So does one before a clock time that runs on, such as "2026-01-08 12:00pm", which
+    neither scrubber replaces.
     """
-    return Scrubber("iso_dates", _numbered(_DATES, "date", same=_as_written, real=_is_date))
+    replace = _numbered(_DATES, "date", same=_as_written, real=_is_date)
+    return Scrubber("iso_dates", replace, _numbers=frozenset({"date"}))
 
 
 def iso_timestamps() -> Scrubber:
     """Return a scrubber replacing each ISO 8601 date and time with "<timestamp-N>".
 
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
-    "." or ",", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". Only a real moment is replaced:
-    "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
-    written this way, and what follows it stays in the text. Two timestamps are one value when they are written
+    ".", and "Z" or an offset of at most 14 hours and 59 minutes written "+HH:MM", "+HHMM", or "+HH". A comma does
+    not start a fraction, since what follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves
+    ",42", and so does the stamp Python's logging writes by default, whose ",123" the comparison then shows; a
+    ``pattern`` placed before this scrubber can name that whole form. Only a real date and clock are replaced:
+    "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. Second 60 is read at any minute,
+    though a leap second falls at only a few, because which depends on the zone and on a table of leap seconds
+    this module does not keep: "12:34:60" is replaced. A timestamp is read as far as it is
+    written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
+    digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
+    leaves ":2026-01-09". An offset is read as far as it is well formed, so "+05:30x" leaves ":30x". A fraction or
+    "Z" that runs on leaves the whole timestamp in the text, and is not cut back to a shorter form, as in
+    "2026-01-08T12:00:00.5Zfoo". Digits joined straight on can read as a field and go with the timestamp, as the
+    "-14" of "2026-01-08T12:00-14" and the "42" of "2026-01-08T12:00:42:7" do, so join no number to one that must
+    fail its comparison when it changes. Two timestamps are one value when they are written
     alike; the same moment in two zones is two values.
     """
-    return Scrubber("iso_timestamps", _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp))
+    replace = _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp)
+    return Scrubber("iso_timestamps", replace, _numbers=frozenset({"timestamp"}))
 
 
 def uuids() -> Scrubber:
@@ -140,18 +169,20 @@ def uuids() -> Scrubber:
 
     Letter case does not make two values: a UUID in capitals and the same one in lower case share a number.
     """
-    return Scrubber("uuids", _numbered(_UUIDS, "uuid", same=str.lower, real=lambda text: True))
+    replace = _numbered(_UUIDS, "uuid", same=str.lower, real=lambda text: True)
+    return Scrubber("uuids", replace, _numbers=frozenset({"uuid"}))
 
 
 def hex_ids(*lengths: int) -> Scrubber:
     """Return a scrubber replacing each run of hex digits of exactly one of ``lengths`` with "<hex-N>".
 
     A run counts when neither side runs on into a letter or digit, it is exactly as long as one of ``lengths``
-    (40 for a git commit, 64 for a sha256), and it is not written like a number: digits alone, or digits, an
-    "e", and more digits, as the end of a float in scientific notation is. This module ships no scrubber for
-    numbers, since a statistic that changed must fail its comparison. The cost is an id that happens to be
-    written like a number, which stays and fails the comparison visibly: about 1 in 130 ids of 12 digits, and
-    under 1 in ten million of 40. For short ids, name what stands round them with ``pattern``. Letter case
+    (40 for a git commit, 64 for a sha256), and it is not written like a number: digits alone, or digits, one
+    "e" or "E", and any digits after it, none included, as the end of a float in scientific notation is, whose
+    "e" may be followed by a sign. This module ships no scrubber for numbers, since a statistic that changed must
+    fail its comparison. The cost is an id that happens to be written like a number, which stays and fails the
+    comparison visibly: about 1 in 130 ids of 12 digits, and under 1 in ten million of 40, each in one letter
+    case. For short ids, name what stands round them with ``pattern``. Letter case
     does not make two values. In a ``chain``, put ``uuids`` before a ``hex_ids`` of length 8 or 12, which would
     otherwise replace a UUID's first or last group.
 
@@ -167,7 +198,8 @@ def hex_ids(*lengths: int) -> Scrubber:
         return len(text) in wanted and not _NUMBER.match(text)
 
     listed = ", ".join(str(length) for length in sorted(wanted))
-    return Scrubber(f"hex_ids({listed})", _numbered(_HEX_RUNS, "hex", same=str.lower, real=real))
+    replace = _numbered(_HEX_RUNS, "hex", same=str.lower, real=real)
+    return Scrubber(f"hex_ids({listed})", replace, _numbers=frozenset({"hex"}))
 
 
 def pattern(regex: str, name: str) -> Scrubber:
@@ -175,8 +207,8 @@ def pattern(regex: str, name: str) -> Scrubber:
 
     It is the scrubber for a value this module has no name for, such as a short id that always follows "run-".
     Write the regex so that it cannot match a number the output reports. Two matches are one value only when
-    their texts are equal, letter case included. Give each pattern in a chain its own name: two scrubbers that
-    write one name each number from 1, so two different values would share a token.
+    their texts are equal, letter case included. Give each pattern in a chain its own name: ``chain`` refuses two
+    scrubbers that write one name, which would each number from 1.
 
     Raises:
         ValueError: ``name`` cannot stand in a token, or is one this module's own scrubbers write ("date",
@@ -186,10 +218,11 @@ def pattern(regex: str, name: str) -> Scrubber:
     """
     if not isinstance(regex, str):
         raise TypeError(f"pattern takes the regex as a string, not {type(regex).__name__}")
+    name = _named(name)
     if name in _OWN_NAMES:
         raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
-    replace = _numbered(re.compile(regex), _named(name), same=_as_written, real=lambda text: True)
-    return Scrubber(f"pattern({regex!r}, {name!r})", replace)
+    replace = _numbered(re.compile(regex), name, same=_as_written, real=lambda text: True)
+    return Scrubber(f"pattern({regex!r}, {name!r})", replace, _numbers=frozenset({name}))
 
 
 def _spellings(path: str) -> list[str]:
@@ -207,9 +240,13 @@ def paths(mapping: Mapping[str | os.PathLike[str], str]) -> Scrubber:
 
     A path is replaced where it stands whole: at the start of a longer path too ("/srv/app/x" becomes "<app>/x"),
     but not where its last folder's name runs on ("/srv/app2" stays), nor where it is the end or the middle of
-    another path ("/home/u/srv/app" stays, as does the path of a URL). A letter or digit of any script, or one
-    of "_", ".", "~", "+", "@", "-", on either side makes it part of something longer, save a full stop that ends
-    a sentence; so a path glued to a flag, as in "-I/srv/app", stays too. The longest path is tried first, so a
+    another path ("/home/u/srv/app" stays, as do "https://h/srv/app" and "file:///srv/app"). A letter or digit of
+    any script, or one of "_", ".", "~", "+", "@", "-", on either side makes it part of something longer, save a
+    full stop that ends a sentence; so does a "/" before it, as in "a//srv/app", and a token shaped like this
+    module's on either side, so "/srv/app.<date-1>" stays as "/srv/app.2026-01-08" does. A path glued to a flag,
+    as in "-I/srv/app", stays too. When a mapped path holds a value another scrubber reads, such as a run's id,
+    put ``paths`` first in the ``chain``, or that value's token leaves the path unrecognized. The longest path
+    is tried first, so a
     folder mapped inside another mapped folder gets its own name. A path under /var, /tmp, or /etc is replaced in
     its /private spelling as well, and the reverse, because macOS reports a temporary folder either way. Two
     paths may share a name. The tokens are not numbered: the caller named each. The scrubber's own name lists
@@ -237,12 +274,20 @@ def paths(mapping: Mapping[str | os.PathLike[str], str]) -> Scrubber:
                 raise ValueError(f"{spelling!r} is given two names, {names[spelling]!r} and {name!r}")
     longest_first = sorted(names, key=lambda spelling: (-len(spelling), spelling))
     # Not the end of another path, and not where the last folder's name runs on; a full stop that ends a
-    # sentence does not run it on.
-    starts = f"(?<![{_IN_A_NAME}])"
-    ends = f"(?![{_IN_A_NAME}]*[{_IN_A_NAME.replace('.', '')}])"
-    regex = re.compile(starts + "(?:" + "|".join(re.escape(spelling) for spelling in longest_first) + ")" + ends)
+    # sentence does not run it on. A lookbehind cannot read a token, whose length varies, so a token is matched
+    # with all that runs on from it, and left.
+    starts = f"(?<![/{_IN_A_NAME}])"
+    ends = f"(?![{_IN_A_NAME}]*(?:[{_IN_A_NAME.replace('.', '')}]|{_TOKEN}))"
+    after_a_token = f"{_TOKEN}[/{_IN_A_NAME}]*"
+    regex = re.compile(
+        after_a_token + "|" + starts + "(" + "|".join(re.escape(spelling) for spelling in longest_first) + ")" + ends
+    )
     listed = ", ".join(sorted(set(names.values())))
-    return Scrubber(f"paths({listed})", lambda text: regex.sub(lambda match: f"<{names[match[0]]}>", text))
+
+    def replace(text: str) -> str:
+        return regex.sub(lambda match: f"<{names[match[1]]}>" if match[1] else match[0], text)
+
+    return Scrubber(f"paths({listed})", replace)
 
 
 def redactor(function: Callable[[str], str]) -> Scrubber:
@@ -268,19 +313,32 @@ def redactor(function: Callable[[str], str]) -> Scrubber:
 def chain(*scrubbers: Scrubber) -> Scrubber:
     """Return one scrubber that applies ``scrubbers`` in the order given, each to the text the one before it left.
 
+    Two scrubbers that write one numbered token name are refused: each would number from 1, so a value of the
+    first and a different value of the second could share a token, and a swap between them would pass unseen. List
+    the lengths in one ``hex_ids``, or give each ``pattern`` its own name. It sees the names a nested ``chain``
+    writes, and none that a ``redactor`` writes. ``paths`` may repeat a name: its tokens are not numbered.
+
     Raises:
-        ValueError: no scrubber is given.
+        ValueError: no scrubber is given, or two write one numbered token name.
         TypeError: one of them is not a ``Scrubber``; wrap a plain function with ``redactor``, so it has a name.
     """
     if not scrubbers:
         raise ValueError("chain needs at least one scrubber")
+    numbers: frozenset[str] = frozenset()
     for scrubber in scrubbers:
         if not isinstance(scrubber, Scrubber):
             raise TypeError(f"chain takes Scrubbers, not {scrubber!r}: wrap a plain function with redactor")
+        shared = numbers & scrubber._numbers
+        if shared:
+            raise ValueError(
+                f"two scrubbers in a chain write <{min(shared)}-N> and would each number from 1, so different values "
+                f"could share a token; {scrubber.name} is the second. Give both to one scrubber, or use two names"
+            )
+        numbers |= scrubber._numbers
 
     def replace(text: str) -> str:
         for scrubber in scrubbers:
             text = scrubber(text)
         return text
 
-    return Scrubber("chain(" + ", ".join(scrubber.name for scrubber in scrubbers) + ")", replace)
+    return Scrubber("chain(" + ", ".join(scrubber.name for scrubber in scrubbers) + ")", replace, _numbers=numbers)
