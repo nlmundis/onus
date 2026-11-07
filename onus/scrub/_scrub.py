@@ -158,11 +158,12 @@ def hex_ids(*lengths: int) -> Scrubber:
     """Return a scrubber replacing each run of hex digits of exactly one of ``lengths`` with "<hex-N>".
 
     A run counts when neither side runs on into a letter or digit, it is exactly as long as one of ``lengths``
-    (40 for a git commit, 64 for a sha256), and it is not written like a number: digits alone, or digits, an
-    "e", and more digits, as the end of a float in scientific notation is. This module ships no scrubber for
-    numbers, since a statistic that changed must fail its comparison. The cost is an id that happens to be
-    written like a number, which stays and fails the comparison visibly: about 1 in 130 ids of 12 digits, and
-    under 1 in ten million of 40. For short ids, name what stands round them with ``pattern``. Letter case
+    (40 for a git commit, 64 for a sha256), and it is not written like a number: digits alone, or digits, one
+    "e" or "E", and any digits after it, none included, as the end of a float in scientific notation is, whose
+    "e" may be followed by a sign. This module ships no scrubber for numbers, since a statistic that changed must
+    fail its comparison. The cost is an id that happens to be written like a number, which stays and fails the
+    comparison visibly: about 1 in 130 ids of 12 digits, and under 1 in ten million of 40, each in one letter
+    case. For short ids, name what stands round them with ``pattern``. Letter case
     does not make two values. In a ``chain``, put ``uuids`` before a ``hex_ids`` of length 8 or 12, which would
     otherwise replace a UUID's first or last group.
 

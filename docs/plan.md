@@ -340,9 +340,10 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
       regex, since `datetime` reads "24:00" on some Python versions and not on others.
     - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
-      replaces a run written like a number: digits alone, or digits, an "e", and more digits, as the end of a
-      float in scientific notation is. The cost: an id that happens to be written so stays, and its comparison
-      fails, visibly; that is about 1 in 130 ids of 12 digits, and under 1 in ten million of 40. For a
+      replaces a run written like a number: digits alone, or digits, one "e" or "E", and any digits after it,
+      none included, as the end of a float in scientific notation is. The cost: an id that happens to be written
+      so stays, and its comparison fails, visibly; that is about 1 in 130 ids of 12 digits, and under 1 in ten
+      million of 40, each in one letter case. For a
       short id, `pattern` names what stands round it.
     - `paths` also replaces the other spelling of a path under `/var`, `/tmp`, or `/etc`, with or without
       `/private`; the plan named only `/var`. It replaces a path only where it stands whole: not where its last
