@@ -483,6 +483,7 @@ class ProducerTest(Sandbox):
         self.addCleanup(
             lambda: [sys.modules.pop(name) for name in list(sys.modules) if name.startswith("onus_sandbox_kit")]
         )
+        importlib.invalidate_caches()
         module = f"onus_sandbox_kit.{cases}" + ("" if in_init else ".cases")
         return importlib.import_module(module), importlib.import_module("onus_sandbox_kit.core"), package / "approved"
 
@@ -531,9 +532,38 @@ class ProducerTest(Sandbox):
         other.mkdir()
         (other / "__init__.py").touch()
         (other / "helpers.py").write_text(AMONG_THE_TESTS, encoding="utf-8")
+        importlib.invalidate_caches()
         helpers = importlib.import_module("onus_sandbox_kit.tests.helpers")
         with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under tests/"):
             cases.Case("test_it").assertApproved(helpers.canned)
+
+    def test_a_top_package_named_test_holds_the_tests_when_another_is_nested_in_it(self):
+        inner = self.repo / "test" / "sub" / "test"
+        inner.mkdir(parents=True)
+        for folder in (inner, inner.parent, inner.parent.parent):
+            (folder / "__init__.py").touch()
+        (inner.parent.parent / "helpers.py").write_text(AMONG_THE_TESTS, encoding="utf-8")
+        (inner / "cases.py").write_text(
+            "import unittest\n\nfrom onus.baseline import ApprovedMixin\n\n\n"
+            "class Case(ApprovedMixin, unittest.TestCase):\n    def test_it(self):\n        pass\n",
+            encoding="utf-8",
+        )
+        importlib.invalidate_caches()
+        others = {name: module for name, module in sys.modules.items() if name != "test" and name.startswith("test.")}
+        with mock.patch.dict(sys.modules):
+            sys.modules.pop("test", None)
+            for name in others:
+                del sys.modules[name]
+            cases, helpers = importlib.import_module("test.sub.test.cases"), importlib.import_module("test.helpers")
+            with self.approving(), self.assertRaisesRegex(ValueError, "in helpers.py under test/"):
+                cases.Case("test_it").assertApproved(helpers.canned)
+
+    def test_a_symlink_named_test_in_the_code_package_is_no_test_package(self):
+        cases, core, approved = self.kit("tests")
+        (self.repo / "onus_sandbox_kit" / "test").symlink_to("test")
+        with self.approving():
+            cases.Case("test_it").assertApproved(core.render, 3)
+        self.assertTrue(approved.is_dir())
 
     def test_a_test_module_in_no_package_has_its_own_folder(self):
         flat = self.repo / "flat"

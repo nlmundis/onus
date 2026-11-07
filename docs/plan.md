@@ -378,12 +378,12 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       when it wraps another, the one it wraps. The tests are the outermost package around the test named `tests`
       or `test` (`mypkg/tests` for `mypkg.tests.unit.test_x`, so `mypkg` stays code under test), else the top
       package (`suite` for `suite.unit.test_x`; a module in no package has its own folder), and the folder that
-      holds the approved folder. Under a code package with such a name, every other folder of that name in the
+      holds the approved folder. When the test sits in such a package, every other folder of those names in its
       top package counts too. The name is the only sign of where the code ends, so a test package of any other
       name inside the code leaves that code refused, which fails toward refusing, and a helper kept in the code
       package outside its `tests` reads as code under test; so does a helper in `e2e/` when the tests are in
       `e2e/tests`, since nothing tells a suite that is all tests from a code package.
-      test. So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in the test
+      So a bound method, a lambda, a `functools.partial`, a built-in, and a helper anywhere in the test
       package are refused, and so is every function when tests sit in the same folder as the code,
       until they are given a folder of their own. `assertApproved` checks this before it runs the producer.
     - **The tests are read from the name the test was imported under.** So `discover -s tests`, which imports
