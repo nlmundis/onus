@@ -66,6 +66,12 @@ The first is built, and stands unless the maintainer vetoes it.
 - A text that cannot be encoded as UTF-8 raises `UnicodeEncodeError` from `assertApproved`.
 - A label so long that the approved file's own name is refused raises `OSError` from `is_file`.
 - A very deep tree can raise `OSError` from `rglob` in `_tests_of` on 3.11.
+- In `_tests_of` on #33, an entry named `test` in a folder that can be listed but not entered raises `PermissionError`
+  from `is_dir`.
+- That `is_dir` clause is pinned on 3.11 only: 3.13's `resolve` does not raise on a symlink loop, so removing it
+  survives the pinned interpreter, and no mutant isolates it. CI's 3.11 job holds it.
+- A symlink named `test` that leads to a real folder still counts as a test package, so the test's name says more
+  than the clause does.
 - A partial received file can remain after a failed write, and `label="approved"` gives a received file with
   `.approved` in its name.
 - In `unreal`, an import that raises anything but `ImportError` or `ValueError`, a lazy proxy whose `__getattr__`
@@ -78,7 +84,8 @@ The first is built, and stands unless the maintainer vetoes it.
 
 - One closure review ran on the commits made after the last reviews: 14 of 16 prior findings closed. The two left
   were fixed in the last commits: the order of the names is pinned on #33, and E17's sentence on `classmethod` is
-  corrected on #34. Those last commits, `f06faaa`, `a8cca5a`, and `715daed`, have had no review.
+  corrected on #34. One narrow read then covered `f06faaa`, clean, and `a8cca5a`, three findings below. `715daed` is a
+  sentence, accepted as read by the review that found it. The review rounds stop here.
 - The received-file work ran on macOS only, by hand. Linux comes from CI. Root and a real second user were not run.
 
 ## Lessons
