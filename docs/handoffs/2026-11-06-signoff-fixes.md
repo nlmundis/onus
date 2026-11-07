@@ -2,8 +2,8 @@
 date: 2026-11-06
 scope: "the signoff defects left open by the review of #10 to #12: G03, G11, the check diff, and M06 to M09"
 state: in-progress
-prs: [25, 26, 27, 28, 29, 30, 31, 37, 38]
-next: merge #25 to #31, #37, and #38, merging main in and re-gating each branch a merge conflicts with
+prs: [25, 26, 27, 28, 29, 30, 31, 37, 38, 39]
+next: merge #25 to #31, #37, #38, and #39, merging main in and re-gating each branch a merge conflicts with
 ---
 
 # Handoff: signoff fixes (2026-11-06)
@@ -12,7 +12,7 @@ This note follows `2026-11-06-l1-amendments.md`.
 
 ## State
 
-- **Nine pull requests are open, one per defect, each off `e07f8c8`.** None is merged; merging is the maintainer's.
+- **Ten pull requests are open, one per defect, each off `e07f8c8` except #39, which is stacked on #29.** None is merged; merging is the maintainer's.
 - **Each head had `make check` exit 0 before it was pushed,** with its raw summary in its body, at 100% coverage with
   every mutant caught and the no-op surviving.
 
@@ -22,11 +22,12 @@ This note follows `2026-11-06-l1-amendments.md`.
 | #26 | G11, tripwires stated as a guarantee | `0a8fabf` | 451 | 413 |
 | #27 | M06, a stray kept file | `8a3b743` | 454 | 417 |
 | #28 | G03, `check_signoff`'s `OSError` and a folder ledger | `471e5d0` | 459 | 418 |
-| #29 | M07, the kept copy not flushed | `bf497c6` | 462 | 424 |
+| #29 | M07, the kept copy not flushed | `88dfb7d` | 462 | 424 |
 | #30 | M09, a bound file hidden behind a content change | `80e22a8` | 455 | 418 |
-| #31 | `check` printing control characters | `a82c6eb` | 459 | 421 |
+| #31 | `check` printing control characters | `b71f40f` | 459 | 421 |
 | #37 | `record` saying already signed over a bad copy | `0874a9f` | 451 | 412 |
 | #38 | `revoke` passing over a bad copy | `252d78d` | 452 | 412 |
+| #39 | `record_read` flushing short of the disk on macOS | `f5078d3` | 463 | 427 |
 
 - **The branches conflict in small places when merged together:** #31 with #28, #29, and #30; #29 with #28; #30 with
   #28; #26 with #25; #38 with #29. `git merge-tree` found no other pair, and #37 conflicts with none. Each later merge
@@ -38,8 +39,9 @@ This note follows `2026-11-06-l1-amendments.md`.
 - **Every defect was reproduced first.** Each first fix's tests were watched failing; tests added in the rework were
   checked through their mutants, run by the gate. Each disclosure is under E21.
 - **The reviews changed the fixes.** One targeted review ran on each commit, and closure reviews ran on each later
-  commit. They found real defects in five of the first seven, each fixed. Each head's last commit but one had its own
-  review; `252d78d` on #38 is a small refactor checked only by the gate.
+  commit. They found real defects in five of the first seven, each fixed.
+- **CI found what the local gate could not.** A mutant in #31 did not compile on Python 3.11, since the local gate runs
+  mutants on 3.13 alone. Compiling every mutant on the floor Python would have caught it.
 - **Three changes reach beyond the finding as written, as built and open to veto:**
   - `prereg.load` turns the new `OSError` into a `PreregError`, since a folder ledger would otherwise leave `load` as
     an exception it does not list.
@@ -60,7 +62,7 @@ This note follows `2026-11-06-l1-amendments.md`.
 ### Known and left
 
 - A stray written under the hash while the prompt waits, by a process ignoring the lock, still gets the old message.
-- `onus.prereg.record_read` still calls `os.fsync` directly, so on macOS it stops at the drive's cache.
+- `record_read` flushes its line, not its folder, so a reads file just created can lose its name in a power loss.
 
 ### Carried
 
@@ -69,6 +71,5 @@ This note follows `2026-11-06-l1-amendments.md`.
 
 ## Next actions
 
-1. Merge #25 to #31, #37, and #38, re-gating after each conflict.
-2. Decide whether `record_read` takes the same flush.
-3. L1 step 5, `invariants`.
+1. Merge #25 to #31, #37, and #38, re-gating after each conflict, then retarget #39 to main and merge it.
+2. L1 step 5, `invariants`.
