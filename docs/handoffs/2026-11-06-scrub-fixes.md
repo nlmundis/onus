@@ -38,9 +38,11 @@ This note follows `2026-11-06-l1-amendments.md`, and covers its `scrub` items on
   as an offset (`T12:00-14`), as seconds (`T12:00:42:7`), or as a fraction (`T12:00:00.2026`). The README's "ships no
   scrubber that replaces a number" is not qualified. Whether it should be is the maintainer's call.
 - **`chain` refuses one scrubber listed twice,** though adjacent repeats are harmless. This is open to veto.
-- **The final timestamp rule had no agent review.** Two closure reviews each found majors in the fix before it. The
-  rule that replaced them was checked by the last reviewer's differential fuzz instead: 13 new order disagreements in
-  300,000 strings on one seed, all the case E16 discloses.
+- **The final timestamp rule** had an adversarial review after the coordinator asked for one. It found no defect in
+  the rule, and one major: an hour range depends on the hour, now disclosed. Chain orders still disagree on inputs E16
+  lists, and a timestamp joined by a full stop to an id fails at random unless `uuids` runs first.
+- **`test_the_odds_the_docstring_gives_are_the_odds`** computes from literals, not from `_NUMBER`, so it would not
+  notice the regex changing. The mutants on `_NUMBER` do.
 
 ## Next actions
 
