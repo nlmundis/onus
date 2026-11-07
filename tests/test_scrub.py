@@ -1,5 +1,6 @@
 """onus.scrub: run-to-run values replaced by tokens numbered by value, and nothing else touched."""
 
+import dataclasses
 import functools
 import pathlib
 import re
@@ -17,6 +18,12 @@ UUID_B = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
 def shout(text: str) -> str:
     return text.upper()
+
+
+class Unhashable(str):
+    """A string that cannot be hashed, as any subclass that defines ``__eq__`` alone cannot be."""
+
+    __hash__ = None  # type: ignore[assignment]
 
 
 class Rules:
@@ -261,6 +268,24 @@ class HexIdsTest(unittest.TestCase):
         self.assertEqual(hex_ids(8)(floats), floats)
         self.assertEqual(hex_ids(8)("1234567f e1234567 123e456a"), "<hex-1> <hex-2> <hex-3>")
 
+    def test_each_form_written_like_a_number_stays_and_its_neighbours_do_not(self):
+        for text in ("12345678", "1234e567", "1234E567", "1234567e", "1234567E"):
+            with self.subTest(text=text):
+                self.assertEqual(hex_ids(8)(text), text)
+        for text in ("e1234567", "E1234567", "12e34e56", "1234567f", "1234e56f"):
+            with self.subTest(text=text):
+                self.assertEqual(hex_ids(8)(text), "<hex-1>")
+
+    def test_the_odds_the_docstring_gives_are_the_odds(self):
+        # An id's digits are one of 16 in one letter case, so "e" or "E" adds one letter, never two.
+        written_like_a_number_12 = 10**12 + 11 * 10**11
+        written_like_a_number_40 = 10**40 + 39 * 10**39
+        doc = " ".join((hex_ids.__doc__ or "").split())
+        self.assertIn("about 1 in 130 ids of 12 digits", doc)
+        self.assertEqual(round(16**12 / written_like_a_number_12, -1), 130)
+        self.assertIn("under 1 in ten million of 40", doc)
+        self.assertGreater(16**40 / written_like_a_number_40, 10**7)
+
     def test_case_does_not_make_two_ids(self):
         self.assertEqual(hex_ids(40)(f"{SHA_A} {SHA_A.upper()}"), "<hex-1> <hex-1>")
 
@@ -288,9 +313,20 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(pattern("x", "dates")("x"), "<dates-1>")
 
     def test_a_name_that_cannot_stand_in_a_token_is_refused(self):
-        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None):
+        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None, 5, ["run"], {"run": 1}):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)  # type: ignore[arg-type]
+
+    def test_a_subclass_of_str_is_not_a_name(self):
+        for name in (Unhashable("run"), Unhashable("date")):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+                pattern("x", name)
+
+    def test_a_bad_name_is_refused_before_the_regex_compiles(self):
+        with self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+            pattern("(", ["run"])  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "own scrubbers write"):
+            pattern("(", "date")
 
     def test_a_regex_that_matches_nothing_at_all_is_refused_when_it_does(self):
         scrubber = pattern("x*", "x")
@@ -373,10 +409,48 @@ class PathsTest(unittest.TestCase):
             "a@/srv/app",
             "caf\u00e9/srv/app",
             "-I/srv/app",
+            "/home/u//srv/app",
+            "a//srv/app",
+            "//srv/app",
+            "http://srv/app",
+            "file:///srv/app",
         ):
             with self.subTest(text=text):
                 self.assertEqual(scrubber(text), text)
-        self.assertEqual(scrubber("--root=/srv/app file:///srv/app (/srv/app)"), "--root=<app> file://<app> (<app>)")
+        self.assertEqual(scrubber("--root=/srv/app (/srv/app) x=/srv/app/y"), "--root=<app> (<app>) x=<app>/y")
+
+    def test_a_token_stands_where_its_value_stood(self):
+        scrubber = paths({"/srv/app": "app"})
+        user = pattern(r"(?<=/home/)[a-z]+", "user")
+        for earlier, text in (
+            (iso_dates(), "/srv/app.2026-01-08.log"),
+            (iso_timestamps(), "/srv/app.2026-01-08T11:00:00Z"),
+            (hex_ids(40), f"/srv/app.{SHA_A}/x"),
+            (hex_ids(40), f"/srv/app{SHA_A}"),
+            (uuids(), f"/data/{UUID_A}/srv/app/x"),
+            (uuids(), f"{UUID_A}-/srv/app"),
+            (user, "/home/alice/srv/app/x"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(chain(earlier, scrubber)(text), chain(scrubber, earlier)(text))
+                self.assertNotIn("<app>", chain(earlier, scrubber)(text))
+
+    def test_a_token_apart_from_a_path_does_not_hide_it(self):
+        scrubber = chain(iso_dates(), paths({"/srv/app": "app"}))
+        for text, expected in (
+            ("/srv/app/2026-01-08.log", "<app>/<date-1>.log"),
+            ("2026-01-08 /srv/app", "<date-1> <app>"),
+            ("2026-01-08:/srv/app", "<date-1>:<app>"),
+            ("/srv/app. 2026-01-08", "<app>. <date-1>"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(scrubber(text), expected)
+
+    def test_what_paths_wrote_scrubs_to_itself(self):
+        scrubber = paths({"/srv/app": "app", "/data": "data"})
+        once = scrubber("/data/srv/app/x and /srv/app/y")
+        self.assertEqual(once, "<data>/srv/app/x and <app>/y")
+        self.assertEqual(scrubber(once), once)
 
     def test_a_trailing_slash_and_a_pathlike_are_read_as_the_folder(self):
         self.assertEqual(paths({"/srv/app/": "app"})("/srv/app/x"), "<app>/x")
@@ -452,6 +526,32 @@ class ChainTest(unittest.TestCase):
     def test_its_name_lists_its_scrubbers_in_order(self):
         self.assertEqual(chain(iso_dates(), uuids()).name, "chain(iso_dates, uuids)")
         self.assertEqual(chain(uuids(), chain(iso_dates())).name, "chain(uuids, chain(iso_dates))")
+
+    def test_two_scrubbers_that_write_one_numbered_name_are_refused(self):
+        for scrubbers in (
+            (hex_ids(40), hex_ids(64)),
+            (pattern("run-[a-z]+", "run"), pattern("job-[a-z]+", "run")),
+            (iso_dates(), uuids(), iso_dates()),
+            (hex_ids(40), chain(uuids(), hex_ids(64))),
+        ):
+            with self.subTest(scrubbers=scrubbers), self.assertRaisesRegex(ValueError, "each number from 1"):
+                chain(*scrubbers)
+
+    def test_a_swapped_value_shows_when_two_lengths_are_one_scrubber(self):
+        sha1_a, sha1_b, sha256 = "a1" * 20, "b2" * 20, "c3" * 32
+        scrubber = hex_ids(40, 64)
+        self.assertNotEqual(scrubber(f"{sha1_a} {sha1_b} {sha256}"), scrubber(f"{sha1_a} {sha1_b} {sha1_a}"))
+
+    def test_names_that_differ_and_paths_that_share_a_name_may_stand_in_one_chain(self):
+        scrubber = chain(hex_ids(40), pattern("run-[a-z]+", "run"), paths({"/srv/a": "w"}), paths({"/srv/b": "w"}))
+        self.assertEqual(scrubber(f"{SHA_A} run-a /srv/a /srv/b"), "<hex-1> <run-1> <w> <w>")
+
+    def test_what_a_scrubber_numbers_is_no_field_a_subclass_must_follow(self):
+        @dataclasses.dataclass(frozen=True)
+        class Noted(Scrubber):
+            note: str
+
+        self.assertEqual(Noted("noted", shout, "why")("a"), "A")
 
     def test_it_needs_a_scrubber_and_takes_nothing_else(self):
         with self.assertRaisesRegex(ValueError, "at least one scrubber"):
