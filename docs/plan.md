@@ -389,6 +389,10 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       number from 1 and let two different values share a token. They read the name a scrubber carries, so a
       `redactor` that calls one, or a `Scrubber` built by hand, is not counted.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - A comma never starts a fraction, though ISO 8601 allows it: digits after a comma cannot be told from the
+      next field of a row, and `iso_timestamps` replacing a count would break the promise that no scrubber
+      replaces a number. So the default stamp of Python's `logging`, "2026-01-08 12:00:00,123", leaves ",123" in
+      the text and fails its comparison, visibly; a `pattern` placed before `iso_timestamps` can name that form.
     - `paths` leaves a path glued to a flag ("-I/srv/app"), since the letter before it reads as a longer path.
     - `pattern` can be handed a regex that matches numbers, which nothing here can refuse.
     - A `Scrubber` can be built directly under any name, so a recorded name is a label, not a proof.

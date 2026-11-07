@@ -112,7 +112,6 @@ class TimestampsTest(unittest.TestCase):
             "2026-01-08T11:00:05Z",
             "2026-01-08T11:00:05+00:00",
             "2026-01-08T11:00:05.25-08:00",
-            "2026-01-08T11:00:05,25",
             "2026-01-08T11:00:05+0530",
             "2026-01-08T11:00:05-08",
             "2026-12-31T23:59:60Z",
@@ -181,6 +180,12 @@ class TimestampsTest(unittest.TestCase):
             iso_timestamps()(text),
             "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc <timestamp-1> <timestamp-2>",
         )
+
+    def test_a_number_after_a_comma_is_never_read_as_a_fraction(self):
+        for following in (",42", ",42,17", ",0.031", ",123", ",1e-05"):
+            with self.subTest(following=following):
+                self.assertEqual(iso_timestamps()(f"2026-01-08 12:00:00{following}"), f"<timestamp-1>{following}")
+        self.assertEqual(iso_timestamps()("2026-01-08 12:00:00,123 INFO"), "<timestamp-1>,123 INFO")
 
     def test_its_name_is_its_functions(self):
         self.assertEqual(

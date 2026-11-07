@@ -19,8 +19,9 @@ _HOUR = r"(?:[01][0-9]|2[0-3])"
 _SIXTY = r"[0-5][0-9]"
 _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
 # Seconds or an offset that runs on into a letter or digit is no field, and stays in the text behind the token: its
-# ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds.
-_SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:[.,][0-9]+)?)?"
+# ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds. A
+# fraction takes only a full stop: after a comma, digits could be the next field of a row.
+_SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:\\.[0-9]+)?)?"
 _ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?{_AFTER})?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
 # Atomic: a fraction or "Z" that runs on into a letter or digit fails whole, where backing off would replace a
@@ -141,7 +142,11 @@ def iso_timestamps() -> Scrubber:
     """Return a scrubber replacing each ISO 8601 date and time with "<timestamp-N>".
 
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
-    "." or ",", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". Only a real moment is replaced:
+    ".", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". A comma does not start a fraction, since what
+    follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves ",42", and so does the stamp
+    Python's logging writes by default, whose ",123" the comparison then shows; a ``pattern`` placed before this
+    scrubber can name that whole form.
+    Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
     written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
     digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
