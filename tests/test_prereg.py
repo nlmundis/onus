@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import inspect
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -572,6 +573,19 @@ class ReadTest(Folder):
 
     def lines(self) -> list[str]:
         return self.reads.read_text(encoding="utf-8").splitlines()
+
+    def test_the_line_reaches_the_flush_that_signoff_uses_once_it_is_written(self):
+        rule = load(self.write(record()))
+        result = evaluate(rule, sample())
+        flushed: list[int] = []
+
+        def flush(descriptor: int) -> None:
+            flushed.append(os.fstat(descriptor).st_size)
+
+        with mock.patch("onus.signoff._ledger._flush", side_effect=flush):
+            record_read(rule, result, reads_path=self.reads)
+        self.assertEqual(flushed, [self.reads.stat().st_size])
+        self.assertGreater(flushed[0], 0)
 
     def test_a_reads_file_whose_last_write_was_cut_short_is_not_appended_to(self):
         rule = load(self.write(record()))

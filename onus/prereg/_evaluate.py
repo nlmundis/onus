@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
@@ -399,6 +398,8 @@ def record_read(
             f"supersedes must be a line sha256 (64 lowercase hex digits) and reason non-blank text, not "
             f"{supersedes!r} and {reason!r}"
         )
+    from onus.signoff._ledger import _flush  # here, so onus.prereg imports without it loaded
+
     reads_path = Path(reads_path).resolve()  # so the receipt names this file after a change of directory too
     with reads_path.open("a+b") as reads:
         fcntl.flock(reads.fileno(), fcntl.LOCK_EX)
@@ -430,6 +431,6 @@ def record_read(
         )
         reads.write((line + "\n").encode("utf-8"))
         reads.flush()
-        os.fsync(reads.fileno())
+        _flush(reads.fileno())
     digest = hashlib.sha256(line.encode("utf-8")).hexdigest()
     return ReadReceipt(rule.id, evaluation.data_sha256, at, digest, reads_path)
