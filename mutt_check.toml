@@ -3026,9 +3026,9 @@ name = "a_circular_chain_raises"
 why = "A record check must report a bad record; a ValueError from inspect.unwrap would stop on it with an error and name no record."
 suites = ["tests.test_baseline.ApprovedProducersAreRealTest"]
 file = "onus/baseline/_approved.py"
-find = '''    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+find = '''    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
 '''
-replace = '''    except ZeroDivisionError as error:
+replace = '''    except ZeroDivisionError:
 '''
 
 [[mutant]]
@@ -3046,9 +3046,9 @@ name = "a_chain_that_raises_stops_the_check"
 why = "A __wrapped__ that raises would stop the check with that error in place of a reason."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+find = '''    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
 '''
-replace = '''    except ValueError as error:
+replace = '''    except ValueError:
 '''
 
 [[mutant]]
@@ -3073,7 +3073,7 @@ replace = '''        if type(link) == staticmethod:
 
 [[mutant]]
 name = "a_classmethod_object_passed_through"
-why = "A wrapper over a classmethod object cannot be called, so its record would name code that never ran."
+why = "A classmethod object has no file of its own, and only a staticmethod is passed through; this would widen what is taken on trust."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
 find = '''        if type(link) is staticmethod:
@@ -3106,9 +3106,11 @@ name = "a_chain_error_formatted_by_its_own_repr"
 why = "An exception's repr can raise too, and the check would stop on it after all."
 suites = ["tests.test_baseline.ProducerTest"]
 file = "onus/baseline/_approved.py"
-find = '''            f"its __wrapped__ chain cannot be followed to an end ({type(error).__name__}), so nothing shows what "
+find = '''    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+        return "its __wrapped__ chain cannot be followed to an end, so nothing shows what would run"
 '''
-replace = '''            f"its __wrapped__ chain cannot be followed to an end ({error!r}), so nothing shows what "
+replace = '''    except Exception as error:
+        return f"its __wrapped__ chain cannot be followed to an end, so nothing shows what would run: {error!r}"
 '''
 
 [[mutant]]

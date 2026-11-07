@@ -119,11 +119,8 @@ def unreal(name: str, tests: Iterable[Path]) -> str | None:
     wrappers: list[Callable[..., object]] = []
     try:
         innermost = inspect.unwrap(found, stop=lambda link: wrappers.append(link))
-    except Exception as error:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
-        return (
-            f"its __wrapped__ chain cannot be followed to an end ({type(error).__name__}), so nothing shows what "
-            "would run"
-        )
+    except Exception:  # noqa: BLE001 - a loop gives ValueError, and a property in the chain raises anything
+        return "its __wrapped__ chain cannot be followed to an end, so nothing shows what would run"
     for link in (*wrappers, innermost):
         who = "it" if link is found else "what it wraps"
         if type(link) is staticmethod:

@@ -571,9 +571,9 @@ class ProducerTest(Sandbox):
             with self.subTest(name=name):
                 self.assertIsNone(onus.baseline._approved.unreal(f"onus_sandbox_shop.Memo.{name}", [self.checks]))
 
-    def test_a_chain_through_a_classmethod_object_cannot_run_and_is_refused(self):
+    def test_a_classmethod_object_in_a_chain_has_no_file_and_is_refused(self):
         reason = onus.baseline._approved.unreal("onus_sandbox_shop.Memo.dressed_class", [self.checks])
-        self.assertEqual(reason.partition(",")[0], "what it wraps has no source file")  # type: ignore[union-attr]
+        self.assertIn("what it wraps has no source file", str(reason))
 
     def test_a_metaclass_cannot_pass_a_fake_off_as_a_staticmethod(self):
         self.shop.counted = self.checks_module.Passes()
@@ -586,10 +586,10 @@ class ProducerTest(Sandbox):
             with self.subTest(name=name):
                 self.assertIsNone(onus.baseline._approved.unreal(f"onus_sandbox_shop.{name}", [self.checks]))
 
-    def test_a_chain_that_raises_says_what_raised(self):
+    def test_a_chain_that_raises_what_cannot_be_printed_still_gives_a_reason(self):
         self.shop.counted = self.checks_module.Unreadable()
         reason = onus.baseline._approved.unreal("onus_sandbox_shop.counted", [self.checks])
-        self.assertIn("(BadRepr)", str(reason))
+        self.assertIn("its __wrapped__ chain cannot be followed to an end", str(reason))
 
     def test_a_file_name_that_cannot_be_read_is_no_place(self):
         loop = self.top / "loop"

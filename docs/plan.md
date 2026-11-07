@@ -393,7 +393,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       `textwrap.dedent` included. Generated code, as a dataclass's `__repr__`, a frozen module, and a zipped
       package have no file that exists, and are refused. So is a proxy that forwards `__class__` when its true
       class has no file to read, as `wrapt`'s decorators have: a proxy is judged by its true class, and this
-      fails toward refusing. A chain through a `classmethod` object cannot run, and is refused too. The check stops a fake made by habit, not one written
+      fails toward refusing. A `classmethod` object in a chain has no file, and is refused too, though a
+      wrapper could call its `__func__`; a subclass of it written in the code is placed by its class. The check stops a fake made by habit, not one written
       to get past it.
     - **`ApprovedProducersAreReal`**, mixed into a test case, reads every record in the approved folder: each
       must have the record's four keys and name a real producer, each approved file must have one record and
