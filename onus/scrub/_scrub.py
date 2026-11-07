@@ -22,7 +22,9 @@ _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
 # ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds. A
 # fraction takes only a full stop: after a comma, digits could be the next field of a row.
 _SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:\\.[0-9]+)?)?"
-_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?{_AFTER})?"
+# No offset in use passes 14 hours, so a year joined on by a hyphen, as in "T12:00-2026-01-09", is not read as one.
+_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"
+_ZONE = f"(?:Z|[+-]{_OFFSET_HOUR}(?::?{_SIXTY})?{_AFTER})?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
 # Atomic: a fraction or "Z" that runs on into a letter or digit fails whole, where backing off would replace a
 # prefix and leave the part that changes in the text.
@@ -142,17 +144,18 @@ def iso_timestamps() -> Scrubber:
     """Return a scrubber replacing each ISO 8601 date and time with "<timestamp-N>".
 
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
-    ".", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". A comma does not start a fraction, since what
-    follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves ",42", and so does the stamp
-    Python's logging writes by default, whose ",123" the comparison then shows; a ``pattern`` placed before this
-    scrubber can name that whole form.
-    Only a real moment is replaced:
+    ".", and "Z" or an offset of at most 14 hours and 59 minutes written "+HH:MM", "+HHMM", or "+HH". A comma does
+    not start a fraction, since what follows one may be the next field of a row: "2026-01-08 12:00:00,42" leaves
+    ",42", and so does the stamp Python's logging writes by default, whose ",123" the comparison then shows; a
+    ``pattern`` placed before this scrubber can name that whole form. Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
     written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
     digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
     leaves ":2026-01-09". An offset is read as far as it is well formed, so "+05:30x" leaves ":30x". A fraction or
     "Z" that runs on leaves the whole timestamp in the text, and is not cut back to a shorter form, as in
-    "2026-01-08T12:00:00.5Zfoo". Two timestamps are one value when they are written
+    "2026-01-08T12:00:00.5Zfoo". Digits joined straight on can read as a field and go with the timestamp, as the
+    "-14" of "2026-01-08T12:00-14" and the "42" of "2026-01-08T12:00:42:7" do, so join no number to one that must
+    fail its comparison when it changes. Two timestamps are one value when they are written
     alike; the same moment in two zones is two values.
     """
     replace = _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp)

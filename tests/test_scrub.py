@@ -187,6 +187,29 @@ class TimestampsTest(unittest.TestCase):
                 self.assertEqual(iso_timestamps()(f"2026-01-08 12:00:00{following}"), f"<timestamp-1>{following}")
         self.assertEqual(iso_timestamps()("2026-01-08 12:00:00,123 INFO"), "<timestamp-1>,123 INFO")
 
+    def test_an_offset_past_fourteen_hours_is_not_read(self):
+        for following in ("-2026", "-1999", "+2026", "-1500", "+23:00", "-15"):
+            with self.subTest(following=following):
+                self.assertEqual(iso_timestamps()(f"2026-01-08T12:00{following}"), f"<timestamp-1>{following}")
+        for offset in ("+14:00", "-12:00", "+1400", "-14", "+00", "-0930"):
+            with self.subTest(offset=offset):
+                self.assertEqual(iso_timestamps()(f"2026-01-08T12:00{offset} x"), "<timestamp-1> x")
+
+    def test_a_date_joined_on_by_a_hyphen_is_a_date_of_its_own(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            for text in ("2026-01-08T12:00-2026-01-09", "2026-01-08T12:00-1066-10-14"):
+                with self.subTest(first=order[0].name, text=text):
+                    self.assertEqual(chain(*order)(text), "<timestamp-1>-<date-1>")
+
+    def test_a_real_offset_before_a_date_is_read_in_either_order(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            for offset in ("+0530", "+05:30", "-14"):
+                with self.subTest(first=order[0].name, offset=offset):
+                    self.assertEqual(chain(*order)(f"2026-01-08T12:00{offset}-2026-01-09"), "<timestamp-1>-<date-1>")
+            self.assertEqual(
+                chain(*order)("2026-01-08T12:00+05:30-2026-01-09T13:00+05:30"), "<timestamp-1>-<timestamp-2>"
+            )
+
     def test_its_name_is_its_functions(self):
         self.assertEqual(
             (iso_timestamps().name, iso_dates().name, uuids().name), ("iso_timestamps", "iso_dates", "uuids")

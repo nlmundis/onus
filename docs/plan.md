@@ -389,6 +389,15 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       number from 1 and let two different values share a token. They read the name a scrubber carries, so a
       `redactor` that calls one, or a `Scrubber` built by hand, is not counted.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - An offset's hours are read only up to 14, so a year from 1460 on joined on by a hyphen stays in the text.
+      Other digits joined on by "+" or "-", as the hour range in "2026-01-08T12:00-14" or
+      "2026-01-08T12:00-13:00", or the year in "2026-01-08T12:00-1400-01-09", are a well-formed offset, and are
+      replaced with the timestamp, since no reading can tell them apart; that last one differs by order, since
+      `iso_dates`, run first, takes its date. An hour range also depends on the hour: "T10:00-10:05" is replaced
+      whole and "T16:00-16:05" leaves "-16:05", so a baseline holding such a range can pass in the morning and
+      fail in the afternoon. Digits joined on by ":" read as seconds the same way, so "T12:00:42:7" takes the 42.
+      So a shipped scrubber can still take a number in three forms: as an offset, as seconds, and as a fraction
+      after a full stop ("2026-01-08T12:00:00.2026").
     - A comma never starts a fraction, though ISO 8601 allows it: digits after a comma cannot be told from the
       next field of a row, and `iso_timestamps` replacing a count would break the promise that no scrubber
       replaces a number. So the default stamp of Python's `logging`, "2026-01-08 12:00:00,123", leaves ",123" in
