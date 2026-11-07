@@ -1,9 +1,9 @@
 ---
 date: 2026-11-06
 scope: "onus.scrub: the defects left open by the fix-closure review of #10 to #12"
-state: in-progress
+state: done
 prs: [15, 16, 17, 18, 19, 20, 21, 22]
-next: the maintainer merges #15 to #22 in the order under Next actions, then the rest of the handoff's Open list
+next: the baseline and signoff fixes in their own pull requests, then L1 step 5, `invariants`
 ---
 
 # Handoff: scrub defects (2026-11-06)
@@ -12,13 +12,13 @@ This note follows `2026-11-06-l1-amendments.md`, and covers its `scrub` items on
 
 ## State
 
-- **All eight pull requests are open and unmerged.** Each had a green `make check` on its head when it was pushed;
-  the raw summary is in its body.
-- **Two lines are stacked.** #17 sits on #15, because they change adjacent lines. #19, #20, #21, and #22 stack in
-  that order, because all four change the same regex lines and one docstring paragraph. The repository does not
-  delete a branch on merge, so GitHub does not retarget a stacked pull request by itself.
-- **The combined tree:** every branch merged in a scratch clone gave one conflict, a single bullet of `docs/plan.md`
-  between #17 and #19. The result has 434 mutants, each anchor found exactly once.
+- **All eight pull requests are merged,** in the order #15, #17, #16, #18, #19, #20, #21, #22, then this note.
+- **The ruleset requires a branch to be up to date,** so each was updated from main, gated, and passed CI before it
+  merged. The repository does not delete a branch on merge, so GitHub does not retarget a stacked pull request by
+  itself; each stacked base was set to `main` by hand.
+- **The final tree,** on 3.13, 3.11, and 3.14: `make check` exit 0, 472 tests, 100% coverage, 434 of 434 mutants
+  caught, the no-op surviving. That tree holds the eight fixes on the main they started from; the baseline and signoff
+  pull requests were open beside it, and their merges clean against it was checked as text only.
 
 ## Done this session
 
@@ -38,7 +38,7 @@ This note follows `2026-11-06-l1-amendments.md`, and covers its `scrub` items on
   as an offset (`T12:00-14`), as seconds (`T12:00:42:7`), or as a fraction (`T12:00:00.2026`). The README's "ships no
   scrubber that replaces a number" is not qualified. Whether it should be is the maintainer's call.
 - **`chain` refuses a numbered scrubber listed twice.** This is open to veto.
-- **The final timestamp rule** had an adversarial review after the coordinator asked for one. It found no defect in
+- **The final timestamp rule** had an adversarial review at the coordinator's request. It found no defect in
   the rule, and one major: an hour range depends on the hour, now disclosed. Chain orders still disagree on inputs E16
   lists, and a timestamp joined by a full stop to an id fails at random unless `uuids` runs first.
 - **`test_the_odds_the_docstring_gives_are_the_odds`** computes from literals, not from `_NUMBER`, so it would not
@@ -46,15 +46,14 @@ This note follows `2026-11-06-l1-amendments.md`, and covers its `scrub` items on
 
 ## Next actions
 
-1. Merge #15, then set #17's base to `main` and merge it.
-2. Merge #16 and #18 in either order.
-3. Merge #19, and set each next pull request's base to `main` in turn: #20, #21, #22.
-4. #17 and #19 conflict on one bullet of `docs/plan.md`, so whichever merges second needs main merged in first. Keep
-   the new bullet from each side, and let the "Two patterns" line go.
-5. After any other merge, read `make mutants` for stale anchors, not only the count.
+1. After each baseline or signoff merge, read `make mutants` for stale anchors, not only the count.
+2. Decide the two open questions above.
+3. Build L1 step 5, `invariants`.
 
 ## Lessons
 
+- **A stacked pull request conflicts with its own squash** on the next update. A tree gated beforehand gave the exact
+  result, and comparing tree hashes proved it.
 - **A timestamp scrubber must not read what follows it to decide.** An earlier scrubber may have replaced that text,
   so each lookahead split the two chain orders. Only a differential fuzz across the orders showed this.
 - **A fix to a fix needs its own review.** Each closure review here found majors in the commit before it.
