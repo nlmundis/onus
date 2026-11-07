@@ -445,12 +445,19 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **The command line** is `python -m onus.signoff record|revoke|check`. `check` exits 0 only for SIGNED
       (10 UNSIGNED, 11 CHANGED, 12 REVOKED, 13 CORRUPT); a refusal, or a ledger or content that cannot be read
       or written, exits 20.
+    - **A revocation reads the kept copy first.** One that is not what was signed refuses the revocation, which
+      would otherwise turn CORRUPT into REVOKED and let a later `record` read SIGNED with the copy never read
+      again. Restoring the copy, or removing it so that none is kept, clears the refusal.
     - **Messages name what clears them.** The environment refusal says to run from a terminal where the
       variable is not set, and every CORRUPT says that onus repairs nothing and the ledger is restored from
       version control.
     - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
   - Known limits, most from this step's review:
     - A refused first sign-off leaves an empty ledger file behind.
+    - The kept copy is read before the prompt, and the lock does not cover the copies, so one changed while the
+      person answers is not seen. A copy changed after a revocation is not seen by a later `record` of other
+      content either, since only the newest line's copy and the new content's are read, and a revocation signs
+      none.
     - The lock is held while the person answers, so a second sign-off on the same ledger waits, with no
       message and no time limit.
     - Digits already waiting on the terminal when the prompt appears are read as the answer.

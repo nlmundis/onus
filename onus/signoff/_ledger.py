@@ -544,13 +544,14 @@ def revoke(ledger: str | os.PathLike[str], artifact: str, *, reviewed_by: str) -
     Raises:
         SignoffRefused: a session variable is set, there is no terminal, or the confirmation was not typed.
         SignoffError: the id or ``reviewed_by`` is refused, or the artifact's newest line is not a sign-off.
-        CorruptLedgerError: the ledger cannot be relied on.
+        CorruptLedgerError: the ledger, or the kept copy of what the sign-off signed, cannot be relied on.
         NotImplementedError: this platform has no fcntl.
     """
 
     def build(ledger: Path, lines: list[Line], newest: Line | None) -> tuple[dict[str, Any], str, str, str, None]:
-        if newest is None or newest.revokes:
+        if newest is None or newest.sha256 is None:
             raise SignoffError(f"{artifact!r} has no sign-off in {ledger} to revoke")
+        _kept(ledger, newest.sha256)  # a bad copy reads CORRUPT, and a revocation must not turn that into REVOKED
         shown = (
             f"\nRevocation of the sign-off of {artifact}\n  reviewed by: {reviewed_by}\n"
             f"  revokes line: {newest.line_sha256}\n  signed by: {newest.reviewed_by} at {newest.at.isoformat()}\n"
