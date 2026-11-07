@@ -34,9 +34,9 @@ This note follows `2026-11-06-l1-amendments.md`, and covers its `scrub` items on
 
 ## Open
 
-- **A shipped scrubber can still take a number** in two forms, both in E16's known limits: digits joined on that read
-  as an offset (`T12:00-14`) or a fraction (`T12:00:00.2026`). The README's "ships no scrubber that replaces a number"
-  is not qualified. Whether it should be is the maintainer's call.
+- **A shipped scrubber can still take a number** in three forms, all in E16's known limits: digits joined on that read
+  as an offset (`T12:00-14`), as seconds (`T12:00:42:7`), or as a fraction (`T12:00:00.2026`). The README's "ships no
+  scrubber that replaces a number" is not qualified. Whether it should be is the maintainer's call.
 - **`chain` refuses one scrubber listed twice,** though adjacent repeats are harmless. This is open to veto.
 - **The final timestamp rule had no agent review.** Two closure reviews each found majors in the fix before it. The
   rule that replaced them was checked by the last reviewer's differential fuzz instead: 13 new order disagreements in
