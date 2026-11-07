@@ -5,6 +5,8 @@ both ends of. No test writes a line to a ledger anyone relies on.
 """
 
 import contextlib
+import errno
+import fcntl
 import hashlib
 import io
 import json
@@ -17,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 import unittest
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -407,10 +410,11 @@ class RecordTest(Desk):
         def synced(fd: int) -> None:
             calls.append(f"fsync {which(fd)} {len(self.lines())}")
 
-        with mock.patch.object(fcntl, "flock", side_effect=locked), mock.patch.object(os, "fsync", side_effect=synced):
-            with mock.patch.object(_ledger, "parse_ledger", side_effect=read):
-                self.sign()
-        self.assertEqual(calls, ["flock ledger True", "read", "fsync ledger 1"])
+        with mock.patch.object(fcntl, "flock", side_effect=locked):
+            with mock.patch.object(_ledger, "_flush", side_effect=synced):
+                with mock.patch.object(_ledger, "parse_ledger", side_effect=read):
+                    self.sign()
+        self.assertEqual(calls, ["flock ledger True", "read", *["fsync ? 0"] * 4, "fsync ledger 1"])
 
     def test_the_ledger_may_be_named_from_the_folder_the_command_runs_in(self):
         here = os.getcwd()
@@ -495,6 +499,146 @@ class RecordTest(Desk):
             self.sign()
         self.assertEqual(names, [f"{sha(FIRST)}.partial -> {sha(FIRST)} {FIRST!r}"])
         self.assertEqual([path.name for path in blobs.iterdir()], [sha(FIRST)])
+
+    def test_the_kept_copy_reaches_the_disk_before_the_line_that_names_it(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        steps: list[str] = []
+        real_sync, real_replace = _ledger._flush, os.replace
+
+        def named(descriptor: int) -> str:
+            for path in (self.folder, blobs, self.ledger, blobs / (sha(FIRST) + ".partial"), blobs / sha(FIRST)):
+                if path.exists() and os.path.samestat(os.fstat(descriptor), path.stat()):
+                    return path.name
+            return "another file"
+
+        def sync(descriptor: int) -> None:
+            found = os.fstat(descriptor)
+            size = f" of {found.st_size} bytes" if stat.S_ISREG(found.st_mode) else ""
+            steps.append(f"sync {named(descriptor)}{size}")
+            real_sync(descriptor)
+
+        def replace(source: pathlib.Path, target: pathlib.Path) -> None:
+            steps.append("rename")
+            real_replace(source, target)
+
+        with mock.patch.object(_ledger, "_flush", side_effect=sync):
+            with mock.patch.object(os, "replace", side_effect=replace):
+                self.sign()
+        line = len(self.ledger.read_bytes())
+        self.assertEqual(
+            steps,
+            [
+                f"sync {sha(FIRST)}.partial of {len(FIRST)} bytes",
+                "rename",
+                f"sync {sha(FIRST)} of {len(FIRST)} bytes",
+                "sync ledger.jsonl.blobs",
+                f"sync {self.folder.name}",
+                f"sync ledger.jsonl of {line} bytes",
+            ],
+        )
+
+    def test_a_copy_already_there_is_flushed_before_the_line_that_names_it(self):
+        blobs = self.folder / "ledger.jsonl.blobs"
+        blobs.mkdir()
+        (blobs / sha(FIRST)).write_bytes(FIRST)
+        synced: list[str] = []
+
+        def sync(descriptor: int) -> None:
+            found = os.fstat(descriptor)
+            for path in (self.ledger, blobs, blobs / sha(FIRST), self.folder):
+                if os.path.samestat(found, path.stat()):
+                    synced.append(f"{path.name} {len(self.lines())}")
+
+        with mock.patch.object(_ledger, "_flush", side_effect=sync):
+            self.sign()
+        self.assertEqual(
+            synced,
+            [f"{sha(FIRST)} 0", "ledger.jsonl.blobs 0", f"{self.folder.name} 0", "ledger.jsonl 1"],
+        )
+
+    def test_a_revocation_flushes_only_its_line(self):
+        line = self.sign()
+        self.terminal.type(line.line_sha256[:8])
+        with mock.patch.object(_ledger, "_sync") as flushed:
+            revoke(self.ledger, ARTIFACT, reviewed_by="A Reviewer")
+        flushed.assert_not_called()
+
+    def test_flushing_closes_what_it_opened(self):
+        with mock.patch.object(os, "close", wraps=os.close) as closed:
+            _ledger._sync(self.folder)
+        closed.assert_called_once()
+
+    def test_a_copy_already_kept_is_not_written_again(self):
+        self.sign()
+        self.truth.write_bytes(SECOND)
+        self.sign()
+        self.truth.write_bytes(FIRST)
+        with mock.patch.object(os, "replace") as renamed:
+            self.sign()
+        renamed.assert_not_called()
+
+
+class FlushTest(unittest.TestCase):
+    """_flush: the fullest flush the platform offers, a fallback only when it is refused, and no failure swallowed."""
+
+    def full_sync(self, side_effect: OSError | None = None) -> contextlib.AbstractContextManager[mock.MagicMock]:
+        return mock.patch.object(fcntl, "fcntl", side_effect=side_effect)
+
+    def setUp(self) -> None:
+        patch = mock.patch.object(fcntl, "F_FULLFSYNC", 51, create=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_full_flush_is_used_where_there_is_one(self):
+        with self.full_sync() as full, mock.patch.object(os, "fsync") as plain:
+            _ledger._flush(7)
+        full.assert_called_once_with(7, 51)
+        plain.assert_not_called()
+
+    def test_a_refused_full_flush_falls_back_to_fsync(self):
+        for code in (errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOTTY):
+            with self.subTest(code=code), self.full_sync(side_effect=OSError(code, "refused")):
+                with mock.patch.object(os, "fsync") as plain:
+                    _ledger._flush(7)
+                plain.assert_called_once_with(7)
+
+    def test_a_failed_full_flush_is_raised_and_not_retried(self):
+        with self.full_sync(side_effect=OSError(errno.EIO, "failed")), mock.patch.object(os, "fsync") as plain:
+            with self.assertRaises(OSError) as raised:
+                _ledger._flush(7)
+        self.assertEqual(raised.exception.errno, errno.EIO)
+        plain.assert_not_called()
+
+    def test_a_failed_fallback_is_raised(self):
+        with (
+            self.full_sync(side_effect=OSError(errno.ENOTSUP, "refused")),
+            mock.patch.object(os, "fsync", side_effect=OSError(errno.EIO, "failed")),
+            self.assertRaises(OSError) as raised,
+        ):
+            _ledger._flush(7)
+        self.assertEqual(raised.exception.errno, errno.EIO)
+
+    def test_with_no_full_flush_or_no_fcntl_it_is_fsync(self):
+        for what, module in (("no such command", types.SimpleNamespace()), ("no fcntl", None)):
+            with self.subTest(what=what), mock.patch.dict(sys.modules, {"fcntl": module}):
+                with mock.patch.object(os, "fsync") as plain:
+                    _ledger._flush(7)
+                plain.assert_called_once_with(7)
+
+    def test_a_failed_fsync_is_raised_where_there_is_no_full_flush(self):
+        for what, module in (("no such command", types.SimpleNamespace()), ("no fcntl", None)):
+            with self.subTest(what=what), mock.patch.dict(sys.modules, {"fcntl": module}):
+                with mock.patch.object(os, "fsync", side_effect=OSError(errno.EIO, "failed")):
+                    with self.assertRaises(OSError) as raised:
+                        _ledger._flush(7)
+                self.assertEqual(raised.exception.errno, errno.EIO)
+
+    def test_a_real_file_and_a_real_folder_flush(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = pathlib.Path(folder) / "file"
+            file.write_bytes(b"content\n")
+            _ledger._sync(file)
+            _ledger._sync(pathlib.Path(folder))
 
 
 class BoundTest(Desk):

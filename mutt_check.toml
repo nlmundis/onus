@@ -3211,9 +3211,156 @@ name = "the_line_not_flushed_to_disk"
 why = "A crash after the command reports the line written could lose it."
 suites = ["tests.test_signoff.RecordTest"]
 file = "onus/signoff/_ledger.py"
-find = '''            os.fsync(file.fileno())
+find = '''            _flush(file.fileno())
 '''
 replace = '''            pass
+'''
+
+[[mutant]]
+name = "the_kept_copy_not_flushed_before_its_rename"
+why = "A power loss could leave a durable line naming an empty or cut-short copy, and the artifact permanently CORRUPT."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                    _flush(copy.fileno())
+'''
+replace = '''                    pass
+'''
+
+[[mutant]]
+name = "a_failed_full_flush_taken_for_a_refusal"
+why = "An I/O error on the fuller flush would be retried with fsync, which can report success, and the failure would be swallowed."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if error.errno not in _FULL_FLUSH_REFUSED:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_refused_full_flush_stops_the_sign_off"
+why = "A file system that cannot do F_FULLFSYNC would stop every sign-off, where fsync was all it could give anyway."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        if error.errno not in _FULL_FLUSH_REFUSED:
+'''
+replace = '''        if True:
+'''
+
+[[mutant]]
+name = "a_refused_full_flush_not_flushed_at_all"
+why = "The refusal would be swallowed with nothing flushed in its place."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            raise
+        os.fsync(descriptor)
+'''
+replace = '''            raise
+'''
+
+[[mutant]]
+name = "the_full_flush_never_used"
+why = "On macOS the drive could reorder the writes, and a line could outlive its copy."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''        fcntl.fcntl(descriptor, command)
+'''
+replace = '''        os.fsync(descriptor)
+'''
+
+[[mutant]]
+name = "no_fcntl_stops_the_flush"
+why = "The import stands inside the flush so that a platform with no fcntl still flushes."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    except ImportError:
+        pass
+    if command is None:
+'''
+replace = '''    except ZeroDivisionError:
+        pass
+    if command is None:
+'''
+
+[[mutant]]
+name = "a_platform_with_no_full_flush_not_flushed"
+why = "Linux has no F_FULLFSYNC: nothing would be flushed there."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if command is None:
+        os.fsync(descriptor)
+        return
+'''
+replace = '''    if command is None:
+        return
+'''
+
+[[mutant]]
+name = "a_failed_fsync_swallowed_where_there_is_no_full_flush"
+why = "This is the only path Linux takes: a failed flush would pass silently and the line would be written behind it."
+suites = ["tests.test_signoff.FlushTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    if command is None:
+        os.fsync(descriptor)
+        return
+'''
+replace = '''    if command is None:
+        try:
+            os.fsync(descriptor)
+        except OSError:
+            pass
+        return
+'''
+
+[[mutant]]
+name = "a_copy_already_there_not_flushed_before_the_line"
+why = "A copy a run left behind, or one restored by hand, may never have reached the disk; the line would outlive it."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                _sync(_blobs(ledger) / _sha256(blob))
+'''
+replace = '''                pass
+'''
+
+[[mutant]]
+name = "the_kept_copy_s_name_not_flushed_before_the_line"
+why = "The rename lives in the folder; unflushed, a power loss could keep the line and lose the name it points at."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                _sync(_blobs(ledger))
+'''
+replace = '''                pass
+'''
+
+[[mutant]]
+name = "the_ledger_s_folder_not_flushed_before_the_line"
+why = "A new ledger's name and a new blobs folder live here; unflushed, a power loss could lose either behind a line reported written."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''                _sync(ledger.parent)
+'''
+replace = '''                pass
+'''
+
+[[mutant]]
+name = "a_revocation_made_to_flush_folders"
+why = "A revocation adds no name; it would refuse in a folder it could otherwise write to, and a revocation is the one line that must get through."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''            if blob is not None:
+                # Whoever wrote'''
+replace = '''            if True:
+                # Whoever wrote'''
+
+[[mutant]]
+name = "a_flushed_descriptor_left_open"
+why = "A long-lived caller signing many artifacts would run out of descriptors."
+suites = ["tests.test_signoff.RecordTest"]
+file = "onus/signoff/_ledger.py"
+find = '''    finally:
+        os.close(descriptor)
+'''
+replace = '''    finally:
+        pass
 '''
 
 [[mutant]]
