@@ -362,7 +362,7 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - A file URL's path stays, though it names a local path, so a `file:///` URL into a folder that changes from
       run to run fails its comparison, visibly; `pattern` can name it.
     - `paths`'s boundary reads one character before a path and one run of name characters after it, from a fixed
-      class, so what stands outside that class does not mark a longer path: "file:/srv/app", "http://[::1]/srv/app", "/mnt/*/srv/app", and "(1)/srv/app"
+      class, beside the shape of a token, so what stands outside those does not mark a longer path: "file:/srv/app", "http://[::1]/srv/app", "/mnt/*/srv/app", and "(1)/srv/app"
       are replaced, as is the path before a combining mark or before "./x". A ":" cannot join the class, since
       it separates the entries of a search path.
     - The order of a chain can change what `paths` does. A mapped path that holds a value another scrubber reads,
