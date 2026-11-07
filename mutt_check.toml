@@ -2462,6 +2462,30 @@ replace = '''        return len(text) in wanted
 '''
 
 [[mutant]]
+name = "a_float_s_upper_case_e_read_as_a_hex_id"
+why = "'3.1234567E+10' prints its mantissa with an upper-case E, and a changed statistic would then be scrubbed away."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'''
+replace = '''_NUMBER = re.compile(r"[0-9]+(?:e[0-9]*)?\Z")'''
+
+[[mutant]]
+name = "a_mantissa_before_a_signed_exponent_read_as_a_hex_id"
+why = "'1.2345678e-05' leaves the run '2345678e', digits ending in a bare e, and a changed statistic would then be scrubbed away."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'''
+replace = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]+)?\Z")'''
+
+[[mutant]]
+name = "a_run_with_two_exponents_kept_as_a_number"
+why = "'12e34e56' is an id written with two e's, and no float reads so; keeping it would widen what hex_ids leaves."
+suites = ["tests.test_scrub.HexIdsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")'''
+replace = '''_NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)*\Z")'''
+
+[[mutant]]
 name = "a_hex_run_of_any_length_replaced"
 why = "Words and short codes made of the letters a to f would be read as ids."
 suites = ["tests.test_scrub.HexIdsTest"]
@@ -2580,8 +2604,50 @@ name = "a_folder_whose_name_runs_on_replaced"
 why = '"/srv/app2" would be scrubbed as the mapped "/srv/app" with a stray 2, hiding which folder the output named.'
 suites = ["tests.test_scrub.PathsTest"]
 file = "onus/scrub/_scrub.py"
-find = ' + ")" + ends)'
-replace = ' + ")")'
+find = ''' + ")" + ends
+'''
+replace = ''' + ")"
+'''
+
+[[mutant]]
+name = "a_path_after_a_slash_replaced"
+why = "'a//srv/app' is the middle of another path, and 'http://srv/app' a URL; replacing either hides what the output named."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''starts = f"(?<![/{_IN_A_NAME}])"'''
+replace = '''starts = f"(?<![{_IN_A_NAME}])"'''
+
+[[mutant]]
+name = "a_path_that_runs_on_into_a_token_replaced"
+why = "Run before paths, a scrubber would change what paths does: '/srv/app.2026-01-08' stays alone, and '<app>.<date-1>' after iso_dates."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''|{_TOKEN}))"'''
+replace = '''))"'''
+
+[[mutant]]
+name = "a_path_after_a_token_replaced"
+why = "'/data/<uuid-1>/srv/app' is the middle of a longer path, and replacing it hides which folder the output named."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        after_a_token + "|" + starts + "("'''
+replace = '''        starts + "("'''
+
+[[mutant]]
+name = "a_path_after_an_unnumbered_token_replaced"
+why = "A second pass over paths' own output would replace what the first left, so a scrubbed text would not scrub to itself."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''_TOKEN = r"<[a-z][a-z0-9_]*(?:-[0-9]+)?>"'''
+replace = '''_TOKEN = r"<[a-z][a-z0-9_]*-[0-9]+>"'''
+
+[[mutant]]
+name = "only_the_token_is_skipped_and_not_what_runs_on_from_it"
+why = "'<uuid-1>/srv/app' would be matched as a token and then '/srv/app', read fresh after it, replaced."
+suites = ["tests.test_scrub.PathsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''after_a_token = f"{_TOKEN}[/{_IN_A_NAME}]*"'''
+replace = '''after_a_token = _TOKEN'''
 
 [[mutant]]
 name = "the_shortest_path_tried_first"
@@ -2634,9 +2700,9 @@ name = "a_token_name_that_breaks_the_token_accepted"
 why = 'A name holding ">", a space, or a line break would write a token no reader or later scrubber can tell from text.'
 suites = ["tests.test_scrub.PatternTest", "tests.test_scrub.PathsTest"]
 file = "onus/scrub/_scrub.py"
-find = '''    if not isinstance(name, str) or not _NAME.match(name):
+find = '''    if type(name) is not str or not _NAME.match(name):
 '''
-replace = '''    if not isinstance(name, str):
+replace = '''    if type(name) is not str:
 '''
 
 [[mutant]]
@@ -2688,6 +2754,30 @@ find = '    if not callable(function) or not isinstance(module, str)'
 replace = '    if not isinstance(module, str)'
 
 [[mutant]]
+name = "a_subclass_of_str_taken_as_a_name"
+why = "A subclass can hash or print as anything, so it could write a built-in token past the refusal."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    if type(name) is not str or not _NAME.match(name):
+'''
+replace = '''    if not isinstance(name, str) or not _NAME.match(name):
+'''
+
+[[mutant]]
+name = "a_name_that_cannot_be_hashed_given_a_bare_type_error"
+why = "A list as a name would raise 'unhashable type' from inside the check, where the docstring promises a ValueError that says what a name is."
+suites = ["tests.test_scrub.PatternTest"]
+file = "onus/scrub/_scrub.py"
+find = '''    name = _named(name)
+    if name in _OWN_NAMES:
+        raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
+'''
+replace = '''    if name in _OWN_NAMES:
+        raise ValueError(f"{name!r} is a token name this module's own scrubbers write; give the pattern another")
+    name = _named(name)
+'''
+
+[[mutant]]
 name = "a_plain_function_chained"
 why = "A chain's name lists its scrubbers; a bare function has none to list, so the record of what shaped an output would have a hole."
 suites = ["tests.test_scrub.ChainTest"]
@@ -2695,6 +2785,44 @@ file = "onus/scrub/_scrub.py"
 find = '''        if not isinstance(scrubber, Scrubber):
 '''
 replace = '''        if False:
+'''
+
+[[mutant]]
+name = "two_scrubbers_that_write_one_name_chained"
+why = "Each numbers from 1, so a value of one and a different value of the other share a token and a swap between them passes."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        if shared:
+'''
+replace = '''        if False:
+'''
+
+[[mutant]]
+name = "a_nested_chain_forgets_what_it_numbers"
+why = "A chain inside a chain would hide its names from the outer one, so nesting would be the way round the refusal."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''scrubber in scrubbers) + ")", replace, _numbers=numbers)'''
+replace = '''scrubber in scrubbers) + ")", replace)'''
+
+[[mutant]]
+name = "a_chain_that_remembers_no_names"
+why = "With nothing added after each scrubber, no two would ever overlap, and the refusal would never fire."
+suites = ["tests.test_scrub.ChainTest"]
+file = "onus/scrub/_scrub.py"
+find = '''        numbers |= scrubber._numbers
+'''
+replace = '''        numbers = numbers
+'''
+
+[[mutant]]
+name = "two_scrubbers_that_write_one_name_approved"
+why = "assertApproved runs its scrubbers in turn with no chain, so without this the refusal would not reach the place a baseline is made."
+suites = ["tests.test_baseline.ComparingTest"]
+file = "onus/baseline/_approved.py"
+find = '''            chain(*scrubbers)  # Only for its refusal: these run in turn, as one chain would.
+'''
+replace = '''            pass
 '''
 
 [[mutant]]
@@ -2724,8 +2852,8 @@ name = "the_end_of_another_path_replaced"
 why = "A mapped path that is the tail of a different, longer path, or the path of a URL, would be labelled as the mapped folder, and the output would misreport which folder it named."
 suites = ["tests.test_scrub.PathsTest"]
 file = "onus/scrub/_scrub.py"
-find = 'regex = re.compile(starts + "(?:"'
-replace = 'regex = re.compile("(?:"'
+find = '"|" + starts + "("'
+replace = '"|" + "("'
 
 [[mutant]]
 name = "a_paths_scrubber_named_by_its_paths"
@@ -2794,8 +2922,8 @@ name = "a_pattern_s_values_compared_without_case"
 why = "Two texts that differ in case are two values to a caller's regex unless the regex says otherwise."
 suites = ["tests.test_scrub.PatternTest"]
 file = "onus/scrub/_scrub.py"
-find = '_named(name), same=_as_written, real=lambda text: True)'
-replace = '_named(name), same=str.lower, real=lambda text: True)'
+find = 're.compile(regex), name, same=_as_written,'
+replace = 're.compile(regex), name, same=str.lower,'
 
 # --- onus.baseline ---
 
