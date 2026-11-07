@@ -19,10 +19,10 @@ and a targeted review.
 | --- | --- | --- | --- |
 | #24 | `make approve` wording | exit 0, 451 tests | 412 of 412 |
 | #32 | B06, the received file | exit 0, 453 tests | 414 of 414 |
-| #33 | `_tests_of` with tests inside the code | exit 0, 459 tests | 417 of 417 |
+| #33 | `_tests_of` with tests inside the code | exit 0, 461 tests | 419 of 419 |
 | #34 | B03, the `__wrapped__` chain | exit 0, 467 tests | 428 of 428 |
 
-All four merged together in a scratch clone: `make check` exit 0, 480 tests, 100% coverage, 438 of 438 mutants
+All four merged together in a scratch clone: `make check` exit 0, 482 tests, 100% coverage, 440 of 440 mutants
 caught, the no-op surviving.
 
 ## Merging
@@ -43,12 +43,11 @@ inside the C wrapper cannot be read, so the chain names only real code and the f
 - Disclose it. #34 does this in E17, and `lru_cache(real)` keeps working.
 - Refuse every wrapper placed only by its class. This closes the hole, and no memoized producer could then be approved.
 
-The first is built as a default. It is not yet the maintainer's choice.
+The first is built, and stands unless the maintainer vetoes it.
 
-## Open to veto, as built
+## Accepted, unless vetoed
 
-- **#32:** the received path is new on every failure, so nothing can read a fixed location, and each failing run
-  leaves a folder for the system to clear.
+- **#32:** the received path is new on every failure, and each failing run leaves a folder for the system to clear.
 - **#33:** the test package is known by its name, `tests` or `test`. A test package of any other name inside the code
   stays refused. A helper in `e2e/` with tests in `e2e/tests/` reads as code under test.
 - **#34:** a proxy whose true class has no file is refused, `wrapt`'s decorators among them. This worked before.
@@ -65,6 +64,8 @@ The first is built as a default. It is not yet the maintainer's choice.
 ## Open, not fixed
 
 - A text that cannot be encoded as UTF-8 raises `UnicodeEncodeError` from `assertApproved`.
+- A label so long that the approved file's own name is refused raises `OSError` from `is_file`.
+- A very deep tree can raise `OSError` from `rglob` in `_tests_of` on 3.11.
 - A partial received file can remain after a failed write, and `label="approved"` gives a received file with
   `.approved` in its name.
 - In `unreal`, an import that raises anything but `ImportError` or `ValueError`, a lazy proxy whose `__getattr__`
@@ -75,7 +76,9 @@ The first is built as a default. It is not yet the maintainer's choice.
 
 ## Not verified
 
-- The commits made after each review had no second review, except #34's first round of fixes.
+- One closure review ran on the commits made after the last reviews: 14 of 16 prior findings closed. The two left
+  were fixed in the last commits: the order of the names is pinned on #33, and E17's sentence on `classmethod` is
+  corrected on #34. Those last commits, `f06faaa`, `a8cca5a`, and `715daed`, have had no review.
 - The received-file work ran on macOS only, by hand. Linux comes from CI. Root and a real second user were not run.
 
 ## Lessons
