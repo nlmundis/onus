@@ -365,8 +365,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       `iso_timestamps` runs first.
     - A timestamp joined by a full stop to an id is read by how that id starts, so it fails at random against a
       clean baseline: "T12:00:00.<a uuid>" stays whole for most UUIDs, whose digits run on into a letter, and
-      loses the first group of one whose first group is all digits. Put `uuids` and `hex_ids` before
-      `iso_timestamps` there. A file extension that starts with a digit stays too:
+      loses at least the first group of one whose first group is all digits. Put `uuids` before `iso_timestamps`
+      there; `hex_ids` before it helps too, though it leaves an id written like a number. A file extension that starts with a digit stays too:
       "backup-2026-01-08T12:00:00.7z" is left whole, and fails its comparison on every run.
     - A date before a clock time that runs on, as in "2026-01-08 12:00pm", is replaced by neither scrubber, since
       `iso_dates` leaves the date of anything shaped like a timestamp. It stays and fails its comparison, visibly.
