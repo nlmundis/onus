@@ -1,5 +1,6 @@
 """onus.scrub: run-to-run values replaced by tokens numbered by value, and nothing else touched."""
 
+import dataclasses
 import functools
 import pathlib
 import re
@@ -17,6 +18,12 @@ UUID_B = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 
 def shout(text: str) -> str:
     return text.upper()
+
+
+class Unhashable(str):
+    """A string that cannot be hashed, as any subclass that defines ``__eq__`` alone cannot be."""
+
+    __hash__ = None  # type: ignore[assignment]
 
 
 class Rules:
@@ -206,9 +213,20 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(pattern("x", "dates")("x"), "<dates-1>")
 
     def test_a_name_that_cannot_stand_in_a_token_is_refused(self):
-        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None):
+        for name in ("", "Run", "1run", "run-id", "run id", "<run>", "run\n", None, 5, ["run"], {"run": 1}):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
                 pattern("x", name)  # type: ignore[arg-type]
+
+    def test_a_subclass_of_str_is_not_a_name(self):
+        for name in (Unhashable("run"), Unhashable("date")):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+                pattern("x", name)
+
+    def test_a_bad_name_is_refused_before_the_regex_compiles(self):
+        with self.assertRaisesRegex(ValueError, "a token's name is a lower-case letter"):
+            pattern("(", ["run"])  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "own scrubbers write"):
+            pattern("(", "date")
 
     def test_a_regex_that_matches_nothing_at_all_is_refused_when_it_does(self):
         scrubber = pattern("x*", "x")
@@ -408,6 +426,32 @@ class ChainTest(unittest.TestCase):
     def test_its_name_lists_its_scrubbers_in_order(self):
         self.assertEqual(chain(iso_dates(), uuids()).name, "chain(iso_dates, uuids)")
         self.assertEqual(chain(uuids(), chain(iso_dates())).name, "chain(uuids, chain(iso_dates))")
+
+    def test_two_scrubbers_that_write_one_numbered_name_are_refused(self):
+        for scrubbers in (
+            (hex_ids(40), hex_ids(64)),
+            (pattern("run-[a-z]+", "run"), pattern("job-[a-z]+", "run")),
+            (iso_dates(), uuids(), iso_dates()),
+            (hex_ids(40), chain(uuids(), hex_ids(64))),
+        ):
+            with self.subTest(scrubbers=scrubbers), self.assertRaisesRegex(ValueError, "each number from 1"):
+                chain(*scrubbers)
+
+    def test_a_swapped_value_shows_when_two_lengths_are_one_scrubber(self):
+        sha1_a, sha1_b, sha256 = "a1" * 20, "b2" * 20, "c3" * 32
+        scrubber = hex_ids(40, 64)
+        self.assertNotEqual(scrubber(f"{sha1_a} {sha1_b} {sha256}"), scrubber(f"{sha1_a} {sha1_b} {sha1_a}"))
+
+    def test_names_that_differ_and_paths_that_share_a_name_may_stand_in_one_chain(self):
+        scrubber = chain(hex_ids(40), pattern("run-[a-z]+", "run"), paths({"/srv/a": "w"}), paths({"/srv/b": "w"}))
+        self.assertEqual(scrubber(f"{SHA_A} run-a /srv/a /srv/b"), "<hex-1> <run-1> <w> <w>")
+
+    def test_what_a_scrubber_numbers_is_no_field_a_subclass_must_follow(self):
+        @dataclasses.dataclass(frozen=True)
+        class Noted(Scrubber):
+            note: str
+
+        self.assertEqual(Noted("noted", shout, "why")("a"), "A")
 
     def test_it_needs_a_scrubber_and_takes_nothing_else(self):
         with self.assertRaisesRegex(ValueError, "at least one scrubber"):

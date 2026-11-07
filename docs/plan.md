@@ -372,7 +372,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       second leaves it. Text a `redactor` writes is read as written.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
       read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
-    - Two patterns given one name in a chain each number from 1, so two different values can share a token.
+    - `chain` and `assertApproved` refuse two scrubbers that write one numbered token name, which would each
+      number from 1 and let two different values share a token. They read the name a scrubber carries, so a
+      `redactor` that calls one, or a `Scrubber` built by hand, is not counted.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
     - `paths` leaves a path glued to a flag ("-I/srv/app"), since the letter before it reads as a longer path.
     - `pattern` can be handed a regex that matches numbers, which nothing here can refuse.
