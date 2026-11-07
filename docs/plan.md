@@ -454,7 +454,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - `record` and `revoke` need `fcntl`, imported when they run, as `record_read` does (Amendment 3, E6).
   - Known limits, most from this step's review:
     - A refused first sign-off leaves an empty ledger file behind.
-    - `record_read` flushes its line through the same call, so a read line and a sign-off reach the disk alike.
+    - `record_read` flushes its line through the same call, but not its folder, so a reads file just created can
+      lose its name in a power loss, the line with it.
     - Where a file system refuses `F_FULLFSYNC`, the flush falls back to `fsync`, and on macOS the flushes then do
       not order a copy and its line. APFS takes it on a file and on a folder, checked on one machine.
     - The ledger's folder must be readable, to flush it: a sign-off in a write-only folder, or on a file system
