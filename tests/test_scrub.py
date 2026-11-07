@@ -89,6 +89,12 @@ class DatesTest(unittest.TestCase):
             with self.subTest(first=order[0].name):
                 self.assertEqual(chain(*order)(text), "<timestamp-1> and <timestamp-2> on <date-1>")
 
+    def test_a_date_before_a_clock_that_runs_on_stays_with_it(self):
+        for text in ("2026-01-08 12:00pm", "2026-01-08 12:00:00.5abc"):
+            with self.subTest(text=text):
+                self.assertEqual(iso_dates()(text), text)
+                self.assertEqual(iso_timestamps()(text), text)
+
     def test_a_date_before_a_clock_time_no_timestamp_has_is_replaced(self):
         # After "T" the date runs on into a letter, so it stays, as it does before any other letter.
         self.assertEqual(iso_dates()("2026-01-08 25:00 and 2026-01-08T10:61"), "<date-1> 25:00 and 2026-01-08T10:61")
@@ -127,6 +133,54 @@ class TimestampsTest(unittest.TestCase):
 
     def test_what_follows_a_timestamp_stays(self):
         self.assertEqual(iso_timestamps()("2026-01-08T11:00:5 2026-01-08T11:00+24"), "<timestamp-1>:5 <timestamp-1>+24")
+
+    def test_a_written_form_that_runs_on_stays_whole_and_is_not_cut_back(self):
+        for text in (
+            "2026-01-08T12:00:00.123abc",
+            "2026-01-08T12:00:00.5Zfoo",
+            "2026-01-08T12:00:00Zfoo",
+            "2026-01-08T12:00Z1",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(iso_timestamps()(text), text)
+                self.assertEqual(iso_dates()(text), text)
+
+    def test_digits_that_are_no_field_stay_behind_the_token(self):
+        for text, left in (
+            ("2026-01-08T12:00:001", ":001"),
+            ("2026-01-08T12:00:601", ":601"),
+            ("2026-01-08T12:00:611", ":611"),
+            ("2026-01-08T12:00:00+053", "+053"),
+            ("2026-01-08T12:00+0560", "+0560"),
+            ("2026-01-08T12:00+05:60", ":60"),
+            ("2026-01-08T12:00:00abc", ":00abc"),
+            ("2026-01-08T12:00-08x", "-08x"),
+            ("2026-01-08T12:00+0530\u00e9", "+0530\u00e9"),
+            ("2026-01-08T12:00:00\u0663", ":00\u0663"),
+            ("2026-01-08T12:00+05:30x", ":30x"),
+            ("2026-01-08T12:00+05:301", ":301"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(iso_timestamps()(text), f"<timestamp-1>{left}")
+
+    def test_a_date_after_a_colon_is_not_taken_for_seconds(self):
+        for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
+            with self.subTest(first=order[0].name):
+                self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09"), "<timestamp-1>:<date-1>")
+                self.assertEqual(chain(*order)("2026-01-08T12:00:2026-01-09T13:00"), "<timestamp-1>:<timestamp-2>")
+
+    def test_an_id_joined_on_is_not_taken_for_a_field(self):
+        for joined in (f"-{UUID_A}", ":12abcdef-1234-4234-8234-123456789012", "-12abcdef-1234-4234-8234-123456789012"):
+            for order in ((uuids(), iso_timestamps()), (iso_timestamps(), uuids())):
+                with self.subTest(first=order[0].name, joined=joined):
+                    self.assertEqual(chain(*order)(f"2026-01-08T12:00{joined}"), f"<timestamp-1>{joined[0]}<uuid-1>")
+
+    def test_two_moments_that_differ_after_the_seconds_are_never_given_one_number(self):
+        text = "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc 2026-01-08T12:00:00.123 2026-01-08T12:00:00.456"
+        self.assertEqual(
+            iso_timestamps()(text),
+            "2026-01-08T12:00:00.123abc 2026-01-08T12:00:00.456abc <timestamp-1> <timestamp-2>",
+        )
 
     def test_its_name_is_its_functions(self):
         self.assertEqual(

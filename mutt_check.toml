@@ -2545,11 +2545,43 @@ replace = '_BEFORE = r""'
 
 [[mutant]]
 name = "a_timestamp_s_zone_not_read"
-why = 'A timestamp with "Z" or an offset would not be replaced at all, and would differ on every run.'
+why = 'A timestamp with "Z" would not be replaced at all, and one with an offset would leave it in the text, where it can differ from run to run.'
 suites = ["tests.test_scrub.TimestampsTest"]
 file = "onus/scrub/_scrub.py"
-find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"'
+find = '_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?{_AFTER})?"'
 replace = '_ZONE = ""'
+
+[[mutant]]
+name = "a_date_after_a_colon_taken_for_seconds"
+why = "':20' of ':2026-01-09' would read as seconds and then run on, so a real timestamp and its neighbour's order would both be lost."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''|60)(?!(?!Z)[^\\W_])(?:'''
+replace = '''|60)(?:'''
+
+[[mutant]]
+name = "seconds_refused_before_a_z"
+why = "'Z' is a letter, so without its exception every stamp in UTC would lose its seconds' place and stay half read."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''|60)(?!(?!Z)[^\\W_])(?:'''
+replace = '''|60){_AFTER}(?:'''
+
+[[mutant]]
+name = "an_id_joined_on_taken_for_an_offset"
+why = "'-12' of '-12abcdef-...' would run on, so a timestamp before one random UUID in every ten to twenty would stay in the text."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''(?::?{_SIXTY})?{_AFTER})?"'''
+replace = '''(?::?{_SIXTY})?)?"'''
+
+[[mutant]]
+name = "a_timestamp_that_runs_on_cut_back"
+why = "Backing off to a shorter form replaces a prefix and leaves the fraction in the text, so two moments share a number."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")'
+replace = '{_CLOCK}{_SECONDS}{_ZONE}{_AFTER}")'
 
 [[mutant]]
 name = "a_folder_whose_name_runs_on_replaced"

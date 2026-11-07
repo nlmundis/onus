@@ -336,7 +336,10 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       can record which scrubbers shaped an output; `chain` takes only these, and `redactor(fn)` is how a plain
       function gets a name (its module and qualified name).
     - Only a real value is replaced: "2026-13-45" and "2026-01-08T25:00" stay, as does anything that runs on
-      into a letter or digit, of any script, on either side. The date inside a timestamp is left to
+      into a letter or digit, of any script, on either side; a timestamp whose fraction or "Z" runs on stays
+      whole, and is not cut back to a shorter form. Seconds or an offset that runs on is no field, and stays
+      behind the token, since its ":", "+", or "-" may only join on something else: "T12:00:2026-01-09" keeps
+      both its timestamp and its date. The date inside a timestamp is left to
       `iso_timestamps`, so the two may be chained in either order. The clock's ranges are spelled out in the
       regex, since `datetime` reads "24:00" on some Python versions and not on others.
     - `hex_ids(*lengths)` takes the exact lengths to replace, each at least 8, with no default, and never
@@ -372,7 +375,16 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       part of a longer name once it is a token and not before, so `paths` first replaces the path and `paths`
       second leaves it. Text a `redactor` writes is read as written.
     - A timestamp is numbered by how it is written, so one moment written in two zones is two values; and it is
-      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token.
+      read only as far as it is well formed, so "T11:00:5" leaves ":5" behind its token, "+05:30x" leaves ":30x",
+      and a fraction takes all the digits it can, so "T12:00:00.2026-01-09" loses a date's year and month when
+      `iso_timestamps` runs first.
+    - A timestamp joined by a full stop to an id is read by how that id starts, so it fails at random against a
+      clean baseline: "T12:00:00.<a uuid>" stays whole for most UUIDs, whose digits run on into a letter, and
+      loses at least the first group of one whose first group is all digits. Put `uuids` before `iso_timestamps`
+      there; `hex_ids` before it helps too, though it leaves an id written like a number. A file extension that starts with a digit stays too:
+      "backup-2026-01-08T12:00:00.7z" is left whole, and fails its comparison on every run.
+    - A date before a clock time that runs on, as in "2026-01-08 12:00pm", is replaced by neither scrubber, since
+      `iso_dates` leaves the date of anything shaped like a timestamp. It stays and fails its comparison, visibly.
     - `chain` and `assertApproved` refuse two scrubbers that write one numbered token name, which would each
       number from 1 and let two different values share a token. They read the name a scrubber carries, so a
       `redactor` that calls one, or a `Scrubber` built by hand, is not counted.

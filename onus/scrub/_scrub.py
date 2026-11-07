@@ -18,10 +18,14 @@ _DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 _HOUR = r"(?:[01][0-9]|2[0-3])"
 _SIXTY = r"[0-5][0-9]"
 _CLOCK = f"[T ]{_HOUR}:{_SIXTY}"
-_SECONDS = f"(?::(?:{_SIXTY}|60)(?:[.,][0-9]+)?)?"
-_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?)?"
+# Seconds or an offset that runs on into a letter or digit is no field, and stays in the text behind the token: its
+# ":", "+", or "-" may be a separator before something else, as in "T12:00:2026-01-09". "Z" may follow seconds.
+_SECONDS = f"(?::(?:{_SIXTY}|60)(?!(?!Z)[^\\W_])(?:[.,][0-9]+)?)?"
+_ZONE = f"(?:Z|[+-]{_HOUR}(?::?{_SIXTY})?{_AFTER})?"
 _DATES = re.compile(f"{_BEFORE}{_DATE}(?!{_CLOCK}){_AFTER}")
-_TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}{_SECONDS}{_ZONE}{_AFTER}")
+# Atomic: a fraction or "Z" that runs on into a letter or digit fails whole, where backing off would replace a
+# prefix and leave the part that changes in the text.
+_TIMESTAMPS = re.compile(f"{_BEFORE}{_DATE}{_CLOCK}(?>{_SECONDS}{_ZONE}){_AFTER}")
 # Digits alone, or digits then an exponent: a count, or the digits of a float, never an id.
 _NUMBER = re.compile(r"[0-9]+(?:[eE][0-9]*)?\Z")
 # The token names this module's own scrubbers write, which a caller's pattern may not reuse.
@@ -126,7 +130,8 @@ def iso_dates() -> Scrubber:
     Only a real date is replaced: "2026-13-45" stays, and so does the date inside a timestamp, which is
     ``iso_timestamps``'s to replace whole, so the two may run in either order. A date followed by a clock time
     that ``iso_timestamps`` does not read, such as "2026-01-08 25:00", is replaced here; one followed by "T" runs
-    on into a letter, and stays.
+    on into a letter, and stays. So does one before a clock time that runs on, such as "2026-01-08 12:00pm", which
+    neither scrubber replaces.
     """
     replace = _numbered(_DATES, "date", same=_as_written, real=_is_date)
     return Scrubber("iso_dates", replace, _numbers=frozenset({"date"}))
@@ -138,7 +143,11 @@ def iso_timestamps() -> Scrubber:
     It reads a date, a "T" or a space, hours and minutes, then optionally seconds, a fraction of a second after
     "." or ",", and "Z" or an offset written "+HH:MM", "+HHMM", or "+HH". Only a real moment is replaced:
     "2026-01-08T25:00" and "2026-01-08T24:00" stay, on every Python version. A timestamp is read as far as it is
-    written this way, and what follows it stays in the text. Two timestamps are one value when they are written
+    written this way, and what follows it stays in the text. Seconds or an offset that runs on into a letter or
+    digit is not read, since its ":", "+", or "-" may only join on something else: "2026-01-08T12:00:2026-01-09"
+    leaves ":2026-01-09". An offset is read as far as it is well formed, so "+05:30x" leaves ":30x". A fraction or
+    "Z" that runs on leaves the whole timestamp in the text, and is not cut back to a shorter form, as in
+    "2026-01-08T12:00:00.5Zfoo". Two timestamps are one value when they are written
     alike; the same moment in two zones is two values.
     """
     replace = _numbered(_TIMESTAMPS, "timestamp", same=_as_written, real=_is_timestamp)
