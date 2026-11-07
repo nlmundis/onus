@@ -437,7 +437,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
     - **The terminal is `/dev/tty`, opened by descriptor,** and must be a terminal: a file or pipe in its
       place is refused, and standard input is never read. What is typed must be exactly the first eight hex
       digits, lower case, with nothing round them. What is shown has every control character written as its
-      escape, so content cannot move the cursor or erase the lines being confirmed.
+      escape, so content cannot move the cursor or erase the lines being confirmed. The same holds of what
+      `check_signoff` reports, a `Check`'s `detail` and `diff`, and of a refusal or usage error at the command
+      line. A path or a bound file's name has its line breaks escaped too, so it cannot forge a line.
     - **A re-signing binds only what it is told to.** A file the line before bound and this one does not is
       shown as "no longer bound" before the digits are asked for. The ledger and its kept copies cannot be
       bound. The same content with the same files bound, when that is the artifact's newest line, is not
@@ -455,6 +457,8 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       message and no time limit.
     - Digits already waiting on the terminal when the prompt appears are read as the answer.
     - The bound files' contents are not kept, so a changed one is named without a diff.
+    - An escape is not told from the same characters typed: content holding a real escape byte and content holding
+      a backslash, an `x`, and two digits read alike, on the screen and in a diff. Only the hash tells them apart.
     - E18's list is matched by name alone: `CI=false` refuses, as does a `CLAUDE_CODE_*` setting in a person's
       own profile, and `GEMINI_CLI` also matches a longer name that starts so.
     - The library's own tests reach `record` by pointing it at a pseudo-terminal and clearing the environment,
