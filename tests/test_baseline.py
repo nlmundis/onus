@@ -149,7 +149,7 @@ class RecordingTest(Sandbox):
         self.assertEqual(self.files(self.repo), before)
         self.assertEqual(self.received().read_text(encoding="utf-8"), RECEIPT)
         message = str(raised.exception)
-        self.assertIn(f"The received text is at {self.received()}. Once what it produces has been read, run", message)
+        self.assertIn(f"The received text is at {self.received()}. Once the producer's output has been read", message)
         self.assertIn("ONUS_APPROVE_ROOT set to the checkout's top level", message)
 
     def test_a_differing_approved_file_is_never_overwritten_by_a_plain_run(self):

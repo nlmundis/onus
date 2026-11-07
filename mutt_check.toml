@@ -2791,7 +2791,7 @@ replace = '        folder = approved.parent'
 
 [[mutant]]
 name = "a_received_write_that_fails_raises"
-why = "A file name too long, or a full disk, would raise from inside the failure and replace the diff with an OSError."
+why = "An error from the write, as a file name too long or a full disk gives, would raise from inside the failure in place of its message."
 suites = ["tests.test_baseline.ComparingTest"]
 file = "onus/baseline/_approved.py"
 find = '''    except OSError as error:
