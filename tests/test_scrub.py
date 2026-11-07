@@ -201,6 +201,11 @@ class TimestampsTest(unittest.TestCase):
                 with self.subTest(first=order[0].name, text=text):
                     self.assertEqual(chain(*order)(text), "<timestamp-1>-<date-1>")
 
+    def test_second_sixty_is_read_at_any_minute_and_sixty_one_at_none(self):
+        self.assertEqual(iso_timestamps()("2026-01-08T12:34:60"), "<timestamp-1>")
+        self.assertEqual(iso_timestamps()("2026-01-08T05:29:60+05:30"), "<timestamp-1>")
+        self.assertEqual(iso_timestamps()("2026-01-08T12:34:61"), "<timestamp-1>:61")
+
     def test_a_real_offset_before_a_date_is_read_in_either_order(self):
         for order in ((iso_dates(), iso_timestamps()), (iso_timestamps(), iso_dates())):
             for offset in ("+0530", "+05:30", "-14"):

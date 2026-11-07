@@ -2600,6 +2600,14 @@ find = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-4])"'''
 replace = '''_OFFSET_HOUR = r"(?:0[0-9]|1[0-3])"'''
 
 [[mutant]]
+name = "a_leap_second_not_read"
+why = "A stamp taken in a leap second would leave ':60' behind its token."
+suites = ["tests.test_scrub.TimestampsTest"]
+file = "onus/scrub/_scrub.py"
+find = '''(?::(?:{_SIXTY}|60)'''
+replace = '''(?::(?:{_SIXTY})'''
+
+[[mutant]]
 name = "an_id_joined_on_taken_for_an_offset"
 why = "'-12' of '-12abcdef-...' would run on, so a timestamp before one random UUID in every ten to twenty would stay in the text."
 suites = ["tests.test_scrub.TimestampsTest"]

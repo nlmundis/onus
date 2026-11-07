@@ -389,6 +389,9 @@ built with this amendment, E17 with `baseline` after it, and E18 with `signoff`,
       number from 1 and let two different values share a token. They read the name a scrubber carries, so a
       `redactor` that calls one, or a `Scrubber` built by hand, is not counted.
     - `hex_ids` of length 8 or 12 placed before `uuids` in a chain replaces a UUID's first or last group.
+    - Second 60 is read at any minute, so "12:34:60", which no clock shows, is replaced. Where a leap second
+      falls in local time depends on the zone ("05:29:60+05:30") and on a table this module does not keep, so
+      `iso_timestamps` does not check it.
     - An offset's hours are read only up to 14, so a year from 1460 on joined on by a hyphen stays in the text.
       Other digits joined on by "+" or "-", as the hour range in "2026-01-08T12:00-14" or
       "2026-01-08T12:00-13:00", or the year in "2026-01-08T12:00-1400-01-09", are a well-formed offset, and are
