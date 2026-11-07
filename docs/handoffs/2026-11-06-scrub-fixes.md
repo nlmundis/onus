@@ -37,7 +37,7 @@ This note follows `2026-11-06-l1-amendments.md`, and covers its `scrub` items on
 - **A shipped scrubber can still take a number** in three forms, all in E16's known limits: digits joined on that read
   as an offset (`T12:00-14`), as seconds (`T12:00:42:7`), or as a fraction (`T12:00:00.2026`). The README's "ships no
   scrubber that replaces a number" is not qualified. Whether it should be is the maintainer's call.
-- **`chain` refuses one scrubber listed twice,** though adjacent repeats are harmless. This is open to veto.
+- **`chain` refuses a numbered scrubber listed twice.** This is open to veto.
 - **The final timestamp rule** had an adversarial review after the coordinator asked for one. It found no defect in
   the rule, and one major: an hour range depends on the hour, now disclosed. Chain orders still disagree on inputs E16
   lists, and a timestamp joined by a full stop to an id fails at random unless `uuids` runs first.
