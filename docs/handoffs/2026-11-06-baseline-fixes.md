@@ -12,28 +12,29 @@ This note follows `2026-11-06-l1-amendments.md`.
 
 ## State
 
-All four pull requests are open and none is merged. Each had a green `make check` on its branch, a clean leak scan,
-and a targeted review.
+All four pull requests are open and none is merged. Each is merged with main at a8a247c, the scrub set included, and
+each had a green `make check` on its branch, a clean leak scan, and a targeted review.
 
 | Pull request | Defect | `make check` | Mutants |
 | --- | --- | --- | --- |
-| #24 | `make approve` wording | exit 0, 451 tests | 412 of 412 |
-| #32 | B06, the received file | exit 0, 453 tests | 414 of 414 |
-| #33 | `_tests_of` with tests inside the code | exit 0, 461 tests | 419 of 419 |
-| #34 | B03, the `__wrapped__` chain | exit 0, 467 tests | 428 of 428 |
+| #24 | `make approve` wording | exit 0, 473 tests | 435 of 435 |
+| #32 | B06, the received file | exit 0, 475 tests | 437 of 437 |
+| #33 | `_tests_of` with tests inside the code | exit 0, 483 tests | 442 of 442 |
+| #34 | B03, the `__wrapped__` chain | exit 0, 489 tests | 451 of 451 |
 
-All four merged together in a scratch clone: `make check` exit 0, 482 tests, 100% coverage, 440 of 440 mutants
-caught, the no-op surviving.
+All four merged together on a8a247c in a scratch clone: `make check` exit 0, 504 tests, 100% coverage, 463 of 463
+mutants caught, the no-op surviving.
 
 ## Merging
 
-#33 and #34 conflict in two places, whichever merges second: the refusal in `unreal`, and E17's "What 'real' means".
+The order is #24, #32, #34, #33, #36. The repository squash-merges and its ruleset is strict, so each pull request is
+updated from main before it merges. #33 and #34 conflict in two places, whichever merges second: the refusal in `unreal`, and E17's "What 'real' means".
 Keep `{who}` from #34 and the wording of the rule from #33. In E17, keep #34's sentences on the chain, then #33's on
 the tests, then each pull request's new bullet. #24 and #32 merged without conflict. `mutt_check.toml` merged cleanly
 in the scratch clone.
 
-The `scrub` and `signoff` pull requests also touch `mutt_check.toml` and `docs/plan.md`. They were not part of the
-scratch merge.
+The `signoff` pull requests also touch `mutt_check.toml` and `docs/plan.md`, and come after these. They were not part
+of the scratch merge.
 
 ## Decision for the maintainer
 
